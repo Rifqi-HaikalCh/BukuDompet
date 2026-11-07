@@ -3,11 +3,22 @@
 import React from "react";
 import NumberFlow from "@number-flow/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { cn, formatCompactRupiah } from "@/lib/utils";
 import { soundEffects } from "@/lib/sound-effects";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 
+export { formatCompactRupiah };
+
+/**
+ * Standar Semantik Warna 60-30-10 BukuDompet V2.5:
+ * - matcha: Primary CTA (+ Catat Kas, Simpan, Setujui) & Pemasukan (+Rp) / Aman
+ * - honey: Klaim Hadiah Misi, Poin/Koin (1 Poin = Rp1), Streak Api (teks #4A3500)
+ * - sky: Tab Filter Waktu Aktif, XP Progress Bar, & Streak Freeze
+ * - peach / berry: Pengeluaran (-Rp), Peringatan Boros/Bengkak, Keluar/Tolak
+ * - taro: Eksklusif untuk Evolusi Mochi & Mystery Box Gacha
+ * - cream / white: Seluruh Tombol Sekunder, Tombol Batal, & Tab Non-Aktif
+ */
 export type TactileVariant =
   | "matcha"
   | "honey"
@@ -24,7 +35,7 @@ const VARIANT_CLASSES: Record<TactileVariant, string> = {
   sky:
     "bg-[#38B6FF] hover:bg-[#52C0FF] text-white border-0 border-b-[5px] border-b-[#1E88E5] active:border-b-[2px] active:translate-y-[3px]",
   honey:
-    "bg-[#FFC800] hover:bg-[#FFD22B] text-[#3D352E] border-0 border-b-[5px] border-b-[#E5A400] active:border-b-[2px] active:translate-y-[3px]",
+    "bg-[#FFC800] hover:bg-[#FFD22B] text-[#4A3500] border-0 border-b-[5px] border-b-[#E5A400] active:border-b-[2px] active:translate-y-[3px]",
   peach:
     "bg-[#FF8B7B] hover:bg-[#FF9B8D] text-[#3D352E] border-0 border-b-[5px] border-b-[#E06353] active:border-b-[2px] active:translate-y-[3px]",
   berry:
@@ -32,9 +43,9 @@ const VARIANT_CLASSES: Record<TactileVariant, string> = {
   taro:
     "bg-[#CE82FF] hover:bg-[#D796FF] text-white border-0 border-b-[5px] border-b-[#A552DB] active:border-b-[2px] active:translate-y-[3px]",
   cream:
-    "bg-white hover:bg-[#FFFDF9] text-[#3D352E] border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] active:border-b-[2px] active:translate-y-[3px]",
+    "bg-[#F7F3EB] hover:bg-[#EFE9DC] text-[#3D352E] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] active:border-b-[2px] active:translate-y-[2px]",
   white:
-    "bg-white hover:bg-[#FFFDF9] text-[#3D352E] border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] active:border-b-[2px] active:translate-y-[3px]",
+    "bg-white hover:bg-[#FFFDF9] text-[#3D352E] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] active:border-b-[2px] active:translate-y-[2px]",
 };
 
 export interface TactileButtonProps
@@ -74,7 +85,7 @@ export function TactileButton({
         onClick?.(e);
       }}
       className={cn(
-        "inline-flex items-center justify-center gap-2 font-display font-extrabold select-none cursor-pointer transition-all duration-75",
+        "inline-flex items-center justify-center gap-2 font-display font-extrabold select-none cursor-pointer transition-all duration-75 max-w-full",
         "disabled:opacity-50 disabled:pointer-events-none",
         VARIANT_CLASSES[variant],
         sizeClass,
@@ -107,28 +118,33 @@ export function CozyCard({
   children,
   ...props
 }: CozyCardProps) {
+  // Default 60% Neutral White Canvas: bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4]
   const toneStyles = {
     white:
-      "bg-white border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] shadow-sm",
+      "bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] shadow-xs",
     vanilla:
-      "bg-[#F9F4EA] border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] shadow-sm",
+      "bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] shadow-xs",
     matcha:
-      "bg-[#EFFBE6] border-2 border-[#C3EFA4] border-b-[5px] border-b-[#9EE070]",
+      "bg-[#EFFBE6] border-2 border-[#C3EFA4] border-b-[4px] border-b-[#9EE070]",
     honey:
-      "bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[5px] border-b-[#F5C84C]",
+      "bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C]",
     peach:
-      "bg-[#FFF2F0] border-2 border-[#FFCDC6] border-b-[5px] border-b-[#FFA89C]",
+      "bg-[#FFF2F0] border-2 border-[#FFCDC6] border-b-[4px] border-b-[#FFA89C]",
     berry:
-      "bg-[#FFF0F0] border-2 border-[#FFC2C2] border-b-[5px] border-b-[#FF9494]",
+      "bg-[#FFF0F0] border-2 border-[#FFC2C2] border-b-[4px] border-b-[#FF9494]",
     taro:
-      "bg-[#F8F0FF] border-2 border-[#E2C6FF] border-b-[5px] border-b-[#C99BFF]",
+      "bg-[#F8F0FF] border-2 border-[#E2C6FF] border-b-[4px] border-b-[#C99BFF]",
     sky:
-      "bg-[#EEF8FF] border-2 border-[#BCE3FF] border-b-[5px] border-b-[#89CAFF]",
+      "bg-[#EEF8FF] border-2 border-[#BCE3FF] border-b-[4px] border-b-[#89CAFF]",
   }[tone];
 
   return (
     <div
-      className={cn("rounded-3xl p-4 sm:p-5", toneStyles, className)}
+      className={cn(
+        "rounded-3xl p-4 sm:p-5 min-w-0 max-w-full overflow-hidden",
+        toneStyles,
+        className
+      )}
       {...props}
     >
       {children}
@@ -167,12 +183,12 @@ export function ChunkyProgressBar({
   }[variant];
 
   return (
-    <div className={cn("w-full", className)}>
+    <div className={cn("w-full min-w-0", className)}>
       {(label || showFraction) && (
-        <div className="flex items-center justify-between text-xs font-extrabold text-[#3D352E] mb-1.5">
-          {label && <span>{label}</span>}
+        <div className="flex items-center justify-between gap-2 text-xs font-extrabold text-[#3D352E] mb-1.5 min-w-0">
+          {label && <span className="truncate">{label}</span>}
           {showFraction && (
-            <span className="font-display font-extrabold tabular-nums tracking-tight text-[#7A6E65]">
+            <span className="font-display font-extrabold tabular-nums tracking-tight text-[#7A6E65] shrink-0">
               {value.toLocaleString("id-ID")} / {max.toLocaleString("id-ID")}
             </span>
           )}
@@ -216,7 +232,7 @@ export function RollingNumber({
   return (
     <span
       className={cn(
-        "inline-flex items-baseline font-display font-extrabold tabular-nums tracking-tight",
+        "inline-flex items-baseline font-display font-extrabold tabular-nums tracking-tight truncate max-w-full",
         className
       )}
     >
@@ -262,14 +278,7 @@ export function FloatingRewardBanner() {
           onClick={clearRewardToast}
           className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[92vw] max-w-md cursor-pointer"
         >
-          <div
-            className={cn(
-              "rounded-3xl p-3.5 flex items-center justify-between gap-3 shadow-md",
-              rewardToast.isCombo
-                ? "bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[5px] border-b-[#F5C84C]"
-                : "bg-[#EFFBE6] border-2 border-[#C3EFA4] border-b-[5px] border-b-[#9EE070]"
-            )}
-          >
+          <div className="rounded-3xl p-3.5 flex items-center justify-between gap-3 shadow-md bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4]">
             <div className="flex items-center gap-2.5 min-w-0">
               <CozyIcon
                 name={rewardToast.isCombo ? "combo_sparkle" : "check_badge"}
@@ -288,7 +297,7 @@ export function FloatingRewardBanner() {
             {(rewardToast.points > 0 || rewardToast.xp > 0) && (
               <div className="flex items-center gap-1.5 shrink-0">
                 {rewardToast.points > 0 && (
-                  <span className="px-2.5 py-1 rounded-xl bg-[#FFC800] border-b-[3px] border-b-[#E5A400] font-display tabular-nums text-xs font-extrabold text-[#3D352E] inline-flex items-center gap-1">
+                  <span className="px-2.5 py-1 rounded-xl bg-[#FFC800] border-b-[3px] border-b-[#E5A400] font-display tabular-nums text-xs font-extrabold text-[#4A3500] inline-flex items-center gap-1">
                     <CozyIcon name="coin_rupiah" size={16} />+
                     {rewardToast.points}
                   </span>

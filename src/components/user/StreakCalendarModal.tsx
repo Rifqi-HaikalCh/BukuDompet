@@ -12,31 +12,20 @@ import { CozyIcon, CategoryIcon } from "@/components/illustrations/CozyIcons";
 import {
   TactileButton,
   CozyCard,
-  ChunkyProgressBar,
   formatRupiah,
 } from "@/components/ui/CozyPrimitives";
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { soundEffects } from "@/lib/sound-effects";
-import { cn } from "@/lib/utils";
+import { cn, formatCompactRupiah } from "@/lib/utils";
 
 type SummaryTab = "daily" | "weekly" | "monthly";
-
-function formatShortCompact(amount: number): string {
-  const abs = Math.abs(amount);
-  const sign = amount < 0 ? "-" : "+";
-  if (abs >= 1000000) {
-    return `${sign}${(abs / 1000000).toFixed(1).replace(".0", "")}jt`;
-  }
-  if (abs >= 1000) {
-    return `${sign}${Math.round(abs / 1000)}rb`;
-  }
-  return `${sign}${abs}`;
-}
+type TxFilterType = "all" | "expense" | "income";
 
 export function StreakCalendarModal() {
   const {
     isStreakCalendarOpen,
     setStreakCalendarOpen,
+    activeProfileId,
     profiles,
     transactions,
     streakFreezeDates,
@@ -45,14 +34,24 @@ export function StreakCalendarModal() {
   } = useBukuDompetStore();
 
   const userProfile =
-    profiles.find((p) => p.role === "user") || profiles[0];
+    profiles.find((p) => p.id === activeProfileId && p.role === "user") ||
+    profiles.find((p) => p.role === "user") ||
+    profiles[0];
+
+  const userTransactions = useMemo(
+    () => transactions.filter((t) => t.user_id === userProfile.id),
+    [transactions, userProfile.id]
+  );
+
   const levelInfo = getLevelFromXp(userProfile.xp);
 
   const report = analyzeSpendingDetective({
-    transactions,
+    transactions: userTransactions,
     monthlyBudgetTarget: userProfile.monthly_budget_target,
     monthlySavingTarget: userProfile.monthly_saving_target,
     userLevel: levelInfo.level,
+    currentStage: userProfile.currentStage || 1,
+    petCustomName: userProfile.petCustomName || "Mochi",
   });
 
   const today = new Date();
@@ -62,6 +61,8 @@ export function StreakCalendarModal() {
     today.toISOString().split("T")[0]
   );
   const [activeTab, setActiveTab] = useState<SummaryTab>("daily");
+  const [txFilter, setTxFilter] = useState<TxFilterType>("all");
+  const [showAllTx, setShowAllTx] = useState<boolean>(false);
   const [confirmBuyFreeze, setConfirmBuyFreeze] = useState<boolean>(false);
 
   const monthPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`;
@@ -78,14 +79,13 @@ export function StreakCalendarModal() {
   const calendarDays = useMemo(() => {
     const firstDay = new Date(viewYear, viewMonth, 1);
     const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-    // Monday-based index (0 = Senin ... 6 = Minggu)
     const startOffset = (firstDay.getDay() + 6) % 7;
 
     const cells: {
       dateStr: string | null;
       dayNum: number | null;
-      status: "safe" | "warn" | "freeze" | "zero" | "empty";
-      netAmount: number;
+      status: "safe" | "warn" | "freeze" | "empty";
+      isZeroSpend: boolean;
       income: number;
       expense: number;
       txCount: number;
@@ -96,7 +96,7 @@ export function StreakCalendarModal() {
         dateStr: null,
         dayNum: null,
         status: "empty",
-        netAmount: 0,
+        isZeroSpend: false,
         income: 0,
         expense: 0,
         txCount: 0,
@@ -109,7 +109,7 @@ export function StreakCalendarModal() {
         "0"
       )}-${String(d).padStart(2, "0")}`;
 
-      const dayTxs = transactions.filter((t) => t.transaction_date === dStr);
+      const dayTxs = userTransactions.filter((t) => t.transaction_date === dStr);
       const income = dayTxs
         .filter((t) => t.type === "income")
         .reduce((s, t) => s + Number(t.total_amount), 0);
@@ -120,11 +120,11 @@ export function StreakCalendarModal() {
       const isFreeze = streakFreezeDates.includes(dStr);
       const isZeroSpend = zeroSpendDates.includes(dStr);
 
-      let status: "safe" | "warn" | "freeze" | "zero" | "empty" = "empty";
+      let status: "safe" | "warn" | "freeze" | "empty" = "empty";
       if (isFreeze) {
         status = "freeze";
       } else if (isZeroSpend) {
-        status = "zero";
+        status = "safe";
       } else if (dayTxs.length > 0) {
         status = expense > report.dssl ? "warn" : "safe";
       }
@@ -133,7 +133,7 @@ export function StreakCalendarModal() {
         dateStr: dStr,
         dayNum: d,
         status,
-        netAmount: income - expense,
+        isZeroSpend,
         income,
         expense,
         txCount: dayTxs.length,
@@ -144,7 +144,7 @@ export function StreakCalendarModal() {
   }, [
     viewYear,
     viewMonth,
-    transactions,
+    userTransactions,
     streakFreezeDates,
     zeroSpendDates,
     report.dssl,
@@ -152,23 +152,30 @@ export function StreakCalendarModal() {
 
   // Selected date transactions & summary
   const selectedDayTxs = useMemo(() => {
-    return transactions.filter((t) => t.transaction_date === selectedDateStr);
-  }, [transactions, selectedDateStr]);
+    const raw = userTransactions.filter(
+      (t) => t.transaction_date === selectedDateStr
+    );
+    if (txFilter === "all") return raw;
+    return raw.filter((t) => t.type === txFilter);
+  }, [userTransactions, selectedDateStr, txFilter]);
 
   const selectedDaySummary = useMemo(() => {
-    const income = selectedDayTxs
+    const allDay = userTransactions.filter(
+      (t) => t.transaction_date === selectedDateStr
+    );
+    const income = allDay
       .filter((t) => t.type === "income")
       .reduce((s, t) => s + Number(t.total_amount), 0);
-    const expense = selectedDayTxs
+    const expense = allDay
       .filter((t) => t.type === "expense")
       .reduce((s, t) => s + Number(t.total_amount), 0);
     const safeRemaining = Math.max(0, report.dssl - expense);
     return { income, expense, safeRemaining };
-  }, [selectedDayTxs, report.dssl]);
+  }, [userTransactions, selectedDateStr, report.dssl]);
 
   // Weekly breakdown (Weeks 1 - 4 in current month)
   const weeklySummaries = useMemo(() => {
-    const monthTxs = transactions.filter((t) =>
+    const monthTxs = userTransactions.filter((t) =>
       t.transaction_date.startsWith(monthPrefix)
     );
     const weeks = [
@@ -202,11 +209,11 @@ export function StreakCalendarModal() {
     }
 
     return weeks;
-  }, [transactions, monthPrefix]);
+  }, [userTransactions, monthPrefix]);
 
   // Monthly summary for viewed month
   const monthlySummary = useMemo(() => {
-    const monthTxs = transactions.filter((t) =>
+    const monthTxs = userTransactions.filter((t) =>
       t.transaction_date.startsWith(monthPrefix)
     );
     const income = monthTxs
@@ -220,21 +227,28 @@ export function StreakCalendarModal() {
       .reduce((s, t) => s + Number(t.total_amount), 0);
     const totalExpense = needsExpense + wantsExpense;
 
-    const activeDaysCount = new Set(monthTxs.map((t) => t.transaction_date))
-      .size;
+    const effectiveIncome = Math.max(income, userProfile.monthly_budget_target);
+    const netRemaining = Math.max(0, effectiveIncome - totalExpense);
+
+    const filteredMonthTxs =
+      txFilter === "all"
+        ? monthTxs
+        : monthTxs.filter((t) => t.type === txFilter);
 
     return {
-      income: Math.max(income, userProfile.monthly_budget_target),
+      income: effectiveIncome,
       needsExpense,
       wantsExpense,
       totalExpense,
-      netRemaining: Math.max(
-        0,
-        Math.max(income, userProfile.monthly_budget_target) - totalExpense
-      ),
-      activeDaysCount,
+      netRemaining,
+      filteredMonthTxs,
     };
-  }, [transactions, monthPrefix, userProfile.monthly_budget_target]);
+  }, [
+    userTransactions,
+    monthPrefix,
+    userProfile.monthly_budget_target,
+    txFilter,
+  ]);
 
   const handlePrevMonth = () => {
     soundEffects.tactileClick();
@@ -255,6 +269,14 @@ export function StreakCalendarModal() {
       setViewMonth((m) => m + 1);
     }
   };
+
+  const visibleDailyTxs = showAllTx
+    ? selectedDayTxs
+    : selectedDayTxs.slice(0, 5);
+
+  const visibleMonthlyTxs = showAllTx
+    ? monthlySummary.filteredMonthTxs
+    : monthlySummary.filteredMonthTxs.slice(0, 5);
 
   return (
     <>
@@ -281,431 +303,577 @@ export function StreakCalendarModal() {
         onOpenChange={setStreakCalendarOpen}
       >
         <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-[#3D352E]/45 z-50 backdrop-blur-[2px]" />
-          <Drawer.Content className="bg-[#FFFDF9] border-t-4 border-[#E6DFD2] rounded-t-[36px] fixed bottom-0 left-0 right-0 z-50 max-h-[92vh] flex flex-col focus:outline-none">
-            <div className="mx-auto w-14 h-2 rounded-full bg-[#D4C9B4] my-3 shrink-0" />
+          <Drawer.Overlay className="fixed inset-0 bg-[#3D352E]/50 z-50 backdrop-blur-[2px]" />
+          <Drawer.Content
+            className={cn(
+              "bg-[#FFFDF9] border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] z-50 flex flex-col focus:outline-none",
+              // Mobile: Bottom Sheet
+              "fixed bottom-0 left-0 right-0 rounded-t-[32px] max-h-[92dvh]",
+              // Desktop (>= 768px): Master-Detail Modal max-w-4xl
+              "md:inset-x-auto md:left-1/2 md:top-1/2 md:bottom-auto md:-translate-x-1/2 md:-translate-y-1/2 md:w-[95vw] md:max-w-4xl md:rounded-3xl md:max-h-[88dvh] md:shadow-2xl"
+            )}
+          >
+            <div className="md:hidden mx-auto w-14 h-2 rounded-full bg-[#D4C9B4] my-2.5 shrink-0" />
 
-            <div className="px-4 sm:px-6 pb-8 overflow-y-auto max-w-2xl mx-auto w-full space-y-5">
-              {/* Header */}
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C] flex items-center justify-center">
-                    <CozyIcon name="calendar_streak" size={32} animated />
-                  </div>
-                  <div>
-                    <Drawer.Title className="font-display text-xl sm:text-2xl font-extrabold text-[#3D352E]">
-                      Kalender Streak & Rekap Kas
-                    </Drawer.Title>
-                    <Drawer.Description className="text-xs font-bold text-[#7A6E65]">
-                      Ketuk tanggal mana pun untuk mengintip rincian & statistik!
-                    </Drawer.Description>
-                  </div>
+            {/* Modal Header */}
+            <div className="px-4 sm:px-6 py-3.5 border-b-2 border-[#E6DFD2] flex items-center justify-between gap-3 shrink-0 bg-white md:rounded-t-3xl">
+              <div className="flex items-center gap-3 min-w-0">
+                <CozyIcon name="calendar_streak" size={30} animated />
+                <div className="min-w-0">
+                  <Drawer.Title className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] truncate">
+                    Kalender Streak & Rekap Kas
+                  </Drawer.Title>
+                  <Drawer.Description className="text-xs font-bold text-[#7A6E65] truncate">
+                    Ketuk tanggal mana pun untuk melihat rincian pemasukan &
+                    pengeluaran!
+                  </Drawer.Description>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setStreakCalendarOpen(false)}
-                  className="p-2.5 rounded-2xl bg-[#F9F4EA] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] cursor-pointer"
-                >
-                  <X className="w-5 h-5 text-[#3D352E]" />
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => setStreakCalendarOpen(false)}
+                className="p-2 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[3px] border-b-[#D4C9B4] cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4 text-[#3D352E]" />
+              </button>
+            </div>
 
-              {/* Streak & Freeze Top Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <CozyCard
-                  tone="honey"
-                  className="p-3.5 flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <CozyIcon name="flame_streak" size={34} animated />
-                    <div>
-                      <p className="text-xs font-bold text-[#7A6E65]">
-                        Streak Aktif Saat Ini
+            {/* Body: 2 Columns Master-Detail on Desktop, Vertical on Mobile */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+                {/* KOLOM KIRI (6 cols on Desktop): Streak Stats + Monthly Calendar Grid */}
+                <div className="md:col-span-6 space-y-4 min-w-0">
+                  {/* Streak Stats Header */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-3 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] min-w-0">
+                      <p className="text-[10px] font-bold text-[#7A6E65] truncate">
+                        Streak Aktif
                       </p>
-                      <p className="font-display text-xl font-extrabold text-[#3D352E]">
-                        {userProfile.current_streak} Hari Berturut!
+                      <p className="font-display text-base font-extrabold text-[#3D352E] flex items-center gap-1 mt-0.5">
+                        <CozyIcon name="flame_streak" size={18} animated />
+                        <span className="tabular-nums truncate">
+                          {userProfile.current_streak} Hari
+                        </span>
                       </p>
                     </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-xl bg-white border border-[#FDE08D] text-xs font-display font-extrabold text-[#3D352E]">
-                    Rekor: {userProfile.longest_streak}h
-                  </span>
-                </CozyCard>
 
-                <CozyCard
-                  tone="sky"
-                  className="p-3.5 flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <CozyIcon name="ice_shield" size={34} />
-                    <div>
-                      <p className="text-xs font-bold text-[#7A6E65]">
-                        Perisai Es (Streak Freeze)
+                    <div className="p-3 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] min-w-0">
+                      <p className="text-[10px] font-bold text-[#7A6E65] truncate">
+                        Rekor Terpanjang
                       </p>
-                      <p className="font-display text-xl font-extrabold text-[#3D352E]">
-                        {userProfile.streak_freeze_count} Tersedia
+                      <p className="font-display text-base font-extrabold text-[#3D352E] tabular-nums mt-0.5 truncate">
+                        {userProfile.longest_streak} Hari
                       </p>
                     </div>
-                  </div>
-                  <TactileButton
-                    variant="sky"
-                    size="sm"
-                    onClick={() => setConfirmBuyFreeze(true)}
-                  >
-                    + Beli (500P)
-                  </TactileButton>
-                </CozyCard>
-              </div>
 
-              {/* Monthly Calendar Grid */}
-              <CozyCard tone="white" className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={handlePrevMonth}
-                    className="p-2 rounded-xl bg-[#F9F4EA] border-2 border-[#E6DFD2] border-b-[3px] border-b-[#D4C9B4] cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4 text-[#3D352E]" />
-                  </button>
-                  <h3 className="font-display text-base sm:text-lg font-extrabold text-[#3D352E] capitalize">
-                    {monthName}
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={handleNextMonth}
-                    className="p-2 rounded-xl bg-[#F9F4EA] border-2 border-[#E6DFD2] border-b-[3px] border-b-[#D4C9B4] cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4 text-[#3D352E]" />
-                  </button>
-                </div>
-
-                {/* Weekday Headers */}
-                <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-display font-extrabold text-[#7A6E65]">
-                  {["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map(
-                    (day) => (
-                      <div key={day} className="py-1">
-                        {day}
+                    <div className="p-3 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] min-w-0 flex flex-col justify-between">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[10px] font-bold text-[#7A6E65] truncate">
+                          Freeze
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmBuyFreeze(true)}
+                          className="text-[10px] font-display font-extrabold text-[#1E88E5] hover:underline cursor-pointer"
+                        >
+                          +Beli
+                        </button>
                       </div>
-                    )
-                  )}
+                      <p className="font-display text-base font-extrabold text-[#3D352E] flex items-center gap-1 mt-0.5">
+                        <CozyIcon name="ice_shield" size={16} />
+                        <span className="tabular-nums">
+                          {userProfile.streak_freeze_count}x
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Monthly Calendar Card */}
+                  <CozyCard tone="white" className="p-3.5 sm:p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={handlePrevMonth}
+                        className="p-1.5 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] cursor-pointer"
+                      >
+                        <ChevronLeft className="w-4 h-4 text-[#3D352E]" />
+                      </button>
+                      <h3 className="font-display text-sm sm:text-base font-extrabold text-[#3D352E] capitalize">
+                        {monthName}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={handleNextMonth}
+                        className="p-1.5 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] cursor-pointer"
+                      >
+                        <ChevronRight className="w-4 h-4 text-[#3D352E]" />
+                      </button>
+                    </div>
+
+                    {/* Weekday Headers */}
+                    <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-display font-extrabold text-[#7A6E65]">
+                      {["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map(
+                        (day) => (
+                          <div key={day} className="py-0.5">
+                            {day}
+                          </div>
+                        )
+                      )}
+                    </div>
+
+                    {/* Standardized 4-Color Pastel Calendar Cells */}
+                    <div className="grid grid-cols-7 gap-1">
+                      {calendarDays.map((cell, idx) => {
+                        if (!cell.dateStr || !cell.dayNum) {
+                          return <div key={`empty-${idx}`} className="h-13" />;
+                        }
+
+                        const isSelected = cell.dateStr === selectedDateStr;
+
+                        // 4 Standardized Cell Colors per Task 5.2
+                        const cellColorCls =
+                          cell.status === "safe"
+                            ? "bg-[#E8F8DC] text-[#2E6F00] border-[#B8E994]"
+                            : cell.status === "warn"
+                            ? "bg-[#FFEAE6] text-[#C83E2B] border-[#FFBFB3]"
+                            : cell.status === "freeze"
+                            ? "bg-[#E3F4FF] text-[#1565C0] border-[#9AD2FF]"
+                            : "bg-[#F7F3EB] text-[#9E9284] border-transparent hover:border-[#E6DFD2]";
+
+                        return (
+                          <button
+                            key={cell.dateStr}
+                            type="button"
+                            onClick={() => {
+                              soundEffects.tactileClick();
+                              setSelectedDateStr(cell.dateStr!);
+                              setActiveTab("daily");
+                            }}
+                            className={cn(
+                              "h-13 rounded-xl p-1 flex flex-col items-center justify-between transition-all cursor-pointer border-2 min-w-0 overflow-hidden",
+                              cellColorCls,
+                              isSelected &&
+                                "ring-2 ring-[#38B6FF] -translate-y-0.5 shadow-xs"
+                            )}
+                          >
+                            <span className="text-[11px] font-display font-extrabold leading-none">
+                              {cell.dayNum}
+                            </span>
+
+                            {cell.txCount > 0 ? (
+                              <span className="tabular-nums text-[10px] font-display font-extrabold leading-tight truncate max-w-full">
+                                {cell.expense > 0
+                                  ? formatCompactRupiah(-cell.expense, {
+                                      withPrefix: false,
+                                      showSign: true,
+                                    })
+                                  : formatCompactRupiah(cell.income, {
+                                      withPrefix: false,
+                                      showSign: true,
+                                    })}
+                              </span>
+                            ) : cell.isZeroSpend ? (
+                              <span className="tabular-nums text-[10px] font-display font-extrabold leading-tight">
+                                Rp0
+                              </span>
+                            ) : cell.status === "freeze" ? (
+                              <span className="text-[9px] font-display font-extrabold">
+                                Es
+                              </span>
+                            ) : (
+                              <span className="text-[10px] opacity-40">-</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* 4-Color Legend */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1 text-[10px] font-bold text-[#7A6E65]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-[#E8F8DC] border border-[#B8E994] shrink-0" />
+                        <span className="truncate">Aman / Rp0</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-[#FFEAE6] border border-[#FFBFB3] shrink-0" />
+                        <span className="truncate">Lewat Batas</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-[#E3F4FF] border border-[#9AD2FF] shrink-0" />
+                        <span className="truncate">Freeze</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-[#F7F3EB] border border-[#E6DFD2] shrink-0" />
+                        <span className="truncate">Kosong</span>
+                      </div>
+                    </div>
+                  </CozyCard>
                 </div>
 
-                {/* Calendar Cells */}
-                <div className="grid grid-cols-7 gap-1.5">
-                  {calendarDays.map((cell, idx) => {
-                    if (!cell.dateStr || !cell.dayNum) {
-                      return <div key={`empty-${idx}`} className="h-16" />;
-                    }
-
-                    const isSelected = cell.dateStr === selectedDateStr;
-                    const hasActivity =
-                      cell.txCount > 0 ||
-                      cell.status === "freeze" ||
-                      cell.status === "zero";
-
-                    return (
+                {/* KOLOM KANAN (6 cols on Desktop): Smart Summary Panel */}
+                <div className="md:col-span-6 space-y-3.5 min-w-0">
+                  {/* Sky Blue Active Time Filter Tabs */}
+                  <div className="grid grid-cols-3 gap-1.5 bg-[#F7F3EB] p-1.5 rounded-2xl border-2 border-[#E6DFD2]">
+                    {(
+                      [
+                        { id: "daily", label: "Tanggal Dipilih" },
+                        { id: "weekly", label: "Mingguan" },
+                        { id: "monthly", label: "Bulanan" },
+                      ] as const
+                    ).map((t) => (
                       <button
-                        key={cell.dateStr}
+                        key={t.id}
                         type="button"
                         onClick={() => {
                           soundEffects.tactileClick();
-                          setSelectedDateStr(cell.dateStr!);
-                          setActiveTab("daily");
+                          setActiveTab(t.id);
+                          setShowAllTx(false);
                         }}
                         className={cn(
-                          "h-16 rounded-2xl p-1 flex flex-col items-center justify-between transition-all cursor-pointer border-2",
-                          isSelected
-                            ? "bg-[#FFFBEB] border-[#FFC800] border-b-[4px] border-b-[#E5A400] -translate-y-0.5"
-                            : cell.status === "safe" || cell.status === "zero"
-                            ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[3px] border-b-[#9EE070]"
-                            : cell.status === "warn"
-                            ? "bg-[#FFF2F0] border-[#FFCDC6] border-b-[3px] border-b-[#FFA89C]"
-                            : cell.status === "freeze"
-                            ? "bg-[#EEF8FF] border-[#BCE3FF] border-b-[3px] border-b-[#89CAFF]"
-                            : "bg-[#F9F4EA] border-[#E6DFD2] hover:bg-white"
+                          "py-2 px-2 rounded-xl font-display text-xs font-extrabold transition-all cursor-pointer truncate",
+                          activeTab === t.id
+                            ? "bg-[#38B6FF] text-white border-b-[3px] border-b-[#1E88E5]"
+                            : "text-[#3D352E] hover:bg-white"
                         )}
                       >
-                        <span className="text-[11px] font-display font-extrabold text-[#3D352E] leading-none">
-                          {cell.dayNum}
-                        </span>
-
-                        <div className="flex items-center justify-center">
-                          {cell.status === "safe" && (
-                            <CozyIcon name="flame_streak" size={18} />
-                          )}
-                          {cell.status === "warn" && (
-                            <CozyIcon name="warning_siren" size={18} />
-                          )}
-                          {cell.status === "freeze" && (
-                            <CozyIcon name="ice_shield" size={18} />
-                          )}
-                          {cell.status === "zero" && (
-                            <CozyIcon name="zero_spend" size={18} />
-                          )}
-                          {cell.status === "empty" && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#D4C9B4]" />
-                          )}
-                        </div>
-
-                        {hasActivity && cell.txCount > 0 ? (
-                          <span
-                            className={cn(
-                              "text-[9px] font-display font-extrabold tabular-nums px-1 rounded-md leading-tight truncate max-w-full",
-                              cell.expense > 0
-                                ? "text-[#E06353] bg-white/80"
-                                : "text-[#46A302] bg-white/80"
-                            )}
-                          >
-                            {cell.expense > 0
-                              ? formatShortCompact(-cell.expense)
-                              : formatShortCompact(cell.income)}
-                          </span>
-                        ) : cell.status === "zero" ? (
-                          <span className="text-[9px] font-display font-extrabold text-[#46A302]">
-                            Rp0
-                          </span>
-                        ) : (
-                          <span className="text-[9px] text-transparent">.</span>
-                        )}
+                        {t.label}
                       </button>
-                    );
-                  })}
-                </div>
-
-                {/* Legend */}
-                <div className="flex flex-wrap items-center justify-center gap-3 pt-1 text-[11px] font-bold text-[#7A6E65]">
-                  <span className="inline-flex items-center gap-1">
-                    <CozyIcon name="flame_streak" size={15} /> Aman & Mencatat
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <CozyIcon name="zero_spend" size={15} /> Puasa Jajan Rp0
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <CozyIcon name="ice_shield" size={15} /> Streak Freeze
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <CozyIcon name="warning_siren" size={15} /> Lewat Batas
-                  </span>
-                </div>
-              </CozyCard>
-
-              {/* 3 Smart Summary Tabs Switcher */}
-              <div className="grid grid-cols-3 gap-2 bg-[#F6F0E4] p-1.5 rounded-2xl border-2 border-[#E6DFD2]">
-                {(
-                  [
-                    { id: "daily", label: "Tanggal Terpilih" },
-                    { id: "weekly", label: "Mingguan (1-4)" },
-                    { id: "monthly", label: "Bulanan" },
-                  ] as const
-                ).map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      soundEffects.tactileClick();
-                      setActiveTab(t.id);
-                    }}
-                    className={cn(
-                      "py-2 px-2 rounded-xl font-display text-xs sm:text-sm font-extrabold transition-all cursor-pointer",
-                      activeTab === t.id
-                        ? "bg-[#FFC800] text-[#3D352E] border-b-[3px] border-b-[#E5A400]"
-                        : "text-[#7A6E65] hover:text-[#3D352E]"
-                    )}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* TAB 1: RINGKASAN TANGGAL TERPILIH */}
-              {activeTab === "daily" && (
-                <CozyCard tone="white" className="space-y-3.5">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-display text-base font-extrabold text-[#3D352E]">
-                      Rekap Tanggal:{" "}
-                      {new Date(
-                        selectedDateStr + "T12:00:00"
-                      ).toLocaleDateString("id-ID", {
-                        weekday: "long",
-                        day: "numeric",
-                        month: "long",
-                      })}
-                    </h4>
-                    <span className="text-xs font-bold text-[#7A6E65]">
-                      {selectedDayTxs.length} Transaksi
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2.5">
-                    <div className="p-3 rounded-2xl bg-[#EFFBE6] border border-[#C3EFA4]">
-                      <p className="text-[11px] font-bold text-[#7A6E65]">
-                        Pemasukan
-                      </p>
-                      <p className="font-display font-extrabold tabular-nums text-sm sm:text-base text-[#46A302]">
-                        {formatRupiah(selectedDaySummary.income)}
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-[#FFF2F0] border border-[#FFCDC6]">
-                      <p className="text-[11px] font-bold text-[#7A6E65]">
-                        Pengeluaran
-                      </p>
-                      <p className="font-display font-extrabold tabular-nums text-sm sm:text-base text-[#E06353]">
-                        {formatRupiah(selectedDaySummary.expense)}
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-[#EEF8FF] border border-[#BCE3FF]">
-                      <p className="text-[11px] font-bold text-[#7A6E65]">
-                        Sisa Jatah Aman
-                      </p>
-                      <p className="font-display font-extrabold tabular-nums text-sm sm:text-base text-[#1E88E5]">
-                        {formatRupiah(selectedDaySummary.safeRemaining)}
-                      </p>
-                    </div>
-                  </div>
-
-                  {selectedDayTxs.length === 0 ? (
-                    <div className="p-4 rounded-2xl bg-[#F9F4EA] border border-[#E6DFD2] text-center text-xs font-bold text-[#7A6E65]">
-                      Tidak ada transaksi pada tanggal ini.
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {selectedDayTxs.map((tx) => (
-                        <div
-                          key={tx.id}
-                          className="p-3 rounded-2xl bg-[#F9F4EA] border border-[#E6DFD2] space-y-1.5"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <CategoryIcon category={tx.category} size={24} />
-                              <div>
-                                <p className="font-display text-sm font-extrabold text-[#3D352E]">
-                                  {tx.title}
-                                </p>
-                                <p className="text-[11px] font-bold text-[#7A6E65]">
-                                  {tx.category}
-                                </p>
-                              </div>
-                            </div>
-                            <span
-                              className={cn(
-                                "font-display font-extrabold tabular-nums text-sm",
-                                tx.type === "income"
-                                  ? "text-[#46A302]"
-                                  : "text-[#E06353]"
-                              )}
-                            >
-                              {tx.type === "income" ? "+" : "-"}
-                              {formatRupiah(tx.total_amount)}
-                            </span>
-                          </div>
-                          {tx.items && tx.items.length > 0 && (
-                            <div className="pl-7 space-y-1">
-                              {tx.items.map((it) => (
-                                <div
-                                  key={it.id}
-                                  className="flex items-center justify-between text-xs font-bold text-[#7A6E65]"
-                                >
-                                  <span>
-                                    • {it.item_name}{" "}
-                                    {it.quantity > 1 && `x${it.quantity}`}
-                                  </span>
-                                  <span className="font-display font-extrabold tabular-nums text-[#3D352E]">
-                                    {formatRupiah(it.subtotal)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CozyCard>
-              )}
-
-              {/* TAB 2: RINGKASAN MINGGUAN (MINGGU 1 - 4) */}
-              {activeTab === "weekly" && (
-                <CozyCard tone="white" className="space-y-3.5">
-                  <h4 className="font-display text-base font-extrabold text-[#3D352E]">
-                    Perbandingan Mingguan ({monthName})
-                  </h4>
-                  <div className="space-y-3">
-                    {weeklySummaries.map((w) => (
-                      <div
-                        key={w.label}
-                        className="p-3.5 rounded-2xl bg-[#F9F4EA] border border-[#E6DFD2] space-y-2"
-                      >
-                        <div className="flex items-center justify-between text-xs font-extrabold">
-                          <span className="font-display text-sm text-[#3D352E]">
-                            {w.label}
-                          </span>
-                          <span className="font-display tabular-nums text-[#E06353]">
-                            Keluar: {formatRupiah(w.expense)}
-                          </span>
-                        </div>
-                        <ChunkyProgressBar
-                          value={w.expense}
-                          max={report.weeklyBudgetAllowance}
-                          variant={
-                            w.expense <= report.weeklyBudgetAllowance
-                              ? "matcha"
-                              : "peach"
-                          }
-                          showFraction
-                        />
-                      </div>
                     ))}
                   </div>
-                </CozyCard>
-              )}
 
-              {/* TAB 3: RINGKASAN BULANAN */}
-              {activeTab === "monthly" && (
-                <CozyCard tone="white" className="space-y-3.5">
-                  <h4 className="font-display text-base font-extrabold text-[#3D352E]">
-                    Rekapitulasi Bulanan & Statistik Streak ({monthName})
-                  </h4>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3.5 rounded-2xl bg-[#EFFBE6] border border-[#C3EFA4]">
-                      <p className="text-xs font-bold text-[#7A6E65]">
-                        Total Dana Bulan Ini
-                      </p>
-                      <p className="font-display font-extrabold tabular-nums text-lg text-[#46A302]">
-                        {formatRupiah(monthlySummary.income)}
-                      </p>
-                    </div>
-                    <div className="p-3.5 rounded-2xl bg-[#FFF2F0] border border-[#FFCDC6]">
-                      <p className="text-xs font-bold text-[#7A6E65]">
-                        Total Pengeluaran
-                      </p>
-                      <p className="font-display font-extrabold tabular-nums text-lg text-[#E06353]">
-                        {formatRupiah(monthlySummary.totalExpense)}
-                      </p>
-                    </div>
-                    <div className="p-3.5 rounded-2xl bg-[#EEF8FF] border border-[#BCE3FF]">
-                      <p className="text-xs font-bold text-[#7A6E65]">
-                        Butuh vs Ingin
-                      </p>
-                      <p className="font-display font-extrabold tabular-nums text-xs text-[#3D352E] mt-1">
-                        Butuh: {formatRupiah(monthlySummary.needsExpense)} |
-                        Ingin: {formatRupiah(monthlySummary.wantsExpense)}
-                      </p>
-                    </div>
-                    <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border border-[#FDE08D]">
-                      <p className="text-xs font-bold text-[#7A6E65]">
-                        Sisa Uang / Tabungan Bersih
-                      </p>
-                      <p className="font-display font-extrabold tabular-nums text-lg text-[#3D352E]">
-                        {formatRupiah(monthlySummary.netRemaining)}
-                      </p>
-                    </div>
-                  </div>
-                </CozyCard>
-              )}
+                  {/* TAB 1: HARIAN / TANGGAL DIPILIH */}
+                  {activeTab === "daily" && (
+                    <CozyCard tone="white" className="p-4 space-y-3.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="font-display text-sm sm:text-base font-extrabold text-[#3D352E] truncate">
+                          {new Date(
+                            selectedDateStr + "T12:00:00"
+                          ).toLocaleDateString("id-ID", {
+                            weekday: "long",
+                            day: "numeric",
+                            month: "long",
+                          })}
+                        </h4>
+                        <span className="text-xs font-bold text-[#7A6E65] shrink-0">
+                          {selectedDayTxs.length} Catatan
+                        </span>
+                      </div>
+
+                      {/* Visual Cashflow Bar (Pemasukan Hijau vs Pengeluaran Peach vs Sisa Uang Emas) */}
+                      <VisualCashflowBar
+                        income={selectedDaySummary.income}
+                        expense={selectedDaySummary.expense}
+                        remaining={selectedDaySummary.safeRemaining}
+                        remainingLabel="Sisa Aman Hari Ini"
+                      />
+
+                      {/* Quick Filter: Semua | Pengeluaran | Pemasukan */}
+                      <TxQuickFilterBar
+                        active={txFilter}
+                        onChange={(v) => {
+                          setTxFilter(v);
+                          setShowAllTx(false);
+                        }}
+                      />
+
+                      {/* Bounded Transaction List (Max 5 default) */}
+                      {selectedDayTxs.length === 0 ? (
+                        <div className="p-4 rounded-2xl bg-[#F7F3EB] text-center text-xs font-bold text-[#7A6E65]">
+                          Belum ada transaksi pada filter & tanggal ini.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {visibleDailyTxs.map((tx) => (
+                            <CompactTxItem key={tx.id} tx={tx} />
+                          ))}
+                          {selectedDayTxs.length > 5 && (
+                            <TactileButton
+                              variant="cream"
+                              size="sm"
+                              fullWidth
+                              onClick={() => setShowAllTx(!showAllTx)}
+                            >
+                              {showAllTx
+                                ? "Tutup Sebagian ▴"
+                                : `Lihat Semua (${selectedDayTxs.length} Transaksi) ▾`}
+                            </TactileButton>
+                          )}
+                        </div>
+                      )}
+                    </CozyCard>
+                  )}
+
+                  {/* TAB 2: MINGGUAN (MINGGU 1 - 4) */}
+                  {activeTab === "weekly" && (
+                    <CozyCard tone="white" className="p-4 space-y-3.5">
+                      <h4 className="font-display text-sm sm:text-base font-extrabold text-[#3D352E]">
+                        Rekap Kas 4 Minggu ({monthName})
+                      </h4>
+
+                      <div className="space-y-3">
+                        {weeklySummaries.map((w) => {
+                          const rem = Math.max(
+                            0,
+                            report.weeklyBudgetAllowance - w.expense
+                          );
+                          return (
+                            <div
+                              key={w.label}
+                              className="p-3 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] space-y-2"
+                            >
+                              <div className="flex items-center justify-between text-xs font-extrabold gap-2">
+                                <span className="font-display text-[#3D352E] truncate">
+                                  {w.label}
+                                </span>
+                                <span className="font-display tabular-nums text-[#C83E2B] shrink-0">
+                                  -{formatCompactRupiah(w.expense)}
+                                </span>
+                              </div>
+                              <VisualCashflowBar
+                                income={w.income}
+                                expense={w.expense}
+                                remaining={rem}
+                                remainingLabel="Sisa Kuota"
+                                compact
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CozyCard>
+                  )}
+
+                  {/* TAB 3: BULANAN */}
+                  {activeTab === "monthly" && (
+                    <CozyCard tone="white" className="p-4 space-y-3.5">
+                      <h4 className="font-display text-sm sm:text-base font-extrabold text-[#3D352E]">
+                        Rekapitulasi Bulanan ({monthName})
+                      </h4>
+
+                      <VisualCashflowBar
+                        income={monthlySummary.income}
+                        expense={monthlySummary.totalExpense}
+                        remaining={monthlySummary.netRemaining}
+                        remainingLabel="Sisa Uang Bersih"
+                      />
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="p-2.5 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] min-w-0">
+                          <p className="text-[10px] font-bold text-[#7A6E65]">
+                            Kebutuhan Pokok (Needs)
+                          </p>
+                          <p className="font-display text-sm font-extrabold tabular-nums text-[#3D352E] truncate">
+                            {formatCompactRupiah(monthlySummary.needsExpense)}
+                          </p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] min-w-0">
+                          <p className="text-[10px] font-bold text-[#7A6E65]">
+                            Keinginan / Jajan (Wants)
+                          </p>
+                          <p className="font-display text-sm font-extrabold tabular-nums text-[#C83E2B] truncate">
+                            {formatCompactRupiah(monthlySummary.wantsExpense)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <TxQuickFilterBar
+                        active={txFilter}
+                        onChange={(v) => {
+                          setTxFilter(v);
+                          setShowAllTx(false);
+                        }}
+                      />
+
+                      <div className="space-y-2">
+                        {visibleMonthlyTxs.map((tx) => (
+                          <CompactTxItem key={tx.id} tx={tx} />
+                        ))}
+                        {monthlySummary.filteredMonthTxs.length > 5 && (
+                          <TactileButton
+                            variant="cream"
+                            size="sm"
+                            fullWidth
+                            onClick={() => setShowAllTx(!showAllTx)}
+                          >
+                            {showAllTx
+                              ? "Tutup Sebagian ▴"
+                              : `Lihat Semua (${monthlySummary.filteredMonthTxs.length} Transaksi) ▾`}
+                          </TactileButton>
+                        )}
+                      </div>
+                    </CozyCard>
+                  )}
+                </div>
+              </div>
             </div>
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>
     </>
+  );
+}
+
+function VisualCashflowBar({
+  income,
+  expense,
+  remaining,
+  remainingLabel,
+  compact = false,
+}: {
+  income: number;
+  expense: number;
+  remaining: number;
+  remainingLabel: string;
+  compact?: boolean;
+}) {
+  const totalBase = Math.max(1, income + expense + remaining);
+  const incPct = Math.round((income / totalBase) * 100);
+  const expPct = Math.round((expense / totalBase) * 100);
+  const remPct = Math.max(0, 100 - incPct - expPct);
+
+  return (
+    <div className="space-y-2">
+      {!compact && (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="p-2.5 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] min-w-0">
+            <p className="text-[10px] font-bold text-[#7A6E65] truncate">
+              Pemasukan
+            </p>
+            <p className="font-display font-extrabold tabular-nums text-xs sm:text-sm text-[#2E6F00] truncate">
+              +{formatCompactRupiah(income)}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] min-w-0">
+            <p className="text-[10px] font-bold text-[#7A6E65] truncate">
+              Pengeluaran
+            </p>
+            <p className="font-display font-extrabold tabular-nums text-xs sm:text-sm text-[#C83E2B] truncate">
+              -{formatCompactRupiah(expense)}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] min-w-0">
+            <p className="text-[10px] font-bold text-[#7A6E65] truncate">
+              {remainingLabel}
+            </p>
+            <p className="font-display font-extrabold tabular-nums text-xs sm:text-sm text-[#4A3500] truncate">
+              {formatCompactRupiah(remaining)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-segment visual bar */}
+      <div className="h-3.5 w-full rounded-full bg-[#F3ECE0] border border-[#E2D8C5] overflow-hidden flex">
+        {income > 0 && (
+          <div
+            style={{ width: `${Math.max(10, incPct)}%` }}
+            className="bg-[#58CC02] h-full"
+            title={`Pemasukan: ${formatRupiah(income)}`}
+          />
+        )}
+        {expense > 0 && (
+          <div
+            style={{ width: `${Math.max(10, expPct)}%` }}
+            className="bg-[#FF8B7B] h-full"
+            title={`Pengeluaran: ${formatRupiah(expense)}`}
+          />
+        )}
+        {remaining > 0 && (
+          <div
+            style={{ width: `${Math.max(10, remPct)}%` }}
+            className="bg-[#FFC800] h-full"
+            title={`${remainingLabel}: ${formatRupiah(remaining)}`}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TxQuickFilterBar({
+  active,
+  onChange,
+}: {
+  active: TxFilterType;
+  onChange: (val: TxFilterType) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {(
+        [
+          { id: "all", label: "Semua" },
+          { id: "expense", label: "Pengeluaran (-Rp)" },
+          { id: "income", label: "Pemasukan (+Rp)" },
+        ] as const
+      ).map((btn) => (
+        <button
+          key={btn.id}
+          type="button"
+          onClick={() => {
+            soundEffects.tactileClick();
+            onChange(btn.id);
+          }}
+          className={cn(
+            "px-2.5 py-1 rounded-xl text-[11px] font-display font-extrabold cursor-pointer transition-all",
+            active === btn.id
+              ? "bg-[#38B6FF] text-white border-b-[2px] border-b-[#1E88E5]"
+              : "bg-[#F7F3EB] text-[#7A6E65] hover:text-[#3D352E]"
+          )}
+        >
+          {btn.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CompactTxItem({
+  tx,
+}: {
+  tx: ReturnType<typeof useBukuDompetStore.getState>["transactions"][number];
+}) {
+  return (
+    <div className="p-3 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] space-y-1.5 min-w-0">
+      <div className="flex items-center justify-between gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <CategoryIcon category={tx.category} size={22} />
+          <div className="min-w-0">
+            <p className="font-display text-xs sm:text-sm font-extrabold text-[#3D352E] truncate">
+              {tx.title}
+            </p>
+            <p className="text-[10px] font-bold text-[#7A6E65] truncate">
+              {tx.category}
+            </p>
+          </div>
+        </div>
+        <span
+          className={cn(
+            "font-display font-extrabold tabular-nums text-xs sm:text-sm shrink-0",
+            tx.type === "income" ? "text-[#2E6F00]" : "text-[#C83E2B]"
+          )}
+        >
+          {tx.type === "income" ? "+" : "-"}
+          {formatRupiah(tx.total_amount)}
+        </span>
+      </div>
+
+      {tx.items && tx.items.length > 0 && (
+        <div className="pl-7 space-y-0.5">
+          {tx.items.map((it) => (
+            <div
+              key={it.id}
+              className="flex items-center justify-between text-[11px] font-bold text-[#7A6E65]"
+            >
+              <span className="truncate pr-2">
+                • {it.item_name} {it.quantity > 1 && `x${it.quantity}`}
+              </span>
+              <span className="font-display font-extrabold tabular-nums text-[#3D352E] shrink-0">
+                {formatRupiah(it.subtotal)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,14 +1,27 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useBukuDompetStore } from "@/store/useBukuDompetStore";
+import {
+  UserPlus,
+  Users,
+  ShieldCheck,
+  CheckSquare,
+  Square,
+} from "lucide-react";
+import {
+  useBukuDompetStore,
+  type UserRole,
+} from "@/store/useBukuDompetStore";
 import {
   analyzeSpendingDetective,
   getLevelFromXp,
 } from "@/lib/spending-detective";
-import { MochiCompanion } from "@/components/illustrations/MochiCompanion";
+import {
+  CustomizablePetAvatar,
+  CASTE_META,
+} from "@/components/illustrations/PetAvatarSystem";
 import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import {
@@ -22,11 +35,13 @@ import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { GamificationFX } from "@/components/ui/GamificationFX";
 import { TransactionDrawer } from "@/components/user/TransactionDrawer";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
+import { cn, formatCompactRupiah } from "@/lib/utils";
 
 export default function AdminCommandCenterPage() {
   const router = useRouter();
   const {
     profiles,
+    supervisorAssignments,
     transactions,
     redemptions,
     isSandboxMode,
@@ -35,36 +50,86 @@ export default function AdminCommandCenterPage() {
     approveOrRejectCashout,
     updateBudgetSettings,
     addCustomMission,
+    registerNewAccount,
+    toggleSupervisorAssignment,
+    switchRoleDirect,
     resetToDemoSeed,
   } = useBukuDompetStore();
 
-  const userProfile =
-    profiles.find((p) => p.role === "user") || profiles[0];
-  const levelInfo = getLevelFromXp(userProfile.xp);
+  const userProfiles = useMemo(
+    () => profiles.filter((p) => p.role === "user"),
+    [profiles]
+  );
+  const supervisorProfiles = useMemo(
+    () => profiles.filter((p) => p.role === "supervisor"),
+    [profiles]
+  );
+
+  const [selectedTargetUserId, setSelectedTargetUserId] = useState<string>(
+    userProfiles[0]?.id || profiles[0].id
+  );
+
+  const targetUserProfile =
+    userProfiles.find((u) => u.id === selectedTargetUserId) ||
+    userProfiles[0] ||
+    profiles[0];
+
+  const targetUserTransactions = useMemo(
+    () => transactions.filter((t) => t.user_id === targetUserProfile.id),
+    [transactions, targetUserProfile.id]
+  );
+
+  const levelInfo = getLevelFromXp(targetUserProfile.xp);
 
   const report = analyzeSpendingDetective({
-    transactions,
-    monthlyBudgetTarget: userProfile.monthly_budget_target,
-    monthlySavingTarget: userProfile.monthly_saving_target,
+    transactions: targetUserTransactions,
+    monthlyBudgetTarget: targetUserProfile.monthly_budget_target,
+    monthlySavingTarget: targetUserProfile.monthly_saving_target,
     userLevel: levelInfo.level,
+    currentStage: targetUserProfile.currentStage || 1,
+    petCustomName: targetUserProfile.petCustomName || "Mochi",
   });
 
-  // Budget Configurator Form State
-  const [budgetInput, setBudgetInput] = useState<string>(
-    String(userProfile.monthly_budget_target)
-  );
-  const [savingInput, setSavingInput] = useState<string>(
-    String(userProfile.monthly_saving_target)
+  // 1. Form Tambah Pengguna Baru (Register) State
+  const [newDisplayName, setNewDisplayName] = useState<string>("");
+  const [newUsername, setNewUsername] = useState<string>("");
+  const [newPinCode, setNewPinCode] = useState<string>("1234");
+  const [newRole, setNewRole] = useState<UserRole>("user");
+  const [newBudgetTarget, setNewBudgetTarget] = useState<string>("1500000");
+  const [newPetName, setNewPetName] = useState<string>("Mochi");
+  const [registerFeedback, setRegisterFeedback] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+
+  // 2. Matriks Penugasan Supervisor State
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>(
+    supervisorProfiles[0]?.id || ""
   );
 
-  // Custom Mission Injector State
+  const activeSelectedSupervisor =
+    supervisorProfiles.find((s) => s.id === selectedSupervisorId) ||
+    supervisorProfiles[0];
+
+  // 3. Budget Configurator Form State
+  const [budgetInput, setBudgetInput] = useState<string>(
+    String(targetUserProfile.monthly_budget_target)
+  );
+  const [savingInput, setSavingInput] = useState<string>(
+    String(targetUserProfile.monthly_saving_target)
+  );
+
+  // 4. Custom Mission Injector State
   const [missionTitle, setMissionTitle] = useState<string>(
     "Tantangan Spesial Abang: Catat Struk Kantin"
   );
   const [missionDesc, setMissionDesc] = useState<string>(
     "Catat pengeluaran makan siang dengan rincian jujur hari ini!"
   );
-  const [missionPoints, setMissionPoints] = useState<string>("250");
+  const [missionPoints, setMissionPoints] = useState<string>("150");
+
+  // Bounded list state for redemption history
+  const [showAllHistory, setShowAllHistory] = useState<boolean>(false);
 
   // Confirm Modal States
   const [pendingAction, setPendingAction] = useState<{
@@ -80,6 +145,32 @@ export default function AdminCommandCenterPage() {
 
   const pendingRedemptions = redemptions.filter((r) => r.status === "pending");
   const historyRedemptions = redemptions.filter((r) => r.status !== "pending");
+  const visibleHistoryRedemptions = showAllHistory
+    ? historyRedemptions
+    : historyRedemptions.slice(0, 5);
+
+  const handleRegisterAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = registerNewAccount({
+      displayName: newDisplayName,
+      username: newUsername,
+      pinCode: newPinCode,
+      role: newRole,
+      monthlyBudgetTarget:
+        newRole === "user" ? Number(newBudgetTarget) || 1500000 : undefined,
+      petCustomName: newRole === "user" ? newPetName : undefined,
+    });
+    setRegisterFeedback(res);
+    if (res.success) {
+      soundEffects.comboFanfare();
+      fireCozyConfetti("combo");
+      setNewDisplayName("");
+      setNewUsername("");
+      setNewPinCode("1234");
+    } else {
+      soundEffects.detectiveBuzz();
+    }
+  };
 
   const executePendingConfirm = () => {
     if (!pendingAction) return;
@@ -100,7 +191,8 @@ export default function AdminCommandCenterPage() {
       soundEffects.coinChime();
       updateBudgetSettings(
         Number(budgetInput) || 1800000,
-        Number(savingInput) || 350000
+        Number(savingInput) || 350000,
+        targetUserProfile.id
       );
     } else if (pendingAction.type === "reset_demo") {
       soundEffects.tactileClick();
@@ -121,13 +213,14 @@ export default function AdminCommandCenterPage() {
       description: missionDesc.trim(),
       mission_type: "saving_challenge",
       target_value: 1,
-      reward_points: Number(missionPoints) || 200,
-      reward_xp: 75,
+      reward_points: Number(missionPoints) || 150,
+      reward_xp: 120,
+      targetUserId: targetUserProfile.id,
     });
   };
 
   return (
-    <div className="min-h-screen text-[#3D352E] pb-16">
+    <div className="min-h-screen text-[#3D352E] pb-16 overflow-x-hidden">
       <PageTransitionLoader />
       <GamificationFX />
       <FloatingRewardBanner />
@@ -144,25 +237,27 @@ export default function AdminCommandCenterPage() {
             : pendingAction?.type === "reject_cashout"
             ? "Tolak Tiket Pencairan Poin?"
             : pendingAction?.type === "save_budget"
-            ? "Simpan Perubahan Target Budget?"
+            ? `Simpan Target Budget ${targetUserProfile.display_name}?`
             : pendingAction?.type === "reset_demo"
             ? "Reset Seluruh Data Demo?"
-            : "Kembali ke Pintu PIN?"
+            : "Keluar ke Halaman Login?"
         }
         description={
           pendingAction?.type === "approve_cashout"
-            ? "Saat disetujui, sistem otomatis membuat transaksi pemasukan 'Hadiah Tukar Poin Gamifikasi' di Buku Kas Adik!"
+            ? "Saat disetujui, sistem otomatis membuat transaksi pemasukan 'Hadiah Tukar Poin Gamifikasi' di Buku Kas pengguna terkait!"
             : pendingAction?.type === "reject_cashout"
-            ? "Tiket akan dibatalkan dan saldo Poin akan dikembalikan utuh ke dompet Adik."
+            ? "Tiket akan dibatalkan dan saldo Poin akan dikembalikan utuh ke dompet pengguna."
             : pendingAction?.type === "save_budget"
-            ? `Uang saku bulanan akan diatur ke ${formatRupiah(
+            ? `Uang saku bulanan ${
+                targetUserProfile.display_name
+              } akan diatur ke ${formatRupiah(
                 Number(budgetInput) || 0
               )} dengan target tabungan ${formatRupiah(
                 Number(savingInput) || 0
-              )}. Rumus DSSL Detektif Mochi akan otomatis menyesuaikan.`
+              )}. Rumus DSSL akan otomatis menyesuaikan.`
             : pendingAction?.type === "reset_demo"
-            ? "Seluruh transaksi, poin, misi, dan evolusi akan dikembalikan ke data awal (Seed Data)."
-            : "Anda akan kembali ke layar pemilihan profil keluarga."
+            ? "Seluruh akun tambahan, transaksi, poin, misi, dan evolusi akan dikembalikan ke data awal (Seed Data)."
+            : "Anda akan kembali ke layar Login Kredensial."
         }
         confirmLabel={
           pendingAction?.type === "reject_cashout"
@@ -171,8 +266,9 @@ export default function AdminCommandCenterPage() {
         }
         confirmVariant={
           pendingAction?.type === "reject_cashout" ||
-          pendingAction?.type === "reset_demo"
-            ? "berry"
+          pendingAction?.type === "reset_demo" ||
+          pendingAction?.type === "exit_login"
+            ? "peach"
             : "matcha"
         }
         mochiStage={5}
@@ -184,39 +280,49 @@ export default function AdminCommandCenterPage() {
 
       {/* Top Sticky Admin Command Bar & Role View Switcher */}
       <header className="sticky top-0 z-40 bg-[#FFFDF9]/92 backdrop-blur-md border-b-2 border-[#E6DFD2]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
             <BukuDompetLogo
               variant="mark"
               size="sm"
-              className="sm:hidden w-10 h-10"
+              className="sm:hidden w-10 h-10 shrink-0"
             />
             <BukuDompetLogo
               variant="full"
               size="sm"
-              className="hidden sm:block h-10 w-auto"
+              className="hidden sm:block h-10 w-auto shrink-0"
             />
-            <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EEF8FF] border-2 border-[#BCE3FF] text-xs font-display font-extrabold">
+            <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E3F4FF] border-2 border-[#9AD2FF] text-xs font-display font-extrabold text-[#1565C0] truncate">
               <CozyIcon name="crown_sultan" size={18} />
-              Command Center Abang (Admin)
+              Command Center Abang (Admin Multi-User)
             </span>
           </div>
 
           {/* Instant Role View Switcher */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Link
               href="/app"
-              onClick={() => soundEffects.tactileClick()}
-              className="px-3 py-1.5 rounded-xl bg-[#EFFBE6] border-2 border-[#C3EFA4] border-b-[4px] border-b-[#9EE070] text-xs font-display font-extrabold flex items-center gap-1.5 hover:bg-[#58CC02] hover:text-white transition-colors"
+              onClick={() => {
+                soundEffects.tactileClick();
+                switchRoleDirect("user", targetUserProfile.id);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center gap-1.5 hover:bg-white transition-colors text-[#3D352E]"
             >
-              <CozyIcon name="home_path" size={18} /> User View (Adik)
+              <CozyIcon name="home_path" size={18} />
+              <span className="hidden sm:inline">User View</span>
             </Link>
             <Link
               href="/supervisor"
-              onClick={() => soundEffects.tactileClick()}
-              className="px-3 py-1.5 rounded-xl bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C] text-xs font-display font-extrabold flex items-center gap-1.5"
+              onClick={() => {
+                soundEffects.tactileClick();
+                if (activeSelectedSupervisor) {
+                  switchRoleDirect("supervisor", activeSelectedSupervisor.id);
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center gap-1.5 hover:bg-white transition-colors text-[#3D352E]"
             >
-              <CozyIcon name="parent_heart" size={18} /> Supervisor
+              <CozyIcon name="parent_heart" size={18} />
+              <span className="hidden sm:inline">Supervisor</span>
             </Link>
             <button
               type="button"
@@ -224,54 +330,63 @@ export default function AdminCommandCenterPage() {
                 soundEffects.tactileClick();
                 setPendingAction({ type: "exit_login" });
               }}
-              className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-[#FFF2F0] hover:bg-[#FFEAE6] border-2 border-[#FFCDC6] border-b-[4px] border-b-[#FFA89C] text-xs font-display font-extrabold flex items-center gap-1 cursor-pointer text-[#C83E2B]"
             >
-              <CozyIcon name="lock_cozy" size={16} /> Pintu PIN
+              <CozyIcon name="lock_cozy" size={16} /> Login
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
-        {/* 1. Sandbox / Simulasi Pencatatan Banner */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6 min-w-0 max-w-full overflow-hidden">
+        {/* 1. Sandbox / Simulasi Pencatatan Banner (Single Soft Pastel Sky Hero Card) */}
         <CozyCard
-          tone={isSandboxMode ? "taro" : "sky"}
+          tone="sky"
           className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
         >
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex items-center justify-center shrink-0">
-              <MochiCompanion stage={5} mood="happy" className="w-16 h-16" />
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="w-18 h-20 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex items-center justify-center shrink-0 p-1">
+              <CustomizablePetAvatar
+                species={targetUserProfile.activeSpecies || "cat"}
+                stage={targetUserProfile.currentStage || 1}
+                mood="happy"
+                customName={targetUserProfile.petCustomName || "Mochi"}
+                equippedAccessories={targetUserProfile.equippedAccessories}
+                className="w-16 h-18"
+              />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-full bg-white border border-[#BCE3FF] text-xs font-display font-extrabold inline-flex items-center gap-1">
+                <span className="px-2.5 py-0.5 rounded-full bg-white border border-[#BCE3FF] text-xs font-display font-extrabold text-[#1565C0] inline-flex items-center gap-1">
                   <CozyIcon name="combo_sparkle" size={16} />
                   {isSandboxMode
                     ? "Mode Simulasi Sandbox: AKTIF"
                     : "Mode Live Buku Kas: AKTIF"}
                 </span>
-                <span className="text-xs font-display font-extrabold tabular-nums text-[#3D352E]">
-                  Saldo Poin Adik: {formatRupiah(userProfile.points_balance)}
+                <span className="text-xs font-display font-extrabold tabular-nums text-[#4A3500] bg-[#FFFBEB] px-2.5 py-0.5 rounded-full border border-[#FDE08D]">
+                  Total Akun Terdaftar: {profiles.length} Akun (
+                  {userProfiles.length} User, {supervisorProfiles.length}{" "}
+                  Supervisor)
                 </span>
               </div>
-              <h2 className="font-display text-xl font-extrabold text-[#3D352E]">
-                Simulasi Catat Uang & Efek Gamifikasi
-              </h2>
+              <h1 className="font-display text-xl font-extrabold text-[#3D352E] truncate">
+                Pusat Kendali RBAC, Anggaran & Ekonomi BukuDompet
+              </h1>
               <p className="text-xs sm:text-sm font-bold text-[#3D352E]/85">
-                Abang bisa langsung menguji fitur Smart Quick-Split, Combo
-                Detail (+35 Poin), dan partikel koin terbang di sini!
+                Daftarkan pengguna baru, atur penugasan Supervisor, dan kelola
+                pencairan Tiket Emas seluruh pengguna!
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto shrink-0">
             <TactileButton
-              variant={isSandboxMode ? "honey" : "cream"}
+              variant="cream"
               size="md"
               onClick={toggleSandboxMode}
             >
               <CozyIcon name="combo_sparkle" size={18} />
-              {isSandboxMode ? "Matikan Sandbox" : "Aktifkan Mode Simulasi"}
+              {isSandboxMode ? "Matikan Sandbox" : "Aktifkan Simulasi"}
             </TactileButton>
 
             <TactileButton
@@ -279,7 +394,7 @@ export default function AdminCommandCenterPage() {
               size="md"
               onClick={() => setTransactionDrawerOpen(true)}
             >
-              <CozyIcon name="plus_record" size={20} /> Uji Catat Transaksi
+              <CozyIcon name="plus_record" size={20} /> + Uji Catat Kas
             </TactileButton>
 
             <TactileButton
@@ -293,150 +408,471 @@ export default function AdminCommandCenterPage() {
           </div>
         </CozyCard>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* 2. Approval Pencairan Poin (Cashout Queue: 1 Poin = Rp 1) */}
+        {/* ============================================================
+            SECTION BARU WAJIB (TUGAS 1.3):
+            MANAJEMEN PENGGUNA & PENUGASAN SUPERVISOR
+           ============================================================ */}
+        <CozyCard tone="white" className="p-5 sm:p-6 space-y-5">
+          <div className="flex items-center justify-between gap-2 flex-wrap border-b-2 border-[#E6DFD2] pb-4">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Users className="w-7 h-7 text-[#1565C0] shrink-0" />
+              <div className="min-w-0">
+                <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] truncate">
+                  Manajemen Pengguna & Penugasan Supervisor (RBAC)
+                </h2>
+                <p className="text-xs font-bold text-[#7A6E65]">
+                  Pendaftaran akun baru hanya dapat dilakukan oleh Admin di sini.
+                  Atur juga siapa memantau siapa pada matriks di sebelah kanan!
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-display font-extrabold text-[#3D352E]">
+              {supervisorAssignments.length} Relasi Penugasan Aktif
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* SUB-PANEL 1: FORM TAMBAH PENGGUNA BARU (REGISTER) */}
+            <div className="lg:col-span-6 p-4 rounded-3xl bg-[#F7F3EB] border-2 border-[#E6DFD2] space-y-3.5">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-[#2E6F00]" />
+                <h3 className="font-display text-base font-extrabold text-[#3D352E]">
+                  1. Form Tambah Pengguna Baru (Register)
+                </h3>
+              </div>
+
+              <form onSubmit={handleRegisterAccount} className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
+                      Nama Tampilan
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newDisplayName}
+                      onChange={(e) => setNewDisplayName(e.target.value)}
+                      placeholder="Cth: Adik Dito (SMP)"
+                      className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white text-xs sm:text-sm font-bold text-[#3D352E] focus:outline-none focus:border-[#38B6FF]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
+                      Username Login
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newUsername}
+                      onChange={(e) => setNewUsername(e.target.value)}
+                      placeholder="Cth: dito"
+                      className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white text-xs sm:text-sm font-bold text-[#3D352E] focus:outline-none focus:border-[#38B6FF]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
+                      PIN / Password
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newPinCode}
+                      onChange={(e) => setNewPinCode(e.target.value)}
+                      placeholder="Cth: 1414"
+                      className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E] focus:outline-none focus:border-[#38B6FF]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
+                      Role Akun
+                    </label>
+                    <select
+                      value={newRole}
+                      onChange={(e) => setNewRole(e.target.value as UserRole)}
+                      className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E] focus:outline-none"
+                    >
+                      <option value="user">User (Penabung / Anak)</option>
+                      <option value="supervisor">
+                        Supervisor (Orang Tua / Wali)
+                      </option>
+                      <option value="admin">Admin (Pengelola Utama)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {newRole === "user" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
+                        Target Budget Bulanan Awal (Rp)
+                      </label>
+                      <input
+                        type="number"
+                        value={newBudgetTarget}
+                        onChange={(e) => setNewBudgetTarget(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display tabular-nums text-xs sm:text-sm font-extrabold text-[#3D352E]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
+                        Nama Pet Awal
+                      </label>
+                      <input
+                        type="text"
+                        value={newPetName}
+                        onChange={(e) => setNewPetName(e.target.value)}
+                        placeholder="Mochi"
+                        className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E]"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {registerFeedback && (
+                  <div
+                    className={cn(
+                      "p-2.5 rounded-xl border text-xs font-extrabold",
+                      registerFeedback.success
+                        ? "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]"
+                        : "bg-[#FFF2F0] border-[#FFCDC6] text-[#C83E2B]"
+                    )}
+                  >
+                    {registerFeedback.message}
+                  </div>
+                )}
+
+                <TactileButton
+                  type="submit"
+                  variant="matcha"
+                  size="md"
+                  fullWidth
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Daftarkan Akun Baru Sekarang
+                </TactileButton>
+              </form>
+            </div>
+
+            {/* SUB-PANEL 2: MATRIKS PENUGASAN SUPERVISOR (ASSIGN MONITORING) */}
+            <div className="lg:col-span-6 p-4 rounded-3xl bg-[#F7F3EB] border-2 border-[#E6DFD2] space-y-3.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-[#1565C0]" />
+                  <h3 className="font-display text-base font-extrabold text-[#3D352E]">
+                    2. Matriks Penugasan Supervisor
+                  </h3>
+                </div>
+                <span className="text-[11px] font-bold text-[#7A6E65]">
+                  Klik untuk centang / lepas akses pantau
+                </span>
+              </div>
+
+              {activeSelectedSupervisor ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
+                      Pilih Akun Supervisor yang Akan Diatur:
+                    </label>
+                    <select
+                      value={activeSelectedSupervisor.id}
+                      onChange={(e) => {
+                        soundEffects.tactileClick();
+                        setSelectedSupervisorId(e.target.value);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E] focus:outline-none"
+                    >
+                      {supervisorProfiles.map((sup) => (
+                        <option key={sup.id} value={sup.id}>
+                          {sup.display_name} (Username: @{sup.username} • PIN:{" "}
+                          {sup.pin_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-display font-extrabold text-[#3D352E]">
+                      Centang Akun User yang Boleh Dipantau oleh{" "}
+                      <span className="text-[#1565C0]">
+                        {activeSelectedSupervisor.display_name}
+                      </span>
+                      :
+                    </p>
+
+                    <div className="space-y-2 max-h-[230px] overflow-y-auto pr-1">
+                      {userProfiles.map((usr) => {
+                        const isAssigned = supervisorAssignments.some(
+                          (a) =>
+                            a.supervisorId === activeSelectedSupervisor.id &&
+                            a.userId === usr.id
+                        );
+                        return (
+                          <button
+                            key={usr.id}
+                            type="button"
+                            onClick={() => {
+                              soundEffects.tactileClick();
+                              toggleSupervisorAssignment(
+                                activeSelectedSupervisor.id,
+                                usr.id
+                              );
+                            }}
+                            className={cn(
+                              "w-full p-3 rounded-2xl border-2 flex items-center justify-between gap-3 text-left transition-all cursor-pointer",
+                              isAssigned
+                                ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[4px] border-b-[#9EE070]"
+                                : "bg-white border-[#E6DFD2] hover:bg-[#FFFDF9]"
+                            )}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {isAssigned ? (
+                                <CheckSquare className="w-5 h-5 text-[#2E6F00] shrink-0" />
+                              ) : (
+                                <Square className="w-5 h-5 text-[#7A6E65] shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-display text-xs sm:text-sm font-extrabold text-[#3D352E] truncate">
+                                  {usr.display_name}{" "}
+                                  <span className="text-[#7A6E65] font-bold">
+                                    (@{usr.username})
+                                  </span>
+                                </p>
+                                <p className="text-[11px] font-bold text-[#7A6E65] truncate">
+                                  Pet: {usr.petCustomName || "Mochi"} • Kasta #
+                                  {usr.currentStage || 1} (
+                                  {CASTE_META[usr.currentStage || 1].name})
+                                </p>
+                              </div>
+                            </div>
+
+                            <span
+                              className={cn(
+                                "px-2.5 py-0.5 rounded-lg text-[10px] font-display font-extrabold shrink-0",
+                                isAssigned
+                                  ? "bg-white border border-[#C3EFA4] text-[#2E6F00]"
+                                  : "bg-[#F7F3EB] border border-[#E6DFD2] text-[#7A6E65]"
+                              )}
+                            >
+                              {isAssigned ? "Dipantau" : "Tidak Dipantau"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs font-bold text-[#7A6E65]">
+                  Belum ada akun Supervisor. Tambahkan akun dengan role
+                  Supervisor di sebelah kiri.
+                </p>
+              )}
+            </div>
+          </div>
+        </CozyCard>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start min-w-0">
+          {/* 2. Approval Pencairan Poin (Neutral White Card) */}
           <CozyCard tone="white" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-between gap-2 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <CozyIcon name="rewards_ticket" size={30} />
-                <div>
-                  <h2 className="font-display text-xl font-extrabold text-[#3D352E]">
+                <div className="min-w-0">
+                  <h2 className="font-display text-xl font-extrabold text-[#3D352E] truncate">
                     Antrean Approval Pencairan Poin
                   </h2>
                   <p className="text-xs font-bold text-[#7A6E65]">
                     Saat disetujui, otomatis membuat transaksi pemasukan{" "}
-                    <em>&ldquo;Hadiah Tukar Poin Gamifikasi&rdquo;</em> di kas Adik!
+                    <em>&ldquo;Hadiah Tukar Poin Gamifikasi&rdquo;</em> di kas
+                    pengguna!
                   </p>
                 </div>
               </div>
-              <span className="px-3 py-1 rounded-xl bg-[#FFFBEB] border border-[#FDE08D] font-display tabular-nums text-xs font-extrabold">
+              <span className="px-3 py-1 rounded-xl bg-[#FFFBEB] border border-[#FDE08D] font-display tabular-nums text-xs font-extrabold text-[#4A3500] shrink-0">
                 {pendingRedemptions.length} Pending
               </span>
             </div>
 
             {pendingRedemptions.length === 0 ? (
               <div className="p-5 rounded-2xl bg-[#EFFBE6] border border-[#C3EFA4] text-center space-y-1">
-                <p className="font-display text-base font-extrabold text-[#3D352E]">
+                <p className="font-display text-base font-extrabold text-[#2E6F00]">
                   Semua Tiket Pencairan Sudah Diproses!
                 </p>
-                <p className="text-xs font-bold text-[#7A6E65]">
-                  Adik dapat mengajukan pencairan baru dari menu Koleksi & Tukar
-                  Poin.
+                <p className="text-xs font-bold text-[#3D352E]">
+                  Pengguna dapat mengajukan pencairan baru dari menu Tukar Poin.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {pendingRedemptions.map((req) => (
-                  <div
-                    key={req.id}
-                    className="p-4 rounded-2xl bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C] space-y-3"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <span className="px-2 py-0.5 rounded-lg bg-white border border-[#FDE08D] text-[10px] font-display font-extrabold uppercase">
-                          Menunggu Persetujuan Sponsor
-                        </span>
-                        <p className="font-display text-xl font-extrabold tabular-nums text-[#3D352E] mt-1 flex items-center gap-1.5">
-                          <CozyIcon name="coin_rupiah" size={24} />
-                          {formatRupiah(req.rupiah_value)}{" "}
-                          <span className="text-xs text-[#7A6E65]">
-                            ({req.points_redeemed.toLocaleString("id-ID")} Poin)
+              <div className="space-y-3 min-w-0">
+                {pendingRedemptions.map((req) => {
+                  const requester = profiles.find((p) => p.id === req.user_id);
+                  return (
+                    <div
+                      key={req.id}
+                      className="p-4 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] space-y-3 min-w-0 overflow-hidden"
+                    >
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="min-w-0">
+                          <span className="px-2 py-0.5 rounded-lg bg-[#FFFBEB] border border-[#FDE08D] text-[10px] font-display font-extrabold uppercase text-[#4A3500]">
+                            Pemohon:{" "}
+                            {requester ? requester.display_name : "User"}
                           </span>
-                        </p>
-                        <p className="text-xs font-bold text-[#3D352E] mt-1">
-                          Catatan Adik: &ldquo;{req.note}&rdquo;
-                        </p>
+                          <p className="font-display text-xl font-extrabold tabular-nums text-[#4A3500] mt-1 flex items-center gap-1.5 truncate">
+                            <CozyIcon name="coin_rupiah" size={24} />
+                            <span className="truncate">
+                              {formatRupiah(req.rupiah_value)}
+                            </span>{" "}
+                            <span className="text-xs text-[#7A6E65] shrink-0">
+                              ({req.points_redeemed.toLocaleString("id-ID")}{" "}
+                              Poin)
+                            </span>
+                          </p>
+                          <p className="text-xs font-bold text-[#3D352E] mt-1">
+                            Catatan: &ldquo;{req.note}&rdquo;
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <TactileButton
+                          variant="matcha"
+                          size="sm"
+                          onClick={() =>
+                            setPendingAction({
+                              type: "approve_cashout",
+                              redemptionId: req.id,
+                              amount: req.rupiah_value,
+                            })
+                          }
+                        >
+                          <CozyIcon name="check_badge" size={18} />
+                          Setujui ({formatCompactRupiah(req.rupiah_value)})
+                        </TactileButton>
+                        <TactileButton
+                          variant="peach"
+                          size="sm"
+                          onClick={() =>
+                            setPendingAction({
+                              type: "reject_cashout",
+                              redemptionId: req.id,
+                              amount: req.rupiah_value,
+                            })
+                          }
+                        >
+                          Tolak & Kembalikan Poin
+                        </TactileButton>
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <TactileButton
-                        variant="matcha"
-                        size="sm"
-                        onClick={() =>
-                          setPendingAction({
-                            type: "approve_cashout",
-                            redemptionId: req.id,
-                            amount: req.rupiah_value,
-                          })
-                        }
-                      >
-                        <CozyIcon name="check_badge" size={18} />
-                        Setujui & Cairkan Rp
-                        {req.rupiah_value.toLocaleString("id-ID")}
-                      </TactileButton>
-                      <TactileButton
-                        variant="berry"
-                        size="sm"
-                        onClick={() =>
-                          setPendingAction({
-                            type: "reject_cashout",
-                            redemptionId: req.id,
-                            amount: req.rupiah_value,
-                          })
-                        }
-                      >
-                        Tolak & Kembalikan Poin
-                      </TactileButton>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
-            {/* Approved / Rejected History */}
-            <div className="pt-2 space-y-2">
-              <h3 className="font-display text-sm font-extrabold text-[#7A6E65] uppercase">
-                Riwayat Pencairan Sebelumnya
-              </h3>
-              {historyRedemptions.map((item) => (
-                <div
-                  key={item.id}
-                  className="p-3 rounded-2xl bg-[#F9F4EA] border border-[#E6DFD2] flex items-center justify-between text-xs font-bold"
-                >
-                  <div>
-                    <p className="font-display font-extrabold tabular-nums text-[#3D352E]">
-                      {formatRupiah(item.rupiah_value)} ({item.points_redeemed}{" "}
-                      Poin)
-                    </p>
-                    <p className="text-[#7A6E65]">{item.note}</p>
-                  </div>
-                  <span
-                    className={`px-2.5 py-1 rounded-xl border font-display font-extrabold inline-flex items-center gap-1 ${
-                      item.status === "approved"
-                        ? "bg-[#EFFBE6] border-[#C3EFA4] text-[#46A302]"
-                        : "bg-[#FFF0F0] border-[#FFC2C2] text-[#EA2B2B]"
-                    }`}
+            {/* Approved / Rejected History (Bounded List Pattern: Max 5 visible) */}
+            <div className="pt-2 space-y-2 min-w-0">
+              <div className="flex items-center justify-between">
+                <h3 className="font-display text-sm font-extrabold text-[#7A6E65] uppercase">
+                  Riwayat Pencairan Sebelumnya
+                </h3>
+                <span className="text-xs font-display font-extrabold text-[#7A6E65]">
+                  {historyRedemptions.length} Riwayat
+                </span>
+              </div>
+              {visibleHistoryRedemptions.map((item) => {
+                const requester = profiles.find((p) => p.id === item.user_id);
+                return (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] flex items-center justify-between gap-2 text-xs font-bold min-w-0 overflow-hidden"
                   >
-                    <CozyIcon
-                      name={
+                    <div className="min-w-0">
+                      <p className="font-display font-extrabold tabular-nums text-[#3D352E] truncate">
+                        {formatRupiah(item.rupiah_value)} (
+                        {item.points_redeemed} Poin) —{" "}
+                        {requester?.display_name || "User"}
+                      </p>
+                      <p className="text-[#7A6E65] truncate">{item.note}</p>
+                    </div>
+                    <span
+                      className={`px-2.5 py-1 rounded-xl border font-display font-extrabold inline-flex items-center gap-1 shrink-0 ${
                         item.status === "approved"
-                          ? "check_badge"
-                          : "warning_siren"
-                      }
-                      size={14}
-                    />
-                    {item.status === "approved" ? "Disetujui" : "Ditolak"}
-                  </span>
-                </div>
-              ))}
+                          ? "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]"
+                          : "bg-[#FFF2F0] border-[#FFCDC6] text-[#C83E2B]"
+                      }`}
+                    >
+                      <CozyIcon
+                        name={
+                          item.status === "approved"
+                            ? "check_badge"
+                            : "warning_siren"
+                        }
+                        size={14}
+                      />
+                      {item.status === "approved" ? "Disetujui" : "Ditolak"}
+                    </span>
+                  </div>
+                );
+              })}
+              {historyRedemptions.length > 5 && (
+                <TactileButton
+                  variant="cream"
+                  size="sm"
+                  fullWidth
+                  onClick={() => setShowAllHistory((prev) => !prev)}
+                >
+                  {showAllHistory
+                    ? "Sembunyikan Sebagian ▴"
+                    : `Lihat Semua (${historyRedemptions.length} Riwayat) ▾`}
+                </TactileButton>
+              )}
             </div>
           </CozyCard>
 
-          {/* 3. Budget & Challenge Configurator */}
-          <div className="space-y-6">
+          {/* 3. Budget & Challenge Configurator (Neutral White Cards) */}
+          <div className="space-y-6 min-w-0 max-w-full overflow-hidden">
             <CozyCard tone="white" className="space-y-4">
-              <div className="flex items-center gap-2.5">
-                <CozyIcon name="cat_saving" size={28} />
-                <div>
-                  <h2 className="font-display text-xl font-extrabold text-[#3D352E]">
-                    Pengaturan Target Budget & Tabungan
-                  </h2>
-                  <p className="text-xs font-bold text-[#7A6E65]">
-                    Otomatis memperbarui rumus DSSL (Batas Aman Harian) Detektif
-                    Mochi
-                  </p>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <CozyIcon name="cat_saving" size={28} />
+                  <div className="min-w-0">
+                    <h2 className="font-display text-xl font-extrabold text-[#3D352E] truncate">
+                      Pengaturan Target Budget & Tabungan
+                    </h2>
+                    <p className="text-xs font-bold text-[#7A6E65]">
+                      Pilih pengguna dan sesuaikan jatah bulanan serta target
+                      tabungannya
+                    </p>
+                  </div>
                 </div>
+              </div>
+
+              <div className="min-w-0">
+                <label className="block text-xs font-display font-extrabold uppercase text-[#7A6E65] mb-1">
+                  Pilih Akun User:
+                </label>
+                <select
+                  value={targetUserProfile.id}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    setSelectedTargetUserId(nextId);
+                    const found = userProfiles.find((u) => u.id === nextId);
+                    if (found) {
+                      setBudgetInput(String(found.monthly_budget_target));
+                      setSavingInput(String(found.monthly_saving_target));
+                    }
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-2xl border-2 border-[#E6DFD2] bg-[#F7F3EB] font-display text-xs sm:text-sm font-extrabold text-[#3D352E]"
+                >
+                  {userProfiles.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.display_name} (@{u.username}) — Saldo:{" "}
+                      {u.points_balance} Poin
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <form
@@ -444,9 +880,9 @@ export default function AdminCommandCenterPage() {
                   e.preventDefault();
                   setPendingAction({ type: "save_budget" });
                 }}
-                className="space-y-3.5"
+                className="space-y-3.5 min-w-0"
               >
-                <div>
+                <div className="min-w-0">
                   <label className="block text-xs font-display font-extrabold uppercase text-[#7A6E65] mb-1">
                     Jatah Uang Saku Bulanan (Rp)
                   </label>
@@ -458,7 +894,7 @@ export default function AdminCommandCenterPage() {
                   />
                 </div>
 
-                <div>
+                <div className="min-w-0">
                   <label className="block text-xs font-display font-extrabold uppercase text-[#7A6E65] mb-1">
                     Target Tabungan Wajib Bulanan (Rp)
                   </label>
@@ -470,16 +906,18 @@ export default function AdminCommandCenterPage() {
                   />
                 </div>
 
-                <div className="p-3 rounded-2xl bg-[#EEF8FF] border border-[#BCE3FF] text-xs font-bold flex items-center justify-between">
-                  <span>Batas Aman Harian (DSSL) Saat Ini:</span>
-                  <span className="font-display font-extrabold tabular-nums text-sm text-[#3D352E]">
+                <div className="p-3 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-bold flex items-center justify-between gap-2 min-w-0">
+                  <span className="truncate">
+                    Batas Aman Harian (DSSL) {targetUserProfile.display_name}:
+                  </span>
+                  <span className="font-display font-extrabold tabular-nums text-sm text-[#2E6F00] shrink-0">
                     {formatRupiah(report.dssl)} / hari
                   </span>
                 </div>
 
                 <TactileButton
                   type="submit"
-                  variant="sky"
+                  variant="matcha"
                   size="md"
                   fullWidth
                 >
@@ -489,34 +927,34 @@ export default function AdminCommandCenterPage() {
               </form>
             </CozyCard>
 
-            {/* Inject Bonus Mission for Sister */}
-            <CozyCard tone="vanilla" className="space-y-3.5">
-              <div className="flex items-center gap-2.5">
+            {/* Inject Bonus Mission for Selected User (Neutral White Card) */}
+            <CozyCard tone="white" className="space-y-3.5">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <CozyIcon name="missions_scroll" size={26} />
-                <div>
-                  <h3 className="font-display text-lg font-extrabold text-[#3D352E]">
-                    Kirim Misi Tantangan Baru untuk Adik
+                <div className="min-w-0">
+                  <h3 className="font-display text-lg font-extrabold text-[#3D352E] truncate">
+                    Kirim Misi Tantangan ke {targetUserProfile.display_name}
                   </h3>
                   <p className="text-xs font-bold text-[#7A6E65]">
-                    Tambahkan misi spesial berhadiah Poin langsung ke layar Adik
+                    Tambahkan misi evaluasi spesial berhadiah Poin & Stage XP
                   </p>
                 </div>
               </div>
 
-              <form onSubmit={handleAddMission} className="space-y-3">
+              <form onSubmit={handleAddMission} className="space-y-3 min-w-0">
                 <input
                   type="text"
                   value={missionTitle}
                   onChange={(e) => setMissionTitle(e.target.value)}
                   placeholder="Judul Misi"
-                  className="w-full px-3.5 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white text-xs sm:text-sm font-bold"
+                  className="w-full px-3.5 py-2 rounded-xl border-2 border-[#E6DFD2] bg-[#FFFDF9] text-xs sm:text-sm font-bold"
                 />
                 <input
                   type="text"
                   value={missionDesc}
                   onChange={(e) => setMissionDesc(e.target.value)}
                   placeholder="Deskripsi Misi"
-                  className="w-full px-3.5 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white text-xs sm:text-sm font-bold"
+                  className="w-full px-3.5 py-2 rounded-xl border-2 border-[#E6DFD2] bg-[#FFFDF9] text-xs sm:text-sm font-bold"
                 />
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-display font-extrabold text-[#7A6E65]">
@@ -526,17 +964,17 @@ export default function AdminCommandCenterPage() {
                     type="number"
                     value={missionPoints}
                     onChange={(e) => setMissionPoints(e.target.value)}
-                    className="w-32 px-3 py-1.5 rounded-xl border-2 border-[#E6DFD2] bg-white font-display font-extrabold tabular-nums text-sm"
+                    className="w-32 px-3 py-1.5 rounded-xl border-2 border-[#E6DFD2] bg-[#FFFDF9] font-display font-extrabold tabular-nums text-sm"
                   />
                 </div>
                 <TactileButton
                   type="submit"
-                  variant="taro"
+                  variant="matcha"
                   size="sm"
                   fullWidth
                 >
                   <CozyIcon name="plus_record" size={18} />
-                  Luncurkan Misi Bonus ke Adik!
+                  Luncurkan Misi ke {targetUserProfile.display_name}!
                 </TactileButton>
               </form>
             </CozyCard>

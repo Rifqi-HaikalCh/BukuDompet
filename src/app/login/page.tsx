@@ -2,21 +2,17 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Drawer } from "vaul";
-import { Delete, ArrowRight, X } from "lucide-react";
+import { ChevronDown, ChevronUp, KeyRound, User, Sparkles, ShieldCheck } from "lucide-react";
 import {
   useBukuDompetStore,
-  type UserRole,
+  type ProfileData,
 } from "@/store/useBukuDompetStore";
 import {
-  MochiCompanion,
-  type MochiStage,
-} from "@/components/illustrations/MochiCompanion";
+  CustomizablePetAvatar,
+  CASTE_META,
+} from "@/components/illustrations/PetAvatarSystem";
 import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
-import {
-  CozyIcon,
-  type IconName,
-} from "@/components/illustrations/CozyIcons";
+import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import {
   TactileButton,
   CozyCard,
@@ -24,308 +20,330 @@ import {
 } from "@/components/ui/CozyPrimitives";
 import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { soundEffects } from "@/lib/sound-effects";
-
-const ROLE_CARDS: {
-  role: UserRole;
-  title: string;
-  subtitle: string;
-  badge: string;
-  defaultPin: string;
-  targetPath: string;
-  tone: "matcha" | "honey" | "sky";
-  mochiStage: MochiStage;
-  iconName: IconName;
-}[] = [
-  {
-    role: "user",
-    title: "Adik (Pemilik Buku Kas)",
-    subtitle:
-      "Catat pengeluaran harian, pelihara Mochi, selesaikan Misi Rinci, dan tukar Poin jadi uang saku!",
-    badge: "Role: User • PIN Demo: 1111",
-    defaultPin: "1111",
-    targetPath: "/app",
-    tone: "matcha",
-    mochiStage: 3,
-    iconName: "pet_paw",
-  },
-  {
-    role: "supervisor",
-    title: "Orang Tua (Supervisor)",
-    subtitle:
-      "Pantau cerita keuangan harian, lihat rincian belanja transparan, dan kirim Stiker Semangat (+50 Poin)!",
-    badge: "Role: Supervisor • PIN Demo: 2222",
-    defaultPin: "2222",
-    targetPath: "/supervisor",
-    tone: "honey",
-    mochiStage: 4,
-    iconName: "parent_heart",
-  },
-  {
-    role: "admin",
-    title: "Abang (Admin & Sponsor Poin)",
-    subtitle:
-      "Dashboard kontrol penuh, mode simulasi pencatatan, setujui pencairan Poin (1 Poin = Rp1), & atur budget.",
-    badge: "Role: Admin • PIN Demo: 9999",
-    defaultPin: "9999",
-    targetPath: "/admin",
-    tone: "sky",
-    mochiStage: 5,
-    iconName: "crown_sultan",
-  },
-];
+import { cn } from "@/lib/utils";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { loginWithPin, switchRoleDirect } = useBukuDompetStore();
+  const { profiles, supervisorAssignments, loginWithCredentials } =
+    useBukuDompetStore();
 
-  const [selectedRoleCard, setSelectedRoleCard] = useState<
-    (typeof ROLE_CARDS)[number] | null
-  >(null);
-  const [pinDigits, setPinDigits] = useState<string>("");
+  const [username, setUsername] = useState<string>("");
+  const [pinCode, setPinCode] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [demoPanelOpen, setDemoPanelOpen] = useState<boolean>(true);
 
-  const handleOpenRole = (card: (typeof ROLE_CARDS)[number]) => {
-    soundEffects.tactileClick();
-    setSelectedRoleCard(card);
-    setPinDigits("");
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMsg(null);
+    const res = loginWithCredentials(username, pinCode);
+    if (res.success && res.targetPath) {
+      soundEffects.comboFanfare();
+      router.push(res.targetPath);
+    } else {
+      soundEffects.detectiveBuzz();
+      setErrorMsg(
+        res.message || "Username atau PIN/Password tidak sesuai."
+      );
+    }
   };
 
-  const handleDigitPress = (digit: string) => {
+  const handleFillDemoAccount = (acc: ProfileData, autoSubmit = false) => {
     soundEffects.tactileClick();
+    setUsername(acc.username);
+    setPinCode(acc.pin_code);
     setErrorMsg(null);
-    if (pinDigits.length >= 4) return;
-    const nextPin = pinDigits + digit;
-    setPinDigits(nextPin);
 
-    if (nextPin.length === 4 && selectedRoleCard) {
-      const res = loginWithPin(selectedRoleCard.role, nextPin);
-      if (res.success) {
+    if (autoSubmit) {
+      const res = loginWithCredentials(acc.username, acc.pin_code);
+      if (res.success && res.targetPath) {
         soundEffects.comboFanfare();
-        router.push(selectedRoleCard.targetPath);
-      } else {
-        soundEffects.detectiveBuzz();
-        setErrorMsg(res.message || "PIN tidak cocok.");
-        setTimeout(() => setPinDigits(""), 450);
+        router.push(res.targetPath);
       }
     }
   };
 
-  const handleQuickDemoLogin = (card: (typeof ROLE_CARDS)[number]) => {
-    soundEffects.comboFanfare();
-    switchRoleDirect(card.role);
-    router.push(card.targetPath);
+  const getRoleBadge = (role: ProfileData["role"]) => {
+    if (role === "admin") {
+      return {
+        label: "Admin",
+        cls: "bg-[#E3F4FF] border-[#9AD2FF] text-[#1565C0]",
+      };
+    }
+    if (role === "supervisor") {
+      return {
+        label: "Supervisor",
+        cls: "bg-[#FFFBEB] border-[#FDE08D] text-[#4A3500]",
+      };
+    }
+    return {
+      label: "User (Buku Kas)",
+      cls: "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]",
+    };
   };
 
   return (
-    <div className="min-h-screen text-[#3D352E] py-8 px-4 sm:px-6 flex flex-col justify-between">
+    <div className="min-h-screen text-[#3D352E] py-8 px-4 sm:px-6 flex flex-col justify-center overflow-x-hidden">
       <PageTransitionLoader />
       <FloatingRewardBanner />
 
-      <div className="max-w-4xl mx-auto w-full space-y-8">
-        {/* Cozy Illustrated Header with Official BukuDompetLogo */}
+      <div className="max-w-4xl mx-auto w-full space-y-6">
+        {/* Main 2-Column Login Card */}
         <CozyCard
-          tone="vanilla"
-          className="p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6"
+          tone="white"
+          className="p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center"
         >
-          <div className="space-y-4 text-center md:text-left max-w-xl">
-            <div className="flex justify-center md:justify-start">
-              <BukuDompetLogo variant="full" size="md" />
+          {/* Left Column: Brand & Pet Showcase (5 Cols on Desktop) */}
+          <div className="lg:col-span-5 bg-[#EFFBE6] border-2 border-[#C3EFA4] border-b-[4px] border-b-[#9EE070] rounded-3xl p-5 flex flex-col items-center text-center space-y-3 min-w-0">
+            <BukuDompetLogo variant="full" size="md" />
+
+            <div className="w-44 h-44 bg-white rounded-3xl border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex items-center justify-center p-2">
+              <CustomizablePetAvatar
+                species="cat"
+                stage={3}
+                mood="happy"
+                customName="Mochi"
+                equippedAccessories={{
+                  head: "head_graduation_cap",
+                  eyes: "eyes_round_glasses",
+                  neck: "neck_bowtie",
+                }}
+                className="w-40 h-40"
+              />
             </div>
 
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C] text-xs font-display font-extrabold">
-              <CozyIcon name="coin_rupiah" size={18} />
-              <span>Pintu Keluarga BukuDompet • 1 Poin = Rp 1</span>
+            <div className="space-y-1">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00]">
+                <CozyIcon name="coin_rupiah" size={16} />
+                Versi 3.0 • Multi-User & 8 Kasta
+              </span>
+              <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E]">
+                Jurnal Kas & Petualangan Finansial
+              </h2>
+              <p className="text-xs font-bold text-[#3D352E]/85 leading-relaxed">
+                Catat kas harian dengan disiplin, rawat pet kesayanganmu melewati
+                8 Kasta Kemakmuran, dan pantau transparan bersama keluarga!
+              </p>
             </div>
-
-            <h1 className="font-display text-2xl sm:text-4xl font-extrabold text-[#3D352E] leading-tight">
-              Selamat Datang di Jurnal Kas Petualangan Mochi!
-            </h1>
-            <p className="text-sm sm:text-base font-bold text-[#7A6E65]">
-              Pilih kartu profilmu di bawah untuk masuk menggunakan PIN 4 angka.
-              Dirancang hangat untuk Adik, Orang Tua, dan Abang!
-            </p>
           </div>
-          <div className="w-36 h-36 sm:w-44 sm:h-44 bg-white rounded-3xl border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] flex items-center justify-center shrink-0">
-            <MochiCompanion stage={3} mood="happy" className="w-36 h-36" />
+
+          {/* Right Column: Credential Login Form (7 Cols on Desktop) */}
+          <div className="lg:col-span-7 space-y-5 min-w-0">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-display font-extrabold text-[#7A6E65]">
+                <CozyIcon name="lock_cozy" size={16} />
+                Pintu Masuk Kredensial Akun
+              </div>
+              <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#3D352E]">
+                Masuk ke Akun BukuDompet
+              </h1>
+              <p className="text-xs sm:text-sm font-bold text-[#7A6E65]">
+                Masukkan Username dan PIN / Password akun Anda untuk melanjutkan.
+              </p>
+            </div>
+
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-display font-extrabold uppercase text-[#3D352E] mb-1.5">
+                  Username Akun
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-[#7A6E65] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    value={username}
+                    onChange={(e) => {
+                      setUsername(e.target.value);
+                      setErrorMsg(null);
+                    }}
+                    placeholder="Contoh: adik, bima, orangtua, wali, atau abang"
+                    className="w-full pl-10 pr-4 py-3 rounded-2xl border-2 border-[#E6DFD2] bg-[#FFFDF9] focus:bg-white focus:border-[#38B6FF] focus:outline-none font-display font-extrabold text-sm text-[#3D352E]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-display font-extrabold uppercase text-[#3D352E] mb-1.5">
+                  PIN / Password
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-[#7A6E65] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    required
+                    value={pinCode}
+                    onChange={(e) => {
+                      setPinCode(e.target.value);
+                      setErrorMsg(null);
+                    }}
+                    placeholder="Masukkan PIN / Password (misal: 1111)"
+                    className="w-full pl-10 pr-4 py-3 rounded-2xl border-2 border-[#E6DFD2] bg-[#FFFDF9] focus:bg-white focus:border-[#38B6FF] focus:outline-none font-display font-extrabold tracking-widest text-sm text-[#3D352E]"
+                  />
+                </div>
+              </div>
+
+              {errorMsg && (
+                <div className="p-3 rounded-2xl bg-[#FFF2F0] border-2 border-[#FFCDC6] text-xs font-extrabold text-[#C83E2B] flex items-center gap-2">
+                  <CozyIcon name="warning_siren" size={18} />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+
+              <TactileButton
+                type="submit"
+                variant="matcha"
+                size="lg"
+                fullWidth
+              >
+                <CozyIcon name="lock_cozy" size={20} />
+                Masuk ke BukuDompet Sekarang
+              </TactileButton>
+            </form>
+
+            {/* Strict Notice: No Public Registration */}
+            <div className="p-3.5 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] flex items-center gap-2.5 text-xs font-bold text-[#7A6E65]">
+              <ShieldCheck className="w-4 h-4 text-[#3D352E] shrink-0" />
+              <span>
+                <em>Pendaftaran akun baru hanya dapat dilakukan oleh Admin</em>{" "}
+                melalui menu Manajemen Pengguna di Command Center Admin.
+              </span>
+            </div>
           </div>
         </CozyCard>
 
-        {/* 3 Tactile Profile Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {ROLE_CARDS.map((card) => (
-            <CozyCard
-              key={card.role}
-              tone="white"
-              className="flex flex-col justify-between gap-4 hover:-translate-y-1 transition-transform"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span
-                    className={`px-3 py-1 rounded-xl border-2 text-xs font-display font-extrabold ${
-                      card.tone === "matcha"
-                        ? "bg-[#EFFBE6] border-[#C3EFA4]"
-                        : card.tone === "honey"
-                        ? "bg-[#FFFBEB] border-[#FDE08D]"
-                        : "bg-[#EEF8FF] border-[#BCE3FF]"
-                    }`}
-                  >
-                    {card.badge}
-                  </span>
-                  <CozyIcon name={card.iconName} size={26} />
-                </div>
+        {/* Collapsible Demo Quick-Fill Panel */}
+        <CozyCard tone="white" className="p-4 sm:p-5 space-y-3.5">
+          <button
+            type="button"
+            onClick={() => {
+              soundEffects.tactileClick();
+              setDemoPanelOpen((prev) => !prev);
+            }}
+            className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Sparkles className="w-5 h-5 text-[#E5A400] shrink-0" />
+              <span className="font-display text-sm sm:text-base font-extrabold text-[#3D352E] truncate">
+                Mode Cepat Demo (Klik untuk isi otomatis akun Admin / Supervisor / User)
+              </span>
+            </div>
+            <span className="px-2.5 py-1 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-display font-extrabold text-[#3D352E] inline-flex items-center gap-1 shrink-0">
+              {profiles.length} Akun Aktif
+              {demoPanelOpen ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </span>
+          </button>
 
-                <div className="bg-[#F9F4EA] rounded-2xl border-2 border-[#E6DFD2] py-2 flex justify-center">
-                  <MochiCompanion
-                    stage={card.mochiStage}
-                    mood="happy"
-                    className="w-28 h-28"
-                  />
-                </div>
+          {demoPanelOpen && (
+            <div className="pt-2 border-t border-[#E6DFD2] space-y-3">
+              <p className="text-xs font-bold text-[#7A6E65]">
+                Klik kartu akun di bawah untuk mengisi <strong>Username & PIN</strong>{" "}
+                secara otomatis, atau tekan tombol <strong>Masuk Instan</strong>:
+              </p>
 
-                <div>
-                  <h2 className="font-display text-xl font-extrabold text-[#3D352E]">
-                    {card.title}
-                  </h2>
-                  <p className="text-xs sm:text-sm font-bold text-[#7A6E65] mt-1">
-                    {card.subtitle}
-                  </p>
-                </div>
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {profiles.map((acc) => {
+                  const badge = getRoleBadge(acc.role);
+                  const assignedUsers =
+                    acc.role === "supervisor"
+                      ? supervisorAssignments
+                          .filter((a) => a.supervisorId === acc.id)
+                          .map(
+                            (a) =>
+                              profiles.find((u) => u.id === a.userId)
+                                ?.display_name || ""
+                          )
+                          .filter(Boolean)
+                      : [];
 
-              <div className="space-y-2 pt-2">
-                <TactileButton
-                  variant={card.tone}
-                  size="md"
-                  fullWidth
-                  onClick={() => handleOpenRole(card)}
-                >
-                  <CozyIcon name="lock_cozy" size={20} /> Buka Pintu PIN
-                </TactileButton>
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemoLogin(card)}
-                  className="w-full py-1.5 text-xs font-display font-extrabold text-[#7A6E65] hover:text-[#3D352E] flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <span>Masuk Instan (PIN {card.defaultPin})</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </CozyCard>
-          ))}
-        </div>
-      </div>
+                  const isSelected = username === acc.username;
 
-      {/* Vaul Drawer with 4-Digit Tactile PIN Pad */}
-      <Drawer.Root
-        open={Boolean(selectedRoleCard)}
-        onOpenChange={(open) => !open && setSelectedRoleCard(null)}
-      >
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-[#3D352E]/45 z-50 backdrop-blur-[2px]" />
-          <Drawer.Content className="bg-[#FFFDF9] border-t-4 border-[#E6DFD2] rounded-t-[36px] fixed bottom-0 left-0 right-0 z-50 max-h-[88vh] flex flex-col focus:outline-none">
-            <div className="mx-auto w-14 h-2 rounded-full bg-[#D4C9B4] my-3 shrink-0" />
-
-            {selectedRoleCard && (
-              <div className="px-6 pb-8 max-w-sm mx-auto w-full space-y-5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <CozyIcon name="lock_cozy" size={28} />
-                    <div>
-                      <Drawer.Title className="font-display text-xl font-extrabold text-[#3D352E]">
-                        PIN {selectedRoleCard.title.split(" ")[0]}
-                      </Drawer.Title>
-                      <Drawer.Description className="text-xs font-bold text-[#7A6E65]">
-                        Masukkan 4 angka PIN (Demo:{" "}
-                        {selectedRoleCard.defaultPin})
-                      </Drawer.Description>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRoleCard(null)}
-                    className="p-2.5 rounded-2xl border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] bg-[#F9F4EA] cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* 4 PIN Boxes */}
-                <div className="grid grid-cols-4 gap-3">
-                  {[0, 1, 2, 3].map((idx) => {
-                    const filled = idx < pinDigits.length;
-                    return (
-                      <div
-                        key={idx}
-                        className={`h-14 rounded-2xl border-2 border-b-[4px] flex items-center justify-center font-display text-2xl font-extrabold transition-all ${
-                          filled
-                            ? "bg-[#FFC800] border-[#E5A400]"
-                            : "bg-white border-[#E6DFD2] border-b-[#D4C9B4]"
-                        }`}
-                      >
-                        {filled ? "●" : ""}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {errorMsg && (
-                  <div className="p-2.5 rounded-2xl bg-[#FFF0F0] border-2 border-[#FFC2C2] text-center text-xs font-extrabold text-[#EA2B2B]">
-                    {errorMsg}
-                  </div>
-                )}
-
-                {/* Tactile 3D Keypad */}
-                <div className="grid grid-cols-3 gap-2.5">
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-                    <TactileButton
-                      key={d}
-                      variant="cream"
-                      size="lg"
-                      onClick={() => handleDigitPress(d)}
-                      className="font-display text-xl"
+                  return (
+                    <div
+                      key={acc.id}
+                      onClick={() => handleFillDemoAccount(acc, false)}
+                      className={cn(
+                        "p-3.5 rounded-2xl border-2 border-b-[4px] transition-all cursor-pointer flex flex-col justify-between gap-2.5 min-w-0",
+                        isSelected
+                          ? "bg-[#E3F4FF]/60 border-[#38B6FF] border-b-[#1E88E5]"
+                          : "bg-[#F7F3EB] border-[#E6DFD2] border-b-[#D4C9B4] hover:bg-white"
+                      )}
                     >
-                      {d}
-                    </TactileButton>
-                  ))}
-                  <TactileButton
-                    variant="honey"
-                    size="md"
-                    onClick={() => {
-                      soundEffects.comboFanfare();
-                      const res = loginWithPin(
-                        selectedRoleCard.role,
-                        selectedRoleCard.defaultPin
-                      );
-                      if (res.success) {
-                        router.push(selectedRoleCard.targetPath);
-                      }
-                    }}
-                    className="text-xs font-extrabold"
-                  >
-                    Isi {selectedRoleCard.defaultPin}
-                  </TactileButton>
-                  <TactileButton
-                    variant="cream"
-                    size="lg"
-                    onClick={() => handleDigitPress("0")}
-                    className="font-display text-xl"
-                  >
-                    0
-                  </TactileButton>
-                  <TactileButton
-                    variant="peach"
-                    size="lg"
-                    onClick={() => setPinDigits((p) => p.slice(0, -1))}
-                  >
-                    <Delete className="w-5 h-5" />
-                  </TactileButton>
-                </div>
+                      <div className="space-y-1.5 min-w-0">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span
+                            className={cn(
+                              "px-2 py-0.5 rounded-lg border text-[10px] font-display font-extrabold",
+                              badge.cls
+                            )}
+                          >
+                            {badge.label}
+                          </span>
+                          <span className="font-display text-xs font-extrabold tabular-nums text-[#7A6E65]">
+                            PIN: {acc.pin_code}
+                          </span>
+                        </div>
+
+                        <p className="font-display text-sm font-extrabold text-[#3D352E] truncate">
+                          {acc.display_name}
+                        </p>
+                        <p className="text-[11px] font-bold text-[#7A6E65] truncate">
+                          Username:{" "}
+                          <span className="text-[#3D352E] font-extrabold">
+                            @{acc.username}
+                          </span>
+                        </p>
+
+                        {acc.role === "user" && (
+                          <p className="text-[10px] font-bold text-[#2E6F00] truncate">
+                            Pet: {acc.petCustomName} • Stage {acc.currentStage} (
+                            {CASTE_META[acc.currentStage]?.name})
+                          </p>
+                        )}
+
+                        {acc.role === "supervisor" && (
+                          <p className="text-[10px] font-bold text-[#4A3500] truncate">
+                            Pantau:{" "}
+                            {assignedUsers.length > 0
+                              ? assignedUsers.join(", ")
+                              : "Belum ditugaskan"}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleFillDemoAccount(acc, false);
+                          }}
+                          className="flex-1 py-1.5 px-2 rounded-xl bg-white border border-[#E6DFD2] text-[11px] font-display font-extrabold text-[#3D352E] hover:bg-[#FFFBEB] cursor-pointer"
+                        >
+                          Isi Form
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleFillDemoAccount(acc, true);
+                          }}
+                          className="flex-1 py-1.5 px-2 rounded-xl bg-[#58CC02] border-b-[3px] border-b-[#46A302] text-[11px] font-display font-extrabold text-white hover:bg-[#61DC06] cursor-pointer"
+                        >
+                          Masuk Instan &rarr;
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            )}
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+            </div>
+          )}
+        </CozyCard>
+      </div>
     </div>
   );
 }

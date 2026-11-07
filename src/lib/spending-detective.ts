@@ -1,4 +1,10 @@
 import type { MochiMood, MochiStage } from "@/components/illustrations/MochiCompanion";
+import type {
+  CasteStage,
+  PetMood,
+  PetSpecies,
+} from "@/components/illustrations/PetAvatarSystem";
+import { CASTE_META } from "@/components/illustrations/PetAvatarSystem";
 
 export type TransactionType = "income" | "expense";
 export type NeedOrWant = "need" | "want" | "income";
@@ -55,6 +61,97 @@ export const INCOME_CATEGORIES: {
   { name: "Tabungan / Lainnya", emoji: "🪙" },
 ];
 
+/**
+ * Harga Spesies Pet di Butik & Shop (Long-Term Economy)
+ */
+export const PET_SPECIES_SHOP_PRICES: Record<PetSpecies, number> = {
+  cat: 0, // Starter gratis
+  capybara: 15000,
+  fox: 30000,
+  red_panda: 50000,
+};
+
+/**
+ * Syarat Buka 8 Kasta Karakter (Dengan Mekanisme Reset di Setiap Stage Baru)
+ * Nilai pada `CASTE_STAGE_TARGETS[stage]` adalah syarat untuk NAIK DARI `stage` menuju `stage + 1`.
+ */
+export const CASTE_STAGE_TARGETS: Record<
+  CasteStage,
+  {
+    stage: CasteStage;
+    name: string;
+    unlockFromPrevStageXp: number;
+    unlockFromPrevStageDays: number;
+    nextStageXpTarget: number;
+    nextStageDaysTarget: number;
+  }
+> = {
+  1: {
+    stage: 1,
+    name: CASTE_META[1].name, // Perantau Kardus
+    unlockFromPrevStageXp: 0,
+    unlockFromPrevStageDays: 0,
+    nextStageXpTarget: 350,
+    nextStageDaysTarget: 7,
+  },
+  2: {
+    stage: 2,
+    name: CASTE_META[2].name, // Penabung Selimut
+    unlockFromPrevStageXp: 350,
+    unlockFromPrevStageDays: 7,
+    nextStageXpTarget: 900,
+    nextStageDaysTarget: 14,
+  },
+  3: {
+    stage: 3,
+    name: CASTE_META[3].name, // Pelajar Teliti
+    unlockFromPrevStageXp: 900,
+    unlockFromPrevStageDays: 14,
+    nextStageXpTarget: 1800,
+    nextStageDaysTarget: 25,
+  },
+  4: {
+    stage: 4,
+    name: CASTE_META[4].name, // Barista Perintis
+    unlockFromPrevStageXp: 1800,
+    unlockFromPrevStageDays: 25,
+    nextStageXpTarget: 3200,
+    nextStageDaysTarget: 40,
+  },
+  5: {
+    stage: 5,
+    name: CASTE_META[5].name, // Manajer Muda
+    unlockFromPrevStageXp: 3200,
+    unlockFromPrevStageDays: 40,
+    nextStageXpTarget: 5500,
+    nextStageDaysTarget: 60,
+  },
+  6: {
+    stage: 6,
+    name: CASTE_META[6].name, // Juragan Kota
+    unlockFromPrevStageXp: 5500,
+    unlockFromPrevStageDays: 60,
+    nextStageXpTarget: 9000,
+    nextStageDaysTarget: 90,
+  },
+  7: {
+    stage: 7,
+    name: CASTE_META[7].name, // Konglomerat Elit
+    unlockFromPrevStageXp: 9000,
+    unlockFromPrevStageDays: 90,
+    nextStageXpTarget: 15000,
+    nextStageDaysTarget: 120,
+  },
+  8: {
+    stage: 8,
+    name: CASTE_META[8].name, // Maharaja Berlian
+    unlockFromPrevStageXp: 15000,
+    unlockFromPrevStageDays: 120,
+    nextStageXpTarget: 15000,
+    nextStageDaysTarget: 120,
+  },
+};
+
 const GENERIC_WORDS = new Set([
   "makan",
   "jajan",
@@ -69,10 +166,11 @@ const GENERIC_WORDS = new Set([
 ]);
 
 /**
- * Validasi apakah daftar item memenuhi syarat "Misi Rinci" (Detailed Itemized Input):
- * - Minimal 2 sub-items
- * - Masing-masing punya harga > 0
- * - Nama item spesifik >= 4 karakter dan bukan kata generik semata ("makan", "jajan", "beli")
+ * Validasi apakah daftar item memenuhi syarat "Jurnal Rinci" (Versi 3.0 Hardcore Cozy Pacing):
+ * - Minimal 2 sub-items valid
+ * - Tarif Transaksi Rinci: +10 Poin & +20 Stage XP
+ * - Tarif Transaksi Biasa: +5 Poin & +10 Stage XP
+ * - Maksimal 3 transaksi berpoin per hari
  */
 export function validateItemizedCombo(
   items: { item_name: string; unit_price: number; quantity?: number }[]
@@ -92,33 +190,28 @@ export function validateItemizedCombo(
   });
 
   if (validItems.length >= 2) {
-    // Base +35 Poin | +40 XP, plus +5 Poin per additional item above 2, capped at +50 Poin
-    const extraItems = Math.max(0, validItems.length - 2);
-    const pointsPreview = Math.min(50, 35 + extraItems * 5);
     return {
       isValidCombo: true,
       validItemsCount: validItems.length,
-      pointsPreview,
-      xpPreview: 40,
+      pointsPreview: 10,
+      xpPreview: 20,
     };
   }
 
   return {
     isValidCombo: false,
     validItemsCount: validItems.length,
-    pointsPreview: 10,
-    xpPreview: 15,
+    pointsPreview: 5,
+    xpPreview: 10,
     reason:
       items.length < 2
-        ? "Tambahkan minimal 2 item rincian untuk mengaktifkan COMBO DETAIL (+35 Poin)!"
+        ? "Tambahkan minimal 2 item rincian untuk mencatat Struk Rinci (+10 Poin & +20 Stage XP)!"
         : "Tulis nama item spesifik (min. 4 huruf, contoh: 'Nasi Goreng', bukan cuma 'Makan').",
   };
 }
 
 /**
  * Smart Quick-Split Parser
- * Contoh input: "Nasi Goreng 15k, Es Teh 5000, Kerupuk 2x 1500"
- * atau "Nasi Ayam Bakar 18.000, Air Mineral 5rb"
  */
 export function parseSmartQuickSplit(input: string): {
   item_name: string;
@@ -141,15 +234,14 @@ export function parseSmartQuickSplit(input: string): {
   }[] = [];
 
   for (const seg of segments) {
-    // Match optional quantity like "2x " or "x2" and price at the end like "15k", "15rb", "15.000", "15000"
-    const priceRegex = /^(.*?)\s+(?:(\d+)\s*[xX]\s*)?Rp?\s*(\d+(?:[.,]\d+)?)\s*(k|rb|ribu)?$/i;
+    const priceRegex =
+      /^(.*?)\s+(?:(\d+)\s*[xX]\s*)?Rp?\s*(\d+(?:[.,]\d+)?)\s*(k|rb|ribu)?$/i;
     const match = seg.match(priceRegex);
 
     if (match) {
       let rawName = match[1].trim();
       let qty = match[2] ? parseInt(match[2], 10) : 1;
 
-      // Also check if quantity was at the start of rawName like "2x Kerupuk"
       const startQtyMatch = rawName.match(/^(\d+)\s*[xX]\s+(.+)$/);
       if (startQtyMatch) {
         qty = parseInt(startQtyMatch[1], 10);
@@ -161,10 +253,8 @@ export function parseSmartQuickSplit(input: string): {
       const suffix = match[4]?.toLowerCase();
 
       if (suffix === "k" || suffix === "rb" || suffix === "ribu") {
-        // If user wrote 15k -> 15000
         num = num * 1000;
       } else if (num > 0 && num < 500) {
-        // Heuristic: in Rupiah, if someone types "Es Teh 5" or "Nasi Goreng 15", treat < 500 as thousands
         num = num * 1000;
       }
 
@@ -199,8 +289,8 @@ export interface SpendingDetectiveReport {
   monthlySpendablePool: number;
   totalIncomeThisMonth: number;
   totalSpentThisMonth: number;
-  remainingMonthlyPool: number; // Sisa uang saku yang aman dipakai
-  remainingTotalBalanceThisMonth: number; // Total sisa uang termasuk target tabungan
+  remainingMonthlyPool: number;
+  remainingTotalBalanceThisMonth: number;
   daysInMonth: number;
   remainingDaysInMonth: number;
 
@@ -210,7 +300,7 @@ export interface SpendingDetectiveReport {
   remainingWeeklyBudget: number;
 
   // Harian & Formula 1 (DSSL)
-  dssl: number; // Dynamic Daily Safe Spend Limit
+  dssl: number;
   todayTotalSpend: number;
   todayNeedsSpend: number;
   todayWantsSpend: number;
@@ -237,20 +327,14 @@ export interface SpendingDetectiveReport {
     percentage: number;
   }[];
 
-  // Mochi Companion Evolution & Mood
+  // Companion Evolution & Mood
+  casteStage: CasteStage;
   mochiStage: MochiStage;
   mochiMood: MochiMood;
+  petMood: PetMood;
   mochiSpeech: string;
 }
 
-/**
- * Kalkulasi Level & Stage Mochi berdasarkan Level & Tabungan:
- * Stage 1 (Lv 1-3): Mochi Kardus
- * Stage 2 (Lv 4-7): Mochi Perintis
- * Stage 3 (Lv 8-12): Mochi Manajer
- * Stage 4 (Lv 13-18): Mochi Bos Muda
- * Stage 5 (Lv 19+): Sultan Mochi Jutawan
- */
 export function getMochiStageFromLevel(level: number): MochiStage {
   if (level >= 19) return 5;
   if (level >= 13) return 4;
@@ -265,12 +349,14 @@ export function getLevelFromXp(xp: number): {
   nextLevelXp: number;
   progressPercent: number;
 } {
-  // Setiap level membutuhkan 120 XP
   const xpPerLevel = 120;
   const level = Math.max(1, Math.floor(xp / xpPerLevel) + 1);
   const currentLevelXp = xp % xpPerLevel;
   const nextLevelXp = xpPerLevel;
-  const progressPercent = Math.min(100, Math.round((currentLevelXp / nextLevelXp) * 100));
+  const progressPercent = Math.min(
+    100,
+    Math.round((currentLevelXp / nextLevelXp) * 100)
+  );
   return { level, currentLevelXp, nextLevelXp, progressPercent };
 }
 
@@ -279,17 +365,23 @@ export function analyzeSpendingDetective(params: {
   monthlyBudgetTarget: number;
   monthlySavingTarget: number;
   userLevel: number;
+  currentStage?: CasteStage;
+  petCustomName?: string;
   isProudComboActive?: boolean;
-  referenceDateStr?: string; // YYYY-MM-DD
+  referenceDateStr?: string;
 }): SpendingDetectiveReport {
   const {
     transactions,
     monthlyBudgetTarget,
     monthlySavingTarget,
     userLevel,
+    currentStage = 1,
+    petCustomName = "Mochi",
     isProudComboActive = false,
     referenceDateStr,
   } = params;
+
+  const petName = petCustomName.trim() || "Mochi";
 
   const todayStr =
     referenceDateStr || new Date().toISOString().split("T")[0];
@@ -300,9 +392,8 @@ export function analyzeSpendingDetective(params: {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const remainingDaysInMonth = Math.max(1, daysInMonth - dayOfMonth + 1);
 
-  const monthPrefix = todayStr.slice(0, 7); // YYYY-MM
+  const monthPrefix = todayStr.slice(0, 7);
 
-  // 7-day window start
   const sevenDaysAgo = new Date(todayDate);
   sevenDaysAgo.setDate(todayDate.getDate() - 6);
   const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
@@ -311,7 +402,8 @@ export function analyzeSpendingDetective(params: {
     t.transaction_date.startsWith(monthPrefix)
   );
   const weeklyTx = transactions.filter(
-    (t) => t.transaction_date >= sevenDaysAgoStr && t.transaction_date <= todayStr
+    (t) =>
+      t.transaction_date >= sevenDaysAgoStr && t.transaction_date <= todayStr
   );
   const todayTx = transactions.filter((t) => t.transaction_date === todayStr);
 
@@ -343,14 +435,12 @@ export function analyzeSpendingDetective(params: {
     .filter((t) => t.need_or_want === "want")
     .reduce((acc, t) => acc + Number(t.total_amount), 0);
 
-  // Spent before today this month so DSSL for today is stable throughout the day
   const spentBeforeToday = Math.max(0, totalSpentThisMonth - todayTotalSpend);
   const remainingPoolAtStartOfDay = Math.max(
     0,
     monthlySpendablePool - spentBeforeToday
   );
 
-  // Formula 1: Dynamic Daily Safe Spend Limit (DSSL)
   const dssl = Math.max(
     10000,
     Math.round(remainingPoolAtStartOfDay / remainingDaysInMonth)
@@ -366,7 +456,6 @@ export function analyzeSpendingDetective(params: {
   );
   const remainingDailySafeSpend = Math.max(0, dssl - todayTotalSpend);
 
-  // Weekly calculation
   const weeklyBudgetAllowance = Math.round(monthlySpendablePool / 4);
   const totalSpentThisWeek = weeklyTx
     .filter((t) => t.type === "expense")
@@ -376,7 +465,6 @@ export function analyzeSpendingDetective(params: {
     weeklyBudgetAllowance - totalSpentThisWeek
   );
 
-  // Formula 2: Daily Overburn Index (DOI)
   const doi = dssl > 0 ? Number((todayTotalSpend / dssl).toFixed(2)) : 0;
 
   let walletStatus: SpendingDetectiveReport["walletStatus"] = "AMAN";
@@ -391,7 +479,7 @@ export function analyzeSpendingDetective(params: {
     statusTitle = "Status Normal (Aman Hijau)";
     statusDescription = `Pengeluaran hari ini baru ${Math.round(
       doi * 100
-    )}% dari batas aman harian. Mochi senang banget!`;
+    )}% dari batas aman harian. ${petName} senang banget!`;
   } else if (doi <= 1.15) {
     walletStatus = "WASPADA";
     statusColor = "honey";
@@ -400,7 +488,6 @@ export function analyzeSpendingDetective(params: {
       doi * 100
     )}% jatah harian. Tahan jajan tambahan sore/malam ini ya!`;
   } else {
-    // doi > 1.15
     if (todayWantsSpend > 0.4 * todayTotalSpend) {
       walletStatus = "BENGKAK";
       statusColor = "berry";
@@ -417,7 +504,6 @@ export function analyzeSpendingDetective(params: {
     }
   }
 
-  // Formula 3: Bocor Halus Detector (Micro-Leak / Latte Factor)
   const weeklyWantsTx = weeklyTx.filter(
     (t) => t.type === "expense" && t.need_or_want === "want"
   );
@@ -451,7 +537,7 @@ export function analyzeSpendingDetective(params: {
         totalSpent: stat.total,
         suggestedCutCount: cutCount,
         potentialSaving: saving,
-        message: `🕵️‍♂️ Investigasi Detektif Mochi: Minggu ini kamu sudah beli [${cat}] sebanyak ${
+        message: `🕵️‍♂️ Investigasi Detektif ${petName}: Minggu ini kamu sudah beli [${cat}] sebanyak ${
           stat.count
         }x dengan total Rp${stat.total.toLocaleString(
           "id-ID"
@@ -475,7 +561,7 @@ export function analyzeSpendingDetective(params: {
       totalSpent: smallWantsTotal,
       suggestedCutCount: 2,
       potentialSaving: saving,
-      message: `🕵️‍♂️ Investigasi Detektif Mochi: Akumulasi jajan kecil (< Rp35.000) minggu ini mencapai ${smallTxCumulativePercent}% dari jatah mingguan (Rp${smallWantsTotal.toLocaleString(
+      message: `🕵️‍♂️ Investigasi Detektif ${petName}: Akumulasi jajan kecil (< Rp35.000) minggu ini mencapai ${smallTxCumulativePercent}% dari jatah mingguan (Rp${smallWantsTotal.toLocaleString(
         "id-ID"
       )}). Yuk rem 2x jajan impulsif buat hemat Rp${saving.toLocaleString(
         "id-ID"
@@ -483,7 +569,6 @@ export function analyzeSpendingDetective(params: {
     });
   }
 
-  // Category Breakdown for current month expenses
   const catMap: Record<string, number> = {};
   for (const tx of monthlyTx.filter((t) => t.type === "expense")) {
     catMap[tx.category] = (catMap[tx.category] || 0) + Number(tx.total_amount);
@@ -511,33 +596,33 @@ export function analyzeSpendingDetective(params: {
     })
     .sort((a, b) => b.amount - a.amount);
 
-  // Mochi Companion Mood & Stage
-  const mochiStage = getMochiStageFromLevel(userLevel);
+  const mochiStage = Math.min(5, Math.max(1, currentStage || getMochiStageFromLevel(userLevel))) as MochiStage;
   let mochiMood: MochiMood = "happy";
-  let mochiSpeech =
-    "Meow! Catatan kasmu rapi banget hari ini. Yuk pertahankan sisa jatah harianmu! 🐾✨";
+  let petMood: PetMood = "happy";
+  let mochiSpeech = `Halo! Aku ${petName}. Catatan kasmu rapi banget hari ini, yuk pertahankan sisa jatah harianmu! 🐾✨`;
 
   if (isProudComboActive) {
     mochiMood = "proud_combo";
-    mochiSpeech =
-      "COMBO DETAIL!! Wah kamu jujur & teliti banget merinci item belanjaan! +Bonus Poin masuk celengan! 🎉🐱";
+    petMood = "proud";
+    mochiSpeech = `STRUK RINCI TERCATAT! ${petName} bangga banget kamu jujur merinci item belanjaan! +10 Poin & +20 Stage XP! 🎉`;
   } else if (todayTotalSpend > dssl) {
     if (walletStatus === "BENGKAK") {
       mochiMood = "shocked_boros";
-      mochiSpeech =
-        "Meoww?! 😱 Pengeluaran jajan hari ini lewat batas aman! Detektif Mochi menyalakan alarm hemat!";
+      petMood = "shocked_boros";
+      mochiSpeech = `Waduh?! 😱 Pengeluaran jajan hari ini lewat batas aman! Detektif ${petName} menyalakan alarm hemat!`;
     } else {
       mochiMood = "worried";
-      mochiSpeech =
-        "Hmm, hari ini ada pengeluaran kebutuhan penting yang lumayan besar. Besok kita lebih hemat ya! 📚🐾";
+      petMood = "worried";
+      mochiSpeech = `Hmm, hari ini ada pengeluaran kebutuhan penting yang lumayan besar. Besok kita bareng ${petName} lebih hemat ya! 📚🐾`;
     }
   } else if (todayTotalSpend >= 0.8 * dssl) {
     mochiMood = "worried";
-    mochiSpeech =
-      "Hati-hati ya, jatah aman harianmu tinggal sedikit lagi. Jangan tergoda kopi atau boba sore ini! 🧋🚫";
+    petMood = "worried";
+    mochiSpeech = `Hati-hati ya, jatah aman harianmu tinggal sedikit lagi. ${petName} ingatkan jangan tergoda jajan sore ini! 🧋🚫`;
   } else if (microLeaks.length > 0) {
     mochiMood = "happy";
-    mochiSpeech = `Meow! Hari ini aman, tapi Detektif Mochi mengendus bocor halus di kategori ${microLeaks[0].keywordOrCategory}! 🕵️‍♂️`;
+    petMood = "happy";
+    mochiSpeech = `Hari ini aman, tapi Detektif ${petName} mengendus bocor halus di kategori ${microLeaks[0].keywordOrCategory}! 🕵️‍♂️`;
   }
 
   return {
@@ -566,8 +651,10 @@ export function analyzeSpendingDetective(params: {
     microLeaks,
     smallTxCumulativePercent,
     categoryBreakdown,
+    casteStage: currentStage,
     mochiStage,
     mochiMood,
+    petMood,
     mochiSpeech,
   };
 }
