@@ -1,22 +1,13 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Plus,
-  Receipt,
-  Calendar,
-  Sparkles,
-  ChevronDown,
-  ChevronUp,
-  Coins,
-  ShieldCheck,
-} from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import {
   analyzeSpendingDetective,
   getLevelFromXp,
-  EXPENSE_CATEGORIES,
 } from "@/lib/spending-detective";
 import {
   MochiCompanion,
@@ -28,6 +19,7 @@ import {
   type StoneStatus,
   type ChestState,
 } from "@/components/illustrations/AdventureNodes";
+import { CozyIcon, CategoryIcon } from "@/components/illustrations/CozyIcons";
 import {
   TactileButton,
   CozyCard,
@@ -35,6 +27,7 @@ import {
   RollingNumber,
   formatRupiah,
 } from "@/components/ui/CozyPrimitives";
+import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 import { cn } from "@/lib/utils";
 
@@ -50,9 +43,12 @@ export default function UserHomePage() {
   const {
     profiles,
     transactions,
+    equippedMochiStage,
+    equippedTitle,
     isProudComboActive,
     openedCheckpointWeeks,
     setTransactionDrawerOpen,
+    setStreakCalendarOpen,
     claimWeeklyCheckpointChest,
     recordZeroSpendDay,
   } = useBukuDompetStore();
@@ -69,11 +65,16 @@ export default function UserHomePage() {
     isProudComboActive,
   });
 
+  const displayStage = equippedMochiStage || report.mochiStage;
+
   const [scope, setScope] = useState<TimeScope>("daily");
   const todayStr = getRelativeDateStr(0);
   const [selectedDateStr, setSelectedDateStr] = useState<string>(todayStr);
+  const [confirmZeroSpendOpen, setConfirmZeroSpendOpen] =
+    useState<boolean>(false);
+  const [confirmChestWeek, setConfirmChestWeek] = useState<number | null>(null);
 
-  // Build 14-day Adventure Path Stones (last 6 days + today + next 7 days checkpoint track)
+  // Build Adventure Path Stones
   const adventureDays = useMemo(() => {
     const list: {
       dateStr: string;
@@ -82,7 +83,7 @@ export default function UserHomePage() {
       status: StoneStatus;
       totalSpent: number;
       txCount: number;
-      isCheckpointChestAfter?: number; // Week 1 or Week 2
+      isCheckpointChestAfter?: number;
     }[] = [];
 
     for (let offset = -6; offset <= 1; offset++) {
@@ -134,7 +135,7 @@ export default function UserHomePage() {
     return transactions.filter((t) => t.transaction_date === selectedDateStr);
   }, [transactions, selectedDateStr]);
 
-  const handleChestClick = (weekNum: number) => {
+  const executeChestOpen = (weekNum: number) => {
     const res = claimWeeklyCheckpointChest(weekNum);
     if (res.success) {
       soundEffects.mysteryDrumroll();
@@ -146,34 +147,89 @@ export default function UserHomePage() {
 
   return (
     <div className="space-y-5">
+      {/* Confirm Modals */}
+      <CozyConfirmModal
+        open={confirmZeroSpendOpen}
+        onClose={() => setConfirmZeroSpendOpen(false)}
+        onConfirm={() => {
+          recordZeroSpendDay();
+          soundEffects.comboFanfare();
+          fireCozyConfetti("combo");
+        }}
+        title="Hari Ini Nggak Jajan (Rp0 Spend)?"
+        description="Mochi akan mencatat bahwa hari ini kamu berhasil puasa jajan! Api Streak harianmu tetap menyala + kamu mendapat hadiah +25 Poin & +30 XP!"
+        confirmLabel="Ya, Klaim Rp0 Hari Ini!"
+        confirmVariant="matcha"
+        mochiMood="proud_combo"
+        mochiStage={displayStage}
+        badgeText="Master Puasa Jajan"
+      />
+
+      <CozyConfirmModal
+        open={confirmChestWeek !== null}
+        onClose={() => setConfirmChestWeek(null)}
+        onConfirm={() => {
+          if (confirmChestWeek !== null) {
+            executeChestOpen(confirmChestWeek);
+          }
+        }}
+        title="Buka Peti Harta Checkpoint?"
+        description="Kamu akan membuka Peti Harta Mingguan dan langsung mendapatkan hadiah +350 Poin (Rp350) serta +1x Mystery Box Gacha!"
+        confirmLabel="Ya, Buka Peti!"
+        confirmVariant="honey"
+        mochiMood="proud_combo"
+        mochiStage={displayStage}
+        badgeText="Checkpoint Mingguan"
+      />
+
       {/* 1. Mochi's Cozy Room Widget */}
       <CozyCard tone="white" className="p-4 sm:p-5 space-y-4">
         <div className="flex flex-col sm:flex-row items-center gap-4">
           {/* Mochi Companion SVG */}
-          <div className="w-36 h-36 sm:w-40 sm:h-40 rounded-3xl bg-[#FFFDF7] border-2 border-[#3D352E] shadow-[0_3px_0_0_#3D352E] flex items-center justify-center shrink-0 relative">
+          <Link
+            href="/app/pets"
+            onClick={() => soundEffects.tactileClick()}
+            className="w-36 h-36 sm:w-40 sm:h-40 rounded-3xl bg-[#FFFDF9] border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] flex items-center justify-center shrink-0 relative group"
+          >
             <MochiCompanion
-              stage={report.mochiStage}
+              stage={displayStage}
               mood={report.mochiMood}
-              className="w-36 h-36"
+              className="w-36 h-36 group-hover:scale-105 transition-transform"
             />
-            <span className="absolute -bottom-2.5 px-2.5 py-0.5 rounded-full bg-[#FFC800] border-2 border-[#3D352E] font-fredoka text-[11px] font-bold">
-              {MOCHI_STAGE_NAMES[report.mochiStage]}
+            <span className="absolute -bottom-2.5 px-3 py-0.5 rounded-full bg-[#FFC800] border-b-[3px] border-b-[#E5A400] font-display text-[11px] font-extrabold text-[#3D352E]">
+              {MOCHI_STAGE_NAMES[displayStage]}
             </span>
-          </div>
+          </Link>
 
           <div className="flex-1 space-y-3 text-center sm:text-left w-full">
+            <div className="flex items-center justify-center sm:justify-between flex-wrap gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#A552DB] inline-flex items-center gap-1">
+                <CozyIcon name="pet_paw" size={14} /> {equippedTitle}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEffects.tactileClick();
+                  setStreakCalendarOpen(true);
+                }}
+                className="px-2.5 py-0.5 rounded-full bg-[#FFFBEB] border border-[#FDE08D] text-[11px] font-display font-extrabold text-[#3D352E] inline-flex items-center gap-1 hover:bg-[#FFC800]/30 cursor-pointer"
+              >
+                <CozyIcon name="calendar_streak" size={15} /> Kalender Streak
+              </button>
+            </div>
+
             {/* Speech Bubble */}
-            <div className="bg-[#FFF7D6] border-2 border-[#3D352E] rounded-2xl p-3 text-xs sm:text-sm font-bold text-[#3D352E] relative">
+            <div className="bg-[#FFFBEB] border-2 border-[#FDE08D] rounded-2xl p-3 text-xs sm:text-sm font-bold text-[#3D352E] relative">
               <p>&ldquo;{report.mochiSpeech}&rdquo;</p>
             </div>
 
             {/* Remaining Daily Safe Spend Banner */}
-            <div className="bg-[#E5F9D7] border-2 border-[#3D352E] rounded-2xl p-3 flex items-center justify-between gap-2">
+            <div className="bg-[#EFFBE6] border-2 border-[#C3EFA4] border-b-[4px] border-b-[#9EE070] rounded-2xl p-3.5 flex items-center justify-between gap-2">
               <div className="text-left">
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#46A302]">
+                <p className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#46A302]">
                   Sisa Jatah Aman Hari Ini (DSSL)
                 </p>
-                <div className="font-fredoka text-xl sm:text-2xl font-bold text-[#3D352E]">
+                <div className="font-display text-xl sm:text-2xl font-extrabold text-[#3D352E]">
                   <RollingNumber
                     value={report.remainingDailySafeSpend}
                     prefix="Rp"
@@ -189,7 +245,7 @@ export default function UserHomePage() {
                 size="sm"
                 onClick={() => setTransactionDrawerOpen(true)}
               >
-                <Plus className="w-4 h-4" /> Catat
+                <CozyIcon name="plus_record" size={18} /> Catat
               </TactileButton>
             </div>
           </div>
@@ -212,7 +268,7 @@ export default function UserHomePage() {
       </CozyCard>
 
       {/* 2. Time-Scope Segmented Switcher */}
-      <div className="grid grid-cols-3 gap-2 bg-[#F7F2E7] p-1.5 rounded-2xl border-2 border-[#3D352E] shadow-[0_3px_0_0_#3D352E]">
+      <div className="grid grid-cols-3 gap-2 bg-[#F6F0E4] p-1.5 rounded-2xl border-2 border-[#E6DFD2]">
         {(
           [
             { id: "daily", label: "Harian (Jalur)" },
@@ -228,9 +284,9 @@ export default function UserHomePage() {
               setScope(tab.id);
             }}
             className={cn(
-              "py-2 px-2 rounded-xl font-fredoka text-xs sm:text-sm font-bold transition-all cursor-pointer",
+              "py-2 px-2 rounded-xl font-display text-xs sm:text-sm font-extrabold transition-all cursor-pointer",
               scope === tab.id
-                ? "bg-[#FFC800] text-[#3D352E] border-2 border-[#3D352E] shadow-[0_2px_0_0_#3D352E]"
+                ? "bg-[#FFC800] text-[#3D352E] border-b-[3px] border-b-[#E5A400]"
                 : "text-[#7A6E65] hover:text-[#3D352E]"
             )}
           >
@@ -246,32 +302,30 @@ export default function UserHomePage() {
             tone="vanilla"
             className="p-4 sm:p-6 relative overflow-hidden"
           >
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="font-fredoka text-lg sm:text-xl font-bold text-[#3D352E]">
-                  🗺️ Peta Jalur Kas Harian
-                </h2>
-                <p className="text-xs font-bold text-[#7A6E65]">
-                  Ketuk batu pijakan untuk melihat struk rincian hari tersebut!
-                </p>
+            <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <CozyIcon name="home_path" size={28} />
+                <div>
+                  <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E]">
+                    Peta Jalur Kas Harian
+                  </h2>
+                  <p className="text-xs font-bold text-[#7A6E65]">
+                    Ketuk batu pijakan untuk melihat struk rincian hari tersebut!
+                  </p>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  recordZeroSpendDay();
-                  soundEffects.comboFanfare();
-                  fireCozyConfetti("combo");
-                }}
-                className="px-3 py-1.5 rounded-xl bg-[#E5F9D7] hover:bg-[#58CC02] hover:text-white border-2 border-[#3D352E] text-xs font-extrabold flex items-center gap-1 transition-colors cursor-pointer"
+              <TactileButton
+                variant="matcha"
+                size="sm"
+                onClick={() => setConfirmZeroSpendOpen(true)}
               >
-                <ShieldCheck className="w-3.5 h-3.5" /> Klaim Rp0 Hari Ini
-              </button>
+                <CozyIcon name="zero_spend" size={18} /> Klaim Rp0 Hari Ini
+              </TactileButton>
             </div>
 
             {/* Winding Stepping Stones Track */}
             <div className="flex flex-col items-center space-y-3 py-2">
               {adventureDays.map((node, index) => {
-                // Zigzag horizontal offset like Duolingo path
                 const offsets = [
                   "translate-x-0",
                   "-translate-x-8 sm:-translate-x-12",
@@ -304,9 +358,9 @@ export default function UserHomePage() {
                           setSelectedDateStr(node.dateStr);
                         }}
                         className={cn(
-                          "group relative flex flex-col items-center focus:outline-none cursor-pointer p-1.5 rounded-3xl transition-all",
+                          "group relative flex flex-col items-center focus:outline-none cursor-pointer p-2 rounded-3xl transition-all",
                           isSelected &&
-                            "ring-4 ring-[#FFC800] bg-white/80 shadow-[0_4px_0_0_#3D352E]"
+                            "bg-white/95 border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C] shadow-sm"
                         )}
                       >
                         <SteppingStoneNode
@@ -314,10 +368,10 @@ export default function UserHomePage() {
                           label={node.dayNum}
                           className="w-24 h-20 sm:w-28 sm:h-24 group-hover:scale-105 transition-transform"
                         />
-                        <div className="mt-1 px-2.5 py-0.5 rounded-xl bg-white border-2 border-[#3D352E] text-[11px] font-extrabold flex items-center gap-1.5">
+                        <div className="mt-1 px-3 py-0.5 rounded-xl bg-white border border-[#E6DFD2] text-[11px] font-display font-extrabold flex items-center gap-1.5">
                           <span>{node.dayLabel}</span>
                           {node.totalSpent > 0 && (
-                            <span className="font-mono-num text-[#E06353]">
+                            <span className="tabular-nums text-[#E06353]">
                               • {formatRupiah(node.totalSpent)}
                             </span>
                           )}
@@ -328,26 +382,31 @@ export default function UserHomePage() {
                     {/* Every 7th stone: Weekly Checkpoint Treasure Chest */}
                     {node.isCheckpointChestAfter && (
                       <div className="py-2 flex flex-col items-center">
-                        <div className="w-1 h-5 bg-[#3D352E]/30 rounded-full mb-1" />
+                        <div className="w-1 h-5 bg-[#D4C9B4] rounded-full mb-1" />
                         <button
                           type="button"
-                          onClick={() =>
-                            handleChestClick(node.isCheckpointChestAfter!)
-                          }
-                          className="group bg-[#FFF7D6] hover:bg-[#FFC800]/40 border-2 border-[#3D352E] shadow-[0_4px_0_0_#3D352E] rounded-3xl px-5 py-3 flex items-center gap-3 cursor-pointer transition-all"
+                          onClick={() => {
+                            if (chestState === "opened") {
+                              soundEffects.tactileClick();
+                            } else {
+                              soundEffects.tactileClick();
+                              setConfirmChestWeek(node.isCheckpointChestAfter!);
+                            }
+                          }}
+                          className="group bg-[#FFFBEB] hover:bg-[#FFF4CE] border-2 border-[#FDE08D] border-b-[5px] border-b-[#F5C84C] rounded-3xl px-5 py-3 flex items-center gap-3 cursor-pointer transition-all"
                         >
                           <AnimatedTreasureChest
                             state={chestState}
                             className="w-20 h-20"
                           />
                           <div className="text-left">
-                            <span className="px-2 py-0.5 rounded-lg bg-[#FFC800] border border-[#3D352E] text-[10px] font-extrabold uppercase">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-[#FFC800] text-[10px] font-display font-extrabold uppercase">
                               Checkpoint Minggu 1
                             </span>
-                            <p className="font-fredoka text-base font-bold text-[#3D352E] mt-0.5">
+                            <p className="font-display text-base font-extrabold text-[#3D352E] mt-0.5">
                               {chestState === "opened"
-                                ? "Peti Checkpoint Terklaim! 🎉"
-                                : "Buka Peti Harta Mingguan! 🎁"}
+                                ? "Peti Checkpoint Terklaim!"
+                                : "Buka Peti Harta Mingguan!"}
                             </p>
                             <p className="text-xs font-bold text-[#7A6E65]">
                               {chestState === "opened"
@@ -378,38 +437,38 @@ export default function UserHomePage() {
         <CozyCard tone="white" className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-fredoka text-xl font-bold text-[#3D352E]">
-                📅 Ringkasan Kas Mingguan (7 Hari)
+              <h2 className="font-display text-xl font-extrabold text-[#3D352E]">
+                Ringkasan Kas Mingguan (7 Hari)
               </h2>
               <p className="text-xs font-bold text-[#7A6E65]">
                 Otomatis menghitung pengeluaran & sisa jatah mingguanmu
               </p>
             </div>
-            <Calendar className="w-6 h-6 text-[#38B6FF]" />
+            <CozyIcon name="calendar_streak" size={30} />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="p-3.5 rounded-2xl bg-[#E0F4FF] border-2 border-[#3D352E]">
+            <div className="p-3.5 rounded-2xl bg-[#EEF8FF] border-2 border-[#BCE3FF] border-b-[4px] border-b-[#89CAFF]">
               <p className="text-xs font-bold text-[#7A6E65]">
                 Jatah Mingguan Aman
               </p>
-              <p className="font-mono-num text-lg font-extrabold text-[#3D352E]">
+              <p className="font-display font-extrabold tabular-nums text-lg text-[#3D352E]">
                 {formatRupiah(report.weeklyBudgetAllowance)}
               </p>
             </div>
-            <div className="p-3.5 rounded-2xl bg-[#FFE8E5] border-2 border-[#3D352E]">
+            <div className="p-3.5 rounded-2xl bg-[#FFF2F0] border-2 border-[#FFCDC6] border-b-[4px] border-b-[#FFA89C]">
               <p className="text-xs font-bold text-[#7A6E65]">
                 Terpakai Minggu Ini
               </p>
-              <p className="font-mono-num text-lg font-extrabold text-[#E06353]">
+              <p className="font-display font-extrabold tabular-nums text-lg text-[#E06353]">
                 {formatRupiah(report.totalSpentThisWeek)}
               </p>
             </div>
-            <div className="p-3.5 rounded-2xl bg-[#E5F9D7] border-2 border-[#3D352E]">
+            <div className="p-3.5 rounded-2xl bg-[#EFFBE6] border-2 border-[#C3EFA4] border-b-[4px] border-b-[#9EE070]">
               <p className="text-xs font-bold text-[#7A6E65]">
                 Sisa Uang Minggu Ini
               </p>
-              <p className="font-mono-num text-lg font-extrabold text-[#46A302]">
+              <p className="font-display font-extrabold tabular-nums text-lg text-[#46A302]">
                 {formatRupiah(report.remainingWeeklyBudget)}
               </p>
             </div>
@@ -424,7 +483,7 @@ export default function UserHomePage() {
           />
 
           <div className="space-y-2.5 pt-2">
-            <h3 className="font-fredoka text-base font-bold">
+            <h3 className="font-display text-base font-extrabold">
               Daftar Transaksi 7 Hari Terakhir
             </h3>
             {transactions.slice(0, 8).map((tx) => (
@@ -439,46 +498,46 @@ export default function UserHomePage() {
         <CozyCard tone="white" className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-fredoka text-xl font-bold text-[#3D352E]">
-                🌕 Ringkasan Kas Bulanan & Target Tabungan
+              <h2 className="font-display text-xl font-extrabold text-[#3D352E]">
+                Ringkasan Kas Bulanan & Target Tabungan
               </h2>
               <p className="text-xs font-bold text-[#7A6E65]">
                 Sisa {report.remainingDaysInMonth} hari lagi di bulan ini
               </p>
             </div>
-            <Sparkles className="w-6 h-6 text-[#FFC800]" />
+            <CozyIcon name="cat_saving" size={30} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="p-3.5 rounded-2xl bg-[#E5F9D7] border-2 border-[#3D352E]">
+            <div className="p-3.5 rounded-2xl bg-[#EFFBE6] border-2 border-[#C3EFA4] border-b-[4px] border-b-[#9EE070]">
               <p className="text-xs font-bold text-[#7A6E65]">
                 Total Uang Saku Bulanan
               </p>
-              <p className="font-mono-num text-lg font-extrabold text-[#3D352E]">
+              <p className="font-display font-extrabold tabular-nums text-lg text-[#3D352E]">
                 {formatRupiah(report.monthlyAllowance)}
               </p>
             </div>
-            <div className="p-3.5 rounded-2xl bg-[#FFF7D6] border-2 border-[#3D352E]">
+            <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C]">
               <p className="text-xs font-bold text-[#7A6E65]">
                 Target Tabungan Dikunci
               </p>
-              <p className="font-mono-num text-lg font-extrabold text-[#E5A400]">
+              <p className="font-display font-extrabold tabular-nums text-lg text-[#E5A400]">
                 {formatRupiah(report.monthlySavingTarget)}
               </p>
             </div>
-            <div className="p-3.5 rounded-2xl bg-[#FFE8E5] border-2 border-[#3D352E]">
+            <div className="p-3.5 rounded-2xl bg-[#FFF2F0] border-2 border-[#FFCDC6] border-b-[4px] border-b-[#FFA89C]">
               <p className="text-xs font-bold text-[#7A6E65]">
                 Total Terpakai Bulan Ini
               </p>
-              <p className="font-mono-num text-lg font-extrabold text-[#E06353]">
+              <p className="font-display font-extrabold tabular-nums text-lg text-[#E06353]">
                 {formatRupiah(report.totalSpentThisMonth)}
               </p>
             </div>
-            <div className="p-3.5 rounded-2xl bg-[#E0F4FF] border-2 border-[#3D352E]">
+            <div className="p-3.5 rounded-2xl bg-[#EEF8FF] border-2 border-[#BCE3FF] border-b-[4px] border-b-[#89CAFF]">
               <p className="text-xs font-bold text-[#7A6E65]">
                 Sisa Uang Bulan Ini
               </p>
-              <p className="font-mono-num text-lg font-extrabold text-[#1E88E5]">
+              <p className="font-display font-extrabold tabular-nums text-lg text-[#1E88E5]">
                 {formatRupiah(report.remainingTotalBalanceThisMonth)}
               </p>
             </div>
@@ -493,27 +552,27 @@ export default function UserHomePage() {
           />
 
           <div className="space-y-2 pt-2">
-            <h3 className="font-fredoka text-base font-bold">
+            <h3 className="font-display text-base font-extrabold">
               Porsi Pengeluaran per Kategori
             </h3>
             {report.categoryBreakdown.map((cat) => (
               <div
                 key={cat.category}
-                className="p-3 rounded-2xl bg-[#F7F2E7] border-2 border-[#3D352E] flex items-center justify-between"
+                className="p-3 rounded-2xl bg-[#F9F4EA] border-2 border-[#E6DFD2] flex items-center justify-between"
               >
                 <div className="flex items-center gap-2.5">
-                  <span className="text-lg">{cat.emoji}</span>
+                  <CategoryIcon category={cat.category} size={26} />
                   <div>
-                    <p className="text-xs sm:text-sm font-extrabold text-[#3D352E]">
+                    <p className="text-xs sm:text-sm font-display font-extrabold text-[#3D352E]">
                       {cat.category}
                     </p>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-[#3D352E]">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-[#E6DFD2]">
                       {cat.group === "need" ? "Kebutuhan" : "Keinginan"} •{" "}
                       {cat.percentage}%
                     </span>
                   </div>
                 </div>
-                <span className="font-mono-num text-sm font-extrabold text-[#3D352E]">
+                <span className="font-display font-extrabold tabular-nums text-sm text-[#3D352E]">
                   {formatRupiah(cat.amount)}
                 </span>
               </div>
@@ -546,10 +605,10 @@ function TransactionDayFeed({
   return (
     <CozyCard tone="white" className="space-y-3.5">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Receipt className="w-5 h-5 text-[#3D352E]" />
+        <div className="flex items-center gap-2.5">
+          <CozyIcon name="missions_scroll" size={26} />
           <div>
-            <h3 className="font-fredoka text-base sm:text-lg font-bold text-[#3D352E]">
+            <h3 className="font-display text-base sm:text-lg font-extrabold text-[#3D352E]">
               Struk & Rincian Kas ({formattedDate})
             </h3>
             <p className="text-xs font-bold text-[#7A6E65]">
@@ -558,14 +617,14 @@ function TransactionDayFeed({
           </div>
         </div>
         <TactileButton variant="honey" size="sm" onClick={onAddClick}>
-          <Plus className="w-4 h-4" /> Tambah
+          <CozyIcon name="plus_record" size={16} /> Tambah
         </TactileButton>
       </div>
 
       {transactions.length === 0 ? (
-        <div className="p-6 rounded-2xl bg-[#F7F2E7] border-2 border-dashed border-[#3D352E] text-center space-y-2">
-          <p className="font-fredoka text-base font-bold text-[#3D352E]">
-            Belum ada pengeluaran di tanggal ini! 🍃
+        <div className="p-6 rounded-2xl bg-[#F9F4EA] border-2 border-dashed border-[#D4C9B4] text-center space-y-2">
+          <p className="font-display text-base font-extrabold text-[#3D352E]">
+            Belum ada pengeluaran di tanggal ini!
           </p>
           <p className="text-xs font-bold text-[#7A6E65]">
             Catat struk belanjamu dengan Misi Rinci untuk dapat +35 Poin!
@@ -588,10 +647,9 @@ function ReceiptCardItem({
   tx: ReturnType<typeof useBukuDompetStore.getState>["transactions"][number];
 }) {
   const [expanded, setExpanded] = useState<boolean>(true);
-  const catMeta = EXPENSE_CATEGORIES.find((c) => c.name === tx.category);
 
   return (
-    <div className="rounded-2xl border-2 border-[#3D352E] bg-[#FFFDF7] p-3.5 transition-all">
+    <div className="rounded-2xl border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] bg-[#FFFDF9] p-3.5 transition-all">
       <div
         onClick={() => {
           if (tx.items && tx.items.length > 0) {
@@ -604,32 +662,33 @@ function ReceiptCardItem({
         <div className="flex items-center gap-3 min-w-0">
           <div
             className={cn(
-              "w-10 h-10 rounded-2xl border-2 border-[#3D352E] flex items-center justify-center text-lg shrink-0",
+              "w-11 h-11 rounded-2xl border-2 flex items-center justify-center shrink-0",
               tx.type === "income"
-                ? "bg-[#E5F9D7]"
+                ? "bg-[#EFFBE6] border-[#C3EFA4]"
                 : tx.need_or_want === "need"
-                ? "bg-[#E0F4FF]"
-                : "bg-[#FFE8E5]"
+                ? "bg-[#EEF8FF] border-[#BCE3FF]"
+                : "bg-[#FFF2F0] border-[#FFCDC6]"
             )}
           >
-            {tx.type === "income" ? "💰" : catMeta?.emoji || "🧾"}
+            <CategoryIcon category={tx.category} size={26} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <p className="font-fredoka text-sm sm:text-base font-bold text-[#3D352E] truncate">
+              <p className="font-display text-sm sm:text-base font-extrabold text-[#3D352E] truncate">
                 {tx.title}
               </p>
               {tx.is_itemized && (
-                <span className="px-2 py-0.5 rounded-lg bg-[#FFC800] border border-[#3D352E] text-[10px] font-extrabold">
-                  ✨ Rinci
+                <span className="px-2 py-0.5 rounded-lg bg-[#FFFBEB] border border-[#FDE08D] text-[10px] font-display font-extrabold inline-flex items-center gap-0.5">
+                  <CozyIcon name="combo_sparkle" size={12} /> Rinci
                 </span>
               )}
             </div>
             <div className="flex items-center gap-2 text-[11px] font-bold text-[#7A6E65]">
               <span>{tx.category}</span>
               {tx.points_earned > 0 && (
-                <span className="inline-flex items-center gap-0.5 text-[#E5A400] font-extrabold">
-                  <Coins className="w-3 h-3" />+{tx.points_earned} Poin
+                <span className="inline-flex items-center gap-0.5 text-[#E5A400] font-display font-extrabold">
+                  <CozyIcon name="coin_rupiah" size={14} />+{tx.points_earned}{" "}
+                  Poin
                 </span>
               )}
             </div>
@@ -639,7 +698,7 @@ function ReceiptCardItem({
         <div className="flex items-center gap-2 shrink-0">
           <span
             className={cn(
-              "font-mono-num text-sm sm:text-base font-extrabold",
+              "font-display text-sm sm:text-base font-extrabold tabular-nums",
               tx.type === "income" ? "text-[#46A302]" : "text-[#3D352E]"
             )}
           >
@@ -647,7 +706,7 @@ function ReceiptCardItem({
             {formatRupiah(tx.total_amount)}
           </span>
           {tx.items && tx.items.length > 0 && (
-            <span className="p-1 rounded-lg bg-[#F7F2E7] border border-[#3D352E]">
+            <span className="p-1 rounded-lg bg-[#F9F4EA] border border-[#E6DFD2]">
               {expanded ? (
                 <ChevronUp className="w-3.5 h-3.5" />
               ) : (
@@ -667,11 +726,11 @@ function ReceiptCardItem({
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="mt-3 pt-2.5 border-t-2 border-dashed border-[#3D352E]/30 space-y-1.5">
+            <div className="mt-3 pt-2.5 border-t-2 border-dashed border-[#E6DFD2] space-y-1.5">
               {tx.items.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between text-xs font-bold px-2 py-1 rounded-xl bg-[#F7F2E7]"
+                  className="flex items-center justify-between text-xs font-bold px-2.5 py-1.5 rounded-xl bg-[#F9F4EA]"
                 >
                   <span className="text-[#3D352E]">
                     • {item.item_name}{" "}
@@ -679,7 +738,7 @@ function ReceiptCardItem({
                       <span className="text-[#7A6E65]">x{item.quantity}</span>
                     )}
                   </span>
-                  <span className="font-mono-num font-extrabold text-[#3D352E]">
+                  <span className="font-display font-extrabold tabular-nums text-[#3D352E]">
                     {formatRupiah(item.subtotal)}
                   </span>
                 </div>

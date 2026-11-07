@@ -3,15 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Drawer } from "vaul";
-import {
-  KeyRound,
-  Sparkles,
-  HeartHandshake,
-  ShieldCheck,
-  Delete,
-  ArrowRight,
-  X,
-} from "lucide-react";
+import { Delete, ArrowRight, X } from "lucide-react";
 import {
   useBukuDompetStore,
   type UserRole,
@@ -20,11 +12,17 @@ import {
   MochiCompanion,
   type MochiStage,
 } from "@/components/illustrations/MochiCompanion";
+import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
+import {
+  CozyIcon,
+  type IconName,
+} from "@/components/illustrations/CozyIcons";
 import {
   TactileButton,
   CozyCard,
   FloatingRewardBanner,
 } from "@/components/ui/CozyPrimitives";
+import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { soundEffects } from "@/lib/sound-effects";
 
 const ROLE_CARDS: {
@@ -36,7 +34,7 @@ const ROLE_CARDS: {
   targetPath: string;
   tone: "matcha" | "honey" | "sky";
   mochiStage: MochiStage;
-  icon: React.ElementType;
+  iconName: IconName;
 }[] = [
   {
     role: "user",
@@ -48,7 +46,7 @@ const ROLE_CARDS: {
     targetPath: "/app",
     tone: "matcha",
     mochiStage: 3,
-    icon: Sparkles,
+    iconName: "pet_paw",
   },
   {
     role: "supervisor",
@@ -60,7 +58,7 @@ const ROLE_CARDS: {
     targetPath: "/supervisor",
     tone: "honey",
     mochiStage: 4,
-    icon: HeartHandshake,
+    iconName: "parent_heart",
   },
   {
     role: "admin",
@@ -72,7 +70,7 @@ const ROLE_CARDS: {
     targetPath: "/admin",
     tone: "sky",
     mochiStage: 5,
-    icon: ShieldCheck,
+    iconName: "crown_sultan",
   },
 ];
 
@@ -120,99 +118,101 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FFFDF7] text-[#3D352E] py-8 px-4 sm:px-6 flex flex-col justify-between">
+    <div className="min-h-screen text-[#3D352E] py-8 px-4 sm:px-6 flex flex-col justify-between">
+      <PageTransitionLoader />
       <FloatingRewardBanner />
 
       <div className="max-w-4xl mx-auto w-full space-y-8">
-        {/* Cozy Illustrated Header */}
+        {/* Cozy Illustrated Header with Official BukuDompetLogo */}
         <CozyCard
           tone="vanilla"
           className="p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6"
         >
-          <div className="space-y-3 text-center md:text-left max-w-xl">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FFF7D6] border-2 border-[#3D352E] shadow-[0_3px_0_0_#3D352E] text-xs font-extrabold">
-              <span>🏠 Pintu Keluarga BukuDompet</span>
-              <span>•</span>
-              <span className="font-mono-num">1 Poin = Rp 1</span>
+          <div className="space-y-4 text-center md:text-left max-w-xl">
+            <div className="flex justify-center md:justify-start">
+              <BukuDompetLogo variant="full" size="md" />
             </div>
-            <h1 className="font-fredoka text-3xl sm:text-4xl font-bold text-[#3D352E] leading-tight">
-              Selamat Datang di Jurnal Kas Petualangan Mochi! 🐾
+
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C] text-xs font-display font-extrabold">
+              <CozyIcon name="coin_rupiah" size={18} />
+              <span>Pintu Keluarga BukuDompet • 1 Poin = Rp 1</span>
+            </div>
+
+            <h1 className="font-display text-2xl sm:text-4xl font-extrabold text-[#3D352E] leading-tight">
+              Selamat Datang di Jurnal Kas Petualangan Mochi!
             </h1>
             <p className="text-sm sm:text-base font-bold text-[#7A6E65]">
               Pilih kartu profilmu di bawah untuk masuk menggunakan PIN 4 angka.
               Dirancang hangat untuk Adik, Orang Tua, dan Abang!
             </p>
           </div>
-          <div className="w-36 h-36 sm:w-44 sm:h-44 bg-white rounded-3xl border-2 border-[#3D352E] shadow-[0_4px_0_0_#3D352E] flex items-center justify-center shrink-0">
+          <div className="w-36 h-36 sm:w-44 sm:h-44 bg-white rounded-3xl border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] flex items-center justify-center shrink-0">
             <MochiCompanion stage={3} mood="happy" className="w-36 h-36" />
           </div>
         </CozyCard>
 
         {/* 3 Tactile Profile Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {ROLE_CARDS.map((card) => {
-            const Icon = card.icon;
-            return (
-              <CozyCard
-                key={card.role}
-                tone="white"
-                className="flex flex-col justify-between gap-4 hover:-translate-y-1 transition-transform"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`px-3 py-1 rounded-xl border-2 border-[#3D352E] text-xs font-mono-num font-extrabold ${
-                        card.tone === "matcha"
-                          ? "bg-[#E5F9D7]"
-                          : card.tone === "honey"
-                          ? "bg-[#FFF7D6]"
-                          : "bg-[#E0F4FF]"
-                      }`}
-                    >
-                      {card.badge}
-                    </span>
-                    <Icon className="w-5 h-5 text-[#3D352E]" />
-                  </div>
-
-                  <div className="bg-[#F7F2E7] rounded-2xl border-2 border-[#3D352E] py-2 flex justify-center">
-                    <MochiCompanion
-                      stage={card.mochiStage}
-                      mood="happy"
-                      className="w-28 h-28"
-                    />
-                  </div>
-
-                  <div>
-                    <h2 className="font-fredoka text-xl font-bold text-[#3D352E]">
-                      {card.title}
-                    </h2>
-                    <p className="text-xs sm:text-sm font-bold text-[#7A6E65] mt-1">
-                      {card.subtitle}
-                    </p>
-                  </div>
+          {ROLE_CARDS.map((card) => (
+            <CozyCard
+              key={card.role}
+              tone="white"
+              className="flex flex-col justify-between gap-4 hover:-translate-y-1 transition-transform"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span
+                    className={`px-3 py-1 rounded-xl border-2 text-xs font-display font-extrabold ${
+                      card.tone === "matcha"
+                        ? "bg-[#EFFBE6] border-[#C3EFA4]"
+                        : card.tone === "honey"
+                        ? "bg-[#FFFBEB] border-[#FDE08D]"
+                        : "bg-[#EEF8FF] border-[#BCE3FF]"
+                    }`}
+                  >
+                    {card.badge}
+                  </span>
+                  <CozyIcon name={card.iconName} size={26} />
                 </div>
 
-                <div className="space-y-2 pt-2">
-                  <TactileButton
-                    variant={card.tone}
-                    size="md"
-                    fullWidth
-                    onClick={() => handleOpenRole(card)}
-                  >
-                    <KeyRound className="w-4 h-4" /> Buka Pintu PIN
-                  </TactileButton>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickDemoLogin(card)}
-                    className="w-full py-1.5 text-xs font-extrabold text-[#7A6E65] hover:text-[#3D352E] flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <span>Masuk Instan (PIN {card.defaultPin})</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                <div className="bg-[#F9F4EA] rounded-2xl border-2 border-[#E6DFD2] py-2 flex justify-center">
+                  <MochiCompanion
+                    stage={card.mochiStage}
+                    mood="happy"
+                    className="w-28 h-28"
+                  />
                 </div>
-              </CozyCard>
-            );
-          })}
+
+                <div>
+                  <h2 className="font-display text-xl font-extrabold text-[#3D352E]">
+                    {card.title}
+                  </h2>
+                  <p className="text-xs sm:text-sm font-bold text-[#7A6E65] mt-1">
+                    {card.subtitle}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <TactileButton
+                  variant={card.tone}
+                  size="md"
+                  fullWidth
+                  onClick={() => handleOpenRole(card)}
+                >
+                  <CozyIcon name="lock_cozy" size={20} /> Buka Pintu PIN
+                </TactileButton>
+                <button
+                  type="button"
+                  onClick={() => handleQuickDemoLogin(card)}
+                  className="w-full py-1.5 text-xs font-display font-extrabold text-[#7A6E65] hover:text-[#3D352E] flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <span>Masuk Instan (PIN {card.defaultPin})</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </CozyCard>
+          ))}
         </div>
       </div>
 
@@ -222,25 +222,29 @@ export default function LoginPage() {
         onOpenChange={(open) => !open && setSelectedRoleCard(null)}
       >
         <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-[#3D352E]/50 z-50 backdrop-blur-[2px]" />
-          <Drawer.Content className="bg-[#FFFDF7] border-t-4 border-[#3D352E] rounded-t-[32px] fixed bottom-0 left-0 right-0 z-50 max-h-[88vh] flex flex-col focus:outline-none">
-            <div className="mx-auto w-14 h-2 rounded-full bg-[#3D352E]/25 my-3 shrink-0" />
+          <Drawer.Overlay className="fixed inset-0 bg-[#3D352E]/45 z-50 backdrop-blur-[2px]" />
+          <Drawer.Content className="bg-[#FFFDF9] border-t-4 border-[#E6DFD2] rounded-t-[36px] fixed bottom-0 left-0 right-0 z-50 max-h-[88vh] flex flex-col focus:outline-none">
+            <div className="mx-auto w-14 h-2 rounded-full bg-[#D4C9B4] my-3 shrink-0" />
 
             {selectedRoleCard && (
               <div className="px-6 pb-8 max-w-sm mx-auto w-full space-y-5">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <Drawer.Title className="font-fredoka text-xl font-bold text-[#3D352E]">
-                      PIN {selectedRoleCard.title.split(" ")[0]} 🔐
-                    </Drawer.Title>
-                    <Drawer.Description className="text-xs font-bold text-[#7A6E65]">
-                      Masukkan 4 angka PIN (Demo: {selectedRoleCard.defaultPin})
-                    </Drawer.Description>
+                  <div className="flex items-center gap-2.5">
+                    <CozyIcon name="lock_cozy" size={28} />
+                    <div>
+                      <Drawer.Title className="font-display text-xl font-extrabold text-[#3D352E]">
+                        PIN {selectedRoleCard.title.split(" ")[0]}
+                      </Drawer.Title>
+                      <Drawer.Description className="text-xs font-bold text-[#7A6E65]">
+                        Masukkan 4 angka PIN (Demo:{" "}
+                        {selectedRoleCard.defaultPin})
+                      </Drawer.Description>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setSelectedRoleCard(null)}
-                    className="p-2 rounded-2xl border-2 border-[#3D352E] bg-[#F7F2E7] cursor-pointer"
+                    className="p-2.5 rounded-2xl border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] bg-[#F9F4EA] cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -253,8 +257,10 @@ export default function LoginPage() {
                     return (
                       <div
                         key={idx}
-                        className={`h-14 rounded-2xl border-2 border-[#3D352E] shadow-[0_3px_0_0_#3D352E] flex items-center justify-center font-mono-num text-2xl font-extrabold transition-all ${
-                          filled ? "bg-[#FFC800]" : "bg-white"
+                        className={`h-14 rounded-2xl border-2 border-b-[4px] flex items-center justify-center font-display text-2xl font-extrabold transition-all ${
+                          filled
+                            ? "bg-[#FFC800] border-[#E5A400]"
+                            : "bg-white border-[#E6DFD2] border-b-[#D4C9B4]"
                         }`}
                       >
                         {filled ? "●" : ""}
@@ -264,7 +270,7 @@ export default function LoginPage() {
                 </div>
 
                 {errorMsg && (
-                  <div className="p-2.5 rounded-2xl bg-[#FFDEDE] border-2 border-[#3D352E] text-center text-xs font-extrabold text-[#EA2B2B]">
+                  <div className="p-2.5 rounded-2xl bg-[#FFF0F0] border-2 border-[#FFC2C2] text-center text-xs font-extrabold text-[#EA2B2B]">
                     {errorMsg}
                   </div>
                 )}
@@ -274,10 +280,10 @@ export default function LoginPage() {
                   {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
                     <TactileButton
                       key={d}
-                      variant="white"
+                      variant="cream"
                       size="lg"
                       onClick={() => handleDigitPress(d)}
-                      className="font-mono-num text-xl"
+                      className="font-display text-xl"
                     >
                       {d}
                     </TactileButton>
@@ -300,10 +306,10 @@ export default function LoginPage() {
                     Isi {selectedRoleCard.defaultPin}
                   </TactileButton>
                   <TactileButton
-                    variant="white"
+                    variant="cream"
                     size="lg"
                     onClick={() => handleDigitPress("0")}
-                    className="font-mono-num text-xl"
+                    className="font-display text-xl"
                   >
                     0
                   </TactileButton>

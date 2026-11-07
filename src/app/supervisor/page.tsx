@@ -2,29 +2,18 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import {
-  HeartHandshake,
-  Receipt,
-  Flame,
-  Wallet,
-  Calendar,
-  Sparkles,
-  ArrowLeft,
-  Settings,
-  CheckCircle2,
-  ShieldAlert,
-  UserCheck,
-} from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import {
   analyzeSpendingDetective,
   getLevelFromXp,
-  EXPENSE_CATEGORIES,
 } from "@/lib/spending-detective";
 import {
   MochiCompanion,
   MOCHI_STAGE_NAMES,
 } from "@/components/illustrations/MochiCompanion";
+import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
+import { CozyIcon, CategoryIcon } from "@/components/illustrations/CozyIcons";
 import {
   TactileButton,
   CozyCard,
@@ -33,12 +22,17 @@ import {
   FloatingRewardBanner,
   formatRupiah,
 } from "@/components/ui/CozyPrimitives";
+import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
+import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
+import { GamificationFX } from "@/components/ui/GamificationFX";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 
 export default function SupervisorDashboardPage() {
+  const router = useRouter();
   const {
     profiles,
     transactions,
+    equippedMochiStage,
     lastSupervisorCheerDate,
     supervisorCheersCount,
     sendSupervisorCheer,
@@ -48,6 +42,8 @@ export default function SupervisorDashboardPage() {
     profiles.find((p) => p.role === "user")?.id || profiles[0].id
   );
   const [cheerMessage, setCheerMessage] = useState<string | null>(null);
+  const [confirmCheerOpen, setConfirmCheerOpen] = useState<boolean>(false);
+  const [confirmExitOpen, setConfirmExitOpen] = useState<boolean>(false);
 
   const inspectedUser =
     profiles.find((p) => p.id === selectedUserId) ||
@@ -62,10 +58,12 @@ export default function SupervisorDashboardPage() {
     userLevel: levelInfo.level,
   });
 
+  const displayStage = equippedMochiStage || report.mochiStage;
+
   const todayStr = new Date().toISOString().split("T")[0];
   const alreadyCheeredToday = lastSupervisorCheerDate === todayStr;
 
-  const handleSendCheer = () => {
+  const executeSendCheer = () => {
     const res = sendSupervisorCheer();
     setCheerMessage(res.message);
     if (res.success) {
@@ -77,48 +75,80 @@ export default function SupervisorDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FFFDF7] text-[#3D352E] pb-16">
+    <div className="min-h-screen text-[#3D352E] pb-16">
+      <PageTransitionLoader />
+      <GamificationFX />
       <FloatingRewardBanner />
 
+      <CozyConfirmModal
+        open={confirmCheerOpen}
+        onClose={() => setConfirmCheerOpen(false)}
+        onConfirm={executeSendCheer}
+        title="Kirim Stiker Semangat (+50 Poin)?"
+        description="Orang Tua akan mengirimkan apresiasi Stiker Semangat beserta hadiah +50 Poin (Rp50) & +30 XP langsung ke dompet kas Adik!"
+        confirmLabel="Ya, Kirim Semangat!"
+        confirmVariant="matcha"
+        mochiMood="proud_combo"
+        mochiStage={displayStage}
+        badgeText="Apresiasi Orang Tua"
+      />
+
+      <CozyConfirmModal
+        open={confirmExitOpen}
+        onClose={() => setConfirmExitOpen(false)}
+        onConfirm={() => router.push("/login")}
+        title="Kembali ke Pintu PIN Keluarga?"
+        description="Anda akan kembali ke halaman Pintu PIN untuk beralih peran akun."
+        confirmLabel="Ya, Ke Pintu PIN"
+        confirmVariant="honey"
+        mochiStage={displayStage}
+      />
+
       {/* Top Sticky Supervisor Bar */}
-      <header className="sticky top-0 z-40 bg-[#FFFDF7]/95 backdrop-blur-sm border-b-2 border-[#3D352E]">
+      <header className="sticky top-0 z-40 bg-[#FFFDF9]/92 backdrop-blur-md border-b-2 border-[#E6DFD2]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#FFC800] border-2 border-[#3D352E] shadow-[0_3px_0_0_#3D352E] flex items-center justify-center">
-              <HeartHandshake className="w-5 h-5 text-[#3D352E]" />
-            </div>
-            <div>
-              <h1 className="font-fredoka text-lg sm:text-xl font-bold text-[#3D352E] leading-none">
-                Layar Pantau Orang Tua (Supervisor)
-              </h1>
-              <p className="text-xs font-bold text-[#7A6E65]">
-                Transparan, Ramah Keluarga & Real-time
-              </p>
-            </div>
+            <BukuDompetLogo
+              variant="mark"
+              size="sm"
+              className="sm:hidden w-10 h-10"
+            />
+            <BukuDompetLogo
+              variant="full"
+              size="sm"
+              className="hidden sm:block h-10 w-auto"
+            />
+            <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFFBEB] border-2 border-[#FDE08D] text-xs font-display font-extrabold">
+              <CozyIcon name="parent_heart" size={18} />
+              Layar Pantau Orang Tua
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
             <Link
               href="/app"
               onClick={() => soundEffects.tactileClick()}
-              className="px-3 py-1.5 rounded-xl bg-[#E5F9D7] border-2 border-[#3D352E] text-xs font-extrabold flex items-center gap-1 hover:bg-[#58CC02] hover:text-white transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-[#EFFBE6] border-2 border-[#C3EFA4] border-b-[4px] border-b-[#9EE070] text-xs font-display font-extrabold flex items-center gap-1.5 hover:bg-[#58CC02] hover:text-white transition-colors"
             >
-              <ArrowLeft className="w-3.5 h-3.5" /> Layar Adik
+              <CozyIcon name="home_path" size={18} /> Layar Adik
             </Link>
             <Link
               href="/admin"
               onClick={() => soundEffects.tactileClick()}
-              className="px-3 py-1.5 rounded-xl bg-[#E0F4FF] border-2 border-[#3D352E] text-xs font-extrabold flex items-center gap-1"
+              className="px-3 py-1.5 rounded-xl bg-[#EEF8FF] border-2 border-[#BCE3FF] border-b-[4px] border-b-[#89CAFF] text-xs font-display font-extrabold flex items-center gap-1.5"
             >
-              <Settings className="w-3.5 h-3.5" /> Admin
+              <CozyIcon name="crown_sultan" size={18} /> Admin
             </Link>
-            <Link
-              href="/login"
-              onClick={() => soundEffects.tactileClick()}
-              className="px-3 py-1.5 rounded-xl bg-[#F7F2E7] border-2 border-[#3D352E] text-xs font-extrabold"
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.tactileClick();
+                setConfirmExitOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center gap-1 cursor-pointer"
             >
-              Pintu PIN
-            </Link>
+              <CozyIcon name="lock_cozy" size={16} /> Pintu PIN
+            </button>
           </div>
         </div>
       </header>
@@ -130,40 +160,40 @@ export default function SupervisorDashboardPage() {
           className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
         >
           <div className="flex items-center gap-3.5">
-            <div className="w-16 h-16 rounded-2xl bg-white border-2 border-[#3D352E] flex items-center justify-center shrink-0">
+            <div className="w-16 h-16 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex items-center justify-center shrink-0">
               <MochiCompanion
-                stage={report.mochiStage}
+                stage={displayStage}
                 mood={report.mochiMood}
                 className="w-16 h-16"
               />
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <UserCheck className="w-4 h-4 text-[#3D352E]" />
-                <label className="text-xs font-extrabold uppercase tracking-wider text-[#7A6E65]">
+                <CozyIcon name="parent_heart" size={20} />
+                <label className="text-xs font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">
                   Buku Kas yang Dipantau:
                 </label>
                 <select
                   value={selectedUserId}
                   onChange={(e) => setSelectedUserId(e.target.value)}
-                  className="px-3 py-1 rounded-xl bg-white border-2 border-[#3D352E] font-fredoka text-sm font-bold text-[#3D352E] focus:outline-none"
+                  className="px-3 py-1 rounded-xl bg-white border-2 border-[#E6DFD2] font-display text-sm font-extrabold text-[#3D352E] focus:outline-none"
                 >
                   {profiles
                     .filter((p) => p.role === "user")
                     .map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.display_name} — {MOCHI_STAGE_NAMES[report.mochiStage]}
+                        {p.display_name} — {MOCHI_STAGE_NAMES[displayStage]}
                       </option>
                     ))}
                 </select>
               </div>
               <p className="text-xs sm:text-sm font-bold text-[#3D352E]">
                 Adik sudah rajin mencatat{" "}
-                <strong>{inspectedUser.current_streak} hari berturut-turut</strong>!
-                Beri semangat agar makin disiplin menabung.
+                <strong>{inspectedUser.current_streak} hari berturut-turut</strong>
+                ! Beri semangat agar makin disiplin menabung.
               </p>
               {cheerMessage && (
-                <p className="text-xs font-extrabold text-[#46A302] bg-white px-2.5 py-1 rounded-lg border border-[#3D352E] inline-block">
+                <p className="text-xs font-extrabold text-[#46A302] bg-white px-2.5 py-1 rounded-lg border border-[#C3EFA4] inline-block">
                   {cheerMessage}
                 </p>
               )}
@@ -172,15 +202,21 @@ export default function SupervisorDashboardPage() {
 
           <div className="w-full md:w-auto shrink-0">
             <TactileButton
-              variant={alreadyCheeredToday ? "white" : "matcha"}
+              variant={alreadyCheeredToday ? "cream" : "matcha"}
               size="md"
               fullWidth
-              onClick={handleSendCheer}
+              onClick={() => {
+                if (alreadyCheeredToday) {
+                  executeSendCheer();
+                } else {
+                  setConfirmCheerOpen(true);
+                }
+              }}
             >
-              <Sparkles className="w-4 h-4" />
+              <CozyIcon name="parent_heart" size={20} />
               {alreadyCheeredToday
                 ? `Stiker Semangat Terkirim Hari Ini (${supervisorCheersCount}x)`
-                : "Kirim Stiker Semangat (+50 Poin Bonus)! 💌"}
+                : "Kirim Stiker Semangat (+50 Poin Bonus)!"}
             </TactileButton>
           </div>
         </CozyCard>
@@ -188,25 +224,26 @@ export default function SupervisorDashboardPage() {
         {/* 2. Kartu Ringkasan Orang Tua (Plain-Language Storytelling + 4 Big Cards) */}
         <div className="space-y-3">
           <CozyCard tone="white" className="p-5 space-y-3">
-            <span className="px-3 py-1 rounded-full bg-[#E5F9D7] border-2 border-[#3D352E] text-xs font-extrabold">
-              📖 Cerita Keuangan Harian (Bahasa Ramah Orang Tua)
+            <span className="px-3 py-1 rounded-full bg-[#EFFBE6] border border-[#C3EFA4] text-xs font-display font-extrabold inline-flex items-center gap-1.5">
+              <CozyIcon name="missions_scroll" size={16} />
+              Cerita Keuangan Harian (Bahasa Ramah Orang Tua)
             </span>
-            <p className="font-fredoka text-lg sm:text-xl font-bold text-[#3D352E] leading-relaxed">
+            <p className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-relaxed">
               &ldquo;Bulan ini dari uang saku{" "}
-              <span className="underline decoration-[#58CC02] decoration-2">
+              <span className="underline decoration-[#58CC02] decoration-2 tabular-nums">
                 {formatRupiah(report.monthlyAllowance)}
               </span>
               , Adik sudah menyisihkan target tabungan{" "}
-              <span className="text-[#46A302]">
+              <span className="text-[#46A302] tabular-nums">
                 {formatRupiah(report.monthlySavingTarget)}
               </span>
               . Hari ini pengeluaran Adik tercatat{" "}
-              <span className="text-[#E06353]">
+              <span className="text-[#E06353] tabular-nums">
                 {formatRupiah(report.todayTotalSpend)}
               </span>{" "}
               (batas aman harian {formatRupiah(report.dssl)}), sehingga kondisi
               dompet saat ini{" "}
-              <span className="px-2 py-0.5 rounded-lg bg-[#FFF7D6] border border-[#3D352E]">
+              <span className="px-2.5 py-0.5 rounded-xl bg-[#FFFBEB] border border-[#FDE08D]">
                 {report.walletStatus}
               </span>
               !&rdquo;
@@ -215,11 +252,11 @@ export default function SupervisorDashboardPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <CozyCard tone="matcha" className="p-4 space-y-1">
-              <div className="flex items-center justify-between text-xs font-extrabold text-[#3D352E]">
+              <div className="flex items-center justify-between text-xs font-display font-extrabold text-[#3D352E]">
                 <span>Sisa Uang Bulan Ini</span>
-                <Wallet className="w-4 h-4 text-[#46A302]" />
+                <CozyIcon name="cat_saving" size={22} />
               </div>
-              <div className="font-fredoka text-2xl font-bold text-[#3D352E]">
+              <div className="font-display text-2xl font-extrabold text-[#3D352E]">
                 <RollingNumber
                   value={report.remainingTotalBalanceThisMonth}
                   prefix="Rp"
@@ -231,11 +268,11 @@ export default function SupervisorDashboardPage() {
             </CozyCard>
 
             <CozyCard tone="peach" className="p-4 space-y-1">
-              <div className="flex items-center justify-between text-xs font-extrabold text-[#3D352E]">
+              <div className="flex items-center justify-between text-xs font-display font-extrabold text-[#3D352E]">
                 <span>Pengeluaran Hari Ini</span>
-                <Receipt className="w-4 h-4 text-[#E06353]" />
+                <CozyIcon name="cat_food" size={22} />
               </div>
-              <div className="font-fredoka text-2xl font-bold text-[#3D352E]">
+              <div className="font-display text-2xl font-extrabold text-[#3D352E]">
                 <RollingNumber value={report.todayTotalSpend} prefix="Rp" />
               </div>
               <p className="text-[11px] font-bold text-[#7A6E65]">
@@ -244,11 +281,11 @@ export default function SupervisorDashboardPage() {
             </CozyCard>
 
             <CozyCard tone="sky" className="p-4 space-y-1">
-              <div className="flex items-center justify-between text-xs font-extrabold text-[#3D352E]">
+              <div className="flex items-center justify-between text-xs font-display font-extrabold text-[#3D352E]">
                 <span>Pengeluaran Minggu Ini</span>
-                <Calendar className="w-4 h-4 text-[#1E88E5]" />
+                <CozyIcon name="calendar_streak" size={22} />
               </div>
-              <div className="font-fredoka text-2xl font-bold text-[#3D352E]">
+              <div className="font-display text-2xl font-extrabold text-[#3D352E]">
                 <RollingNumber value={report.totalSpentThisWeek} prefix="Rp" />
               </div>
               <p className="text-[11px] font-bold text-[#7A6E65]">
@@ -257,11 +294,11 @@ export default function SupervisorDashboardPage() {
             </CozyCard>
 
             <CozyCard tone="honey" className="p-4 space-y-1">
-              <div className="flex items-center justify-between text-xs font-extrabold text-[#3D352E]">
+              <div className="flex items-center justify-between text-xs font-display font-extrabold text-[#3D352E]">
                 <span>Skor Kerajinan (Streak)</span>
-                <Flame className="w-4 h-4 text-[#E5A400]" />
+                <CozyIcon name="flame_streak" size={22} animated />
               </div>
-              <div className="font-fredoka text-2xl font-bold text-[#3D352E]">
+              <div className="font-display text-2xl font-extrabold text-[#3D352E]">
                 {inspectedUser.current_streak} Hari Berturut
               </div>
               <p className="text-[11px] font-bold text-[#7A6E65]">
@@ -276,22 +313,22 @@ export default function SupervisorDashboardPage() {
           {/* Jurnal Harian Transparan (What, For What, How Much) */}
           <CozyCard tone="white" className="lg:col-span-2 space-y-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-fredoka text-xl font-bold text-[#3D352E]">
-                  🧾 Jurnal Harian Transparan (Rincian Per Item)
-                </h2>
-                <p className="text-xs font-bold text-[#7A6E65]">
-                  Orang tua bisa melihat dengan jelas uang dipakai beli apa saja
-                  (bukan sekadar tulis &ldquo;Makan&rdquo;)
-                </p>
+              <div className="flex items-center gap-2.5">
+                <CozyIcon name="missions_scroll" size={28} />
+                <div>
+                  <h2 className="font-display text-xl font-extrabold text-[#3D352E]">
+                    Jurnal Harian Transparan (Rincian Per Item)
+                  </h2>
+                  <p className="text-xs font-bold text-[#7A6E65]">
+                    Orang tua bisa melihat dengan jelas uang dipakai beli apa
+                    saja (bukan sekadar tulis &ldquo;Makan&rdquo;)
+                  </p>
+                </div>
               </div>
             </div>
 
             <div className="space-y-3">
               {transactions.map((tx) => {
-                const catMeta = EXPENSE_CATEGORIES.find(
-                  (c) => c.name === tx.category
-                );
                 const dateFormatted = new Date(
                   tx.transaction_date + "T12:00:00"
                 ).toLocaleDateString("id-ID", {
@@ -303,21 +340,21 @@ export default function SupervisorDashboardPage() {
                 return (
                   <div
                     key={tx.id}
-                    className="p-4 rounded-2xl border-2 border-[#3D352E] bg-[#FFFDF7] space-y-2.5"
+                    className="p-4 rounded-2xl border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] bg-[#FFFDF9] space-y-2.5"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-[#F7F2E7] border-2 border-[#3D352E] flex items-center justify-center text-lg shrink-0">
-                          {tx.type === "income" ? "💰" : catMeta?.emoji || "🧾"}
+                        <div className="w-11 h-11 rounded-2xl bg-[#F9F4EA] border border-[#E6DFD2] flex items-center justify-center shrink-0">
+                          <CategoryIcon category={tx.category} size={26} />
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-fredoka text-base font-bold text-[#3D352E]">
+                            <span className="font-display text-base font-extrabold text-[#3D352E]">
                               {tx.title}
                             </span>
                             {tx.is_itemized && (
-                              <span className="px-2 py-0.5 rounded-lg bg-[#E5F9D7] border border-[#3D352E] text-[10px] font-extrabold text-[#46A302]">
-                                <CheckCircle2 className="w-3 h-3 inline mr-0.5" />
+                              <span className="px-2 py-0.5 rounded-lg bg-[#EFFBE6] border border-[#C3EFA4] text-[10px] font-display font-extrabold text-[#46A302] inline-flex items-center gap-1">
+                                <CozyIcon name="check_badge" size={12} />
                                 Rincian Jujur Lengkap
                               </span>
                             )}
@@ -335,7 +372,7 @@ export default function SupervisorDashboardPage() {
                       </div>
 
                       <span
-                        className={`font-mono-num text-base font-extrabold shrink-0 ${
+                        className={`font-display text-base font-extrabold tabular-nums shrink-0 ${
                           tx.type === "income"
                             ? "text-[#46A302]"
                             : "text-[#3D352E]"
@@ -348,20 +385,20 @@ export default function SupervisorDashboardPage() {
 
                     {/* Transparent Sub-items */}
                     {tx.items && tx.items.length > 0 && (
-                      <div className="bg-[#F7F2E7] rounded-2xl border-2 border-[#3D352E] p-3 space-y-1.5">
-                        <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#7A6E65]">
+                      <div className="bg-[#F9F4EA] rounded-2xl border border-[#E6DFD2] p-3 space-y-1.5">
+                        <p className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">
                           Rincian Item Belanja Adik:
                         </p>
                         {tx.items.map((item) => (
                           <div
                             key={item.id}
-                            className="flex items-center justify-between text-xs sm:text-sm font-bold text-[#3D352E] bg-white px-3 py-1.5 rounded-xl border border-[#3D352E]"
+                            className="flex items-center justify-between text-xs sm:text-sm font-bold text-[#3D352E] bg-white px-3 py-1.5 rounded-xl border border-[#E6DFD2]"
                           >
                             <span>
                               • {item.item_name}{" "}
                               {item.quantity > 1 && `(${item.quantity}x)`}
                             </span>
-                            <span className="font-mono-num font-extrabold">
+                            <span className="font-display font-extrabold tabular-nums">
                               {formatRupiah(item.subtotal)}
                             </span>
                           </div>
@@ -377,20 +414,22 @@ export default function SupervisorDashboardPage() {
           {/* Right Column: Grafik Kategori Pastel & Laporan Detektif Mochi */}
           <div className="space-y-4">
             <CozyCard tone="vanilla" className="space-y-3.5">
-              <h3 className="font-fredoka text-lg font-bold text-[#3D352E]">
-                📊 Grafik Kategori Pengeluaran
+              <h3 className="font-display text-lg font-extrabold text-[#3D352E] flex items-center gap-2">
+                <CozyIcon name="coin_rupiah" size={24} />
+                Grafik Kategori Pengeluaran
               </h3>
               <div className="space-y-3">
                 {report.categoryBreakdown.map((cat) => (
                   <div
                     key={cat.category}
-                    className="p-3 rounded-2xl bg-white border-2 border-[#3D352E] space-y-1.5"
+                    className="p-3 rounded-2xl bg-white border border-[#E6DFD2] space-y-1.5"
                   >
                     <div className="flex items-center justify-between text-xs font-extrabold">
-                      <span>
-                        {cat.emoji} {cat.category}
+                      <span className="inline-flex items-center gap-1.5">
+                        <CategoryIcon category={cat.category} size={18} />
+                        {cat.category}
                       </span>
-                      <span className="font-mono-num">
+                      <span className="font-display font-extrabold tabular-nums">
                         {formatRupiah(cat.amount)} ({cat.percentage}%)
                       </span>
                     </div>
@@ -406,22 +445,22 @@ export default function SupervisorDashboardPage() {
 
             <CozyCard tone="white" className="space-y-3">
               <div className="flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-[#E5A400]" />
-                <h3 className="font-fredoka text-lg font-bold text-[#3D352E]">
-                  🕵️‍♂️ Catatan Detektif Mochi untuk Orang Tua
+                <CozyIcon name="detective_radar" size={24} />
+                <h3 className="font-display text-lg font-extrabold text-[#3D352E]">
+                  Catatan Detektif Mochi untuk Orang Tua
                 </h3>
               </div>
               {report.microLeaks.length > 0 ? (
                 report.microLeaks.map((leak, idx) => (
                   <div
                     key={idx}
-                    className="p-3.5 rounded-2xl bg-[#FFF7D6] border-2 border-[#3D352E] text-xs font-bold text-[#3D352E] leading-relaxed"
+                    className="p-3.5 rounded-2xl bg-[#FFFBEB] border border-[#FDE08D] text-xs font-bold text-[#3D352E] leading-relaxed"
                   >
                     {leak.message}
                   </div>
                 ))
               ) : (
-                <div className="p-3.5 rounded-2xl bg-[#E5F9D7] border-2 border-[#3D352E] text-xs font-bold text-[#3D352E]">
+                <div className="p-3.5 rounded-2xl bg-[#EFFBE6] border border-[#C3EFA4] text-xs font-bold text-[#3D352E]">
                   Minggu ini pengeluaran Adik sangat terkendali dan tidak ada
                   kebocoran jajan impulsif!
                 </div>

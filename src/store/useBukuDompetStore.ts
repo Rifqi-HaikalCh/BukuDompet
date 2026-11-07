@@ -4,11 +4,14 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { BadgeId } from "@/components/illustrations/PraiseBadges";
 import { BADGE_META } from "@/components/illustrations/PraiseBadges";
+import type { MochiStage } from "@/components/illustrations/MochiCompanion";
+import { MOCHI_STAGE_NAMES } from "@/components/illustrations/MochiCompanion";
 import {
   type TransactionRecord,
   type TransactionItem,
   validateItemizedCombo,
   getLevelFromXp,
+  getMochiStageFromLevel,
 } from "@/lib/spending-detective";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -74,6 +77,16 @@ export interface FloatingRewardToast {
   points: number;
   xp: number;
   isCombo?: boolean;
+}
+
+export interface CelebrationModalState {
+  type: "level_up" | "badge_unlocked" | "milestone";
+  title: string;
+  subtitle: string;
+  newLevel?: number;
+  mochiStage?: MochiStage;
+  badgeId?: BadgeId;
+  rewardPoints?: number;
 }
 
 function getRelativeDateStr(daysOffset: number): string {
@@ -458,6 +471,71 @@ export const INITIAL_TRANSACTIONS: TransactionRecord[] = [
     created_at: new Date(Date.now() - 3600000).toISOString(),
     items: [],
   },
+  // Seed earlier month dates for rich Calendar Streak & Weekly Summary
+  {
+    id: "tx-seed-13",
+    user_id: USER_ID,
+    type: "expense",
+    category: "Makan Pokok",
+    need_or_want: "need",
+    title: "Sarapan Bubur Ayam & Teh Hangat",
+    total_amount: 17000,
+    is_itemized: true,
+    points_earned: 35,
+    xp_earned: 40,
+    transaction_date: getRelativeDateStr(-8),
+    created_at: new Date(Date.now() - 8 * 86400000).toISOString(),
+    items: [
+      {
+        id: "it-1301",
+        transaction_id: "tx-seed-13",
+        item_name: "Bubur Ayam Komplit",
+        quantity: 1,
+        unit_price: 13000,
+        subtotal: 13000,
+      },
+      {
+        id: "it-1302",
+        transaction_id: "tx-seed-13",
+        item_name: "Teh Tawar Hangat",
+        quantity: 1,
+        unit_price: 4000,
+        subtotal: 4000,
+      },
+    ],
+  },
+  {
+    id: "tx-seed-14",
+    user_id: USER_ID,
+    type: "expense",
+    category: "Kuliah/Alat Tulis",
+    need_or_want: "need",
+    title: "Jilid Makalah & Spidol",
+    total_amount: 21000,
+    is_itemized: true,
+    points_earned: 35,
+    xp_earned: 40,
+    transaction_date: getRelativeDateStr(-10),
+    created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
+    items: [
+      {
+        id: "it-1401",
+        transaction_id: "tx-seed-14",
+        item_name: "Jilid Spiral Makalah",
+        quantity: 1,
+        unit_price: 12000,
+        subtotal: 12000,
+      },
+      {
+        id: "it-1402",
+        transaction_id: "tx-seed-14",
+        item_name: "Spidol Warna Stabilo",
+        quantity: 1,
+        unit_price: 9000,
+        subtotal: 9000,
+      },
+    ],
+  },
 ];
 
 export const INITIAL_MISSIONS: MissionRecord[] = [
@@ -583,7 +661,7 @@ export const INITIAL_REDEMPTIONS: PointRedemptionRecord[] = [
     points_redeemed: 10000,
     rupiah_value: 10000,
     status: "approved",
-    note: "Tukar poin buat tambahan beli buku catatan kuliah 📚",
+    note: "Tukar poin buat tambahan beli buku catatan kuliah",
     created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
     approved_at: new Date(Date.now() - 2 * 86400000).toISOString(),
   },
@@ -593,7 +671,7 @@ export const INITIAL_REDEMPTIONS: PointRedemptionRecord[] = [
     points_redeemed: 15000,
     rupiah_value: 15000,
     status: "pending",
-    note: "Tukar poin rajin mencatat minggu ini buat ditabung ke celengan Mochi! 🐱✨",
+    note: "Tukar poin rajin mencatat minggu ini buat ditabung ke celengan Mochi!",
     created_at: new Date(Date.now() - 1800000).toISOString(),
     approved_at: null,
   },
@@ -612,24 +690,48 @@ interface BukuDompetState {
   redemptions: PointRedemptionRecord[];
 
   // Gamification & UI State
+  equippedMochiStage: MochiStage | null; // null means follow current user level stage automatically
+  equippedTitle: string;
+  streakFreezeDates: string[]; // Dates protected by Ice Shield
+  zeroSpendDates: string[]; // Dates recorded as Rp0 Spend
   mysteryBoxCount: number;
   openedCheckpointWeeks: number[];
   isSandboxMode: boolean; // Admin simulation mode
   isProudComboActive: boolean;
   lastSupervisorCheerDate: string | null;
   supervisorCheersCount: number;
+
+  // Modals & Drawers
   isTransactionDrawerOpen: boolean;
   isCashoutModalOpen: boolean;
+  isStreakCalendarOpen: boolean;
+
+  // FX & Celebrations
   rewardToast: FloatingRewardToast | null;
+  particleBurstKey: number;
+  particleBurstType: "coin" | "xp" | "both";
+  celebrationModal: CelebrationModalState | null;
   supabaseConnected: boolean;
 
   // Actions
-  loginWithPin: (role: UserRole, pin: string) => { success: boolean; message?: string };
+  loginWithPin: (
+    role: UserRole,
+    pin: string
+  ) => { success: boolean; message?: string };
   switchRoleDirect: (role: UserRole) => void;
   setTransactionDrawerOpen: (open: boolean) => void;
   setCashoutModalOpen: (open: boolean) => void;
+  setStreakCalendarOpen: (open: boolean) => void;
   clearRewardToast: () => void;
+  closeCelebrationModal: () => void;
+  triggerParticleBurst: (type?: "coin" | "xp" | "both") => void;
   toggleSandboxMode: () => void;
+
+  // Pet Gallery Actions
+  equipMochiStage: (stage: MochiStage | null) => void;
+  equipSpecialTitle: (title: string) => void;
+  petMochiForAffection: () => { xpEarned: number; leveledUp: boolean };
+  buyStreakFreezeShield: () => { success: boolean; message: string };
 
   // Core Gamification & Cashbook Actions
   addTransaction: (payload: {
@@ -732,6 +834,10 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       missions: INITIAL_MISSIONS,
       badges: INITIAL_BADGES,
       redemptions: INITIAL_REDEMPTIONS,
+      equippedMochiStage: null,
+      equippedTitle: "Penabung Cerdas",
+      streakFreezeDates: [getRelativeDateStr(-6), getRelativeDateStr(-9)],
+      zeroSpendDates: [getRelativeDateStr(-7)],
       mysteryBoxCount: 2,
       openedCheckpointWeeks: [],
       isSandboxMode: false,
@@ -740,7 +846,11 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       supervisorCheersCount: 1,
       isTransactionDrawerOpen: false,
       isCashoutModalOpen: false,
+      isStreakCalendarOpen: false,
       rewardToast: null,
+      particleBurstKey: 0,
+      particleBurstType: "both",
+      celebrationModal: null,
       supabaseConnected: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
 
       loginWithPin: (role, pin) => {
@@ -773,17 +883,122 @@ export const useBukuDompetStore = create<BukuDompetState>()(
 
       setCashoutModalOpen: (open) => set({ isCashoutModalOpen: open }),
 
+      setStreakCalendarOpen: (open) => set({ isStreakCalendarOpen: open }),
+
       clearRewardToast: () => set({ rewardToast: null }),
+
+      closeCelebrationModal: () => set({ celebrationModal: null }),
+
+      triggerParticleBurst: (type = "both") =>
+        set((s) => ({
+          particleBurstKey: s.particleBurstKey + 1,
+          particleBurstType: type,
+        })),
 
       toggleSandboxMode: () =>
         set((s) => ({ isSandboxMode: !s.isSandboxMode })),
 
+      equipMochiStage: (stage) => {
+        set({
+          equippedMochiStage: stage,
+          rewardToast: {
+            id: `toast-${Date.now()}`,
+            title: stage
+              ? `${MOCHI_STAGE_NAMES[stage]} Dipasang di Kamar!`
+              : "Mode Evolusi Otomatis Aktif!",
+            subtitle:
+              "Wujud Mochi pilihanmu kini tampil di Beranda & Ruang Mochi.",
+            points: 0,
+            xp: 0,
+          },
+        });
+      },
+
+      equipSpecialTitle: (title) => {
+        set({
+          equippedTitle: title,
+          rewardToast: {
+            id: `toast-${Date.now()}`,
+            title: `Gelar "${title}" Dipasang!`,
+            subtitle: "Gelar kehormatanmu kini tampil di profil Mochi.",
+            points: 0,
+            xp: 0,
+          },
+        });
+      },
+
+      petMochiForAffection: () => {
+        const state = get();
+        const userProf =
+          state.profiles.find((p) => p.role === "user") || state.profiles[0];
+        const xpGain = 5;
+        const oldLevel = getLevelFromXp(userProf.xp).level;
+        const newXp = userProf.xp + xpGain;
+        const newLevel = getLevelFromXp(newXp).level;
+        const leveledUp = newLevel > oldLevel;
+
+        set({
+          particleBurstKey: state.particleBurstKey + 1,
+          particleBurstType: "xp",
+          profiles: state.profiles.map((p) =>
+            p.role === "user" ? { ...p, xp: newXp, level: newLevel } : p
+          ),
+          celebrationModal: leveledUp
+            ? {
+                type: "level_up",
+                title: `Level Up! Selamat Naik ke Lv.${newLevel}!`,
+                subtitle: `Kasih sayang & kedisiplinanmu membuat ${
+                  MOCHI_STAGE_NAMES[getMochiStageFromLevel(newLevel)]
+                } semakin bersinar!`,
+                newLevel,
+                mochiStage: getMochiStageFromLevel(newLevel),
+                rewardPoints: 100,
+              }
+            : state.celebrationModal,
+        });
+
+        return { xpEarned: xpGain, leveledUp };
+      },
+
+      buyStreakFreezeShield: () => {
+        const state = get();
+        const userProf =
+          state.profiles.find((p) => p.role === "user") || state.profiles[0];
+        const cost = 500;
+        if (userProf.points_balance < cost) {
+          return {
+            success: false,
+            message: "Poin belum cukup (butuh 500 Poin untuk 1 Perisai Es).",
+          };
+        }
+        set({
+          profiles: state.profiles.map((p) =>
+            p.role === "user"
+              ? {
+                  ...p,
+                  points_balance: p.points_balance - cost,
+                  streak_freeze_count: p.streak_freeze_count + 1,
+                }
+              : p
+          ),
+          rewardToast: {
+            id: `toast-${Date.now()}`,
+            title: "Perisai Es Streak Freeze Dibeli!",
+            subtitle: "+1 Perisai Es siap melindungi api streak harianmu!",
+            points: 0,
+            xp: 15,
+          },
+        });
+        return {
+          success: true,
+          message: "Berhasil menukar 500 Poin menjadi +1 Perisai Es!",
+        };
+      },
+
       addTransaction: (payload) => {
         const state = get();
-        const todayStr =
-          payload.transaction_date || getRelativeDateStr(0);
+        const todayStr = payload.transaction_date || getRelativeDateStr(0);
 
-        // Count how many transactions already recorded today for Anti-Exploit Daily Cap (Max 5 point-earning inputs/day)
         const todayTxCount = state.transactions.filter(
           (t) => t.transaction_date === todayStr
         ).length;
@@ -807,10 +1022,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           }
         }
 
-        // Streak bonus check: if user hasn't recorded today yet, add +25 Poin & +30 XP
         const userProf =
-          state.profiles.find((p) => p.role === "user") ||
-          state.profiles[0];
+          state.profiles.find((p) => p.role === "user") || state.profiles[0];
         let streakBonusPoints = 0;
         let streakBonusXp = 0;
         let newStreak = userProf.current_streak;
@@ -852,12 +1065,14 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           items: formattedItems,
         };
 
+        const oldLevel = getLevelFromXp(userProf.xp).level;
         const newXp = userProf.xp + totalXpEarned;
         const { level: newLevel } = getLevelFromXp(newXp);
+        const leveledUp = newLevel > oldLevel;
+
         const earnedMysteryBoxFromXp =
           Math.floor(newXp / 500) > Math.floor(userProf.xp / 500) ? 1 : 0;
 
-        // Update missions if applicable
         const updatedMissions = state.missions.map((m) => {
           if (
             m.title === "Detektif Struk" &&
@@ -875,7 +1090,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           return m;
         });
 
-        // Unlock detail_master badge if combo
         const hasDetailBadge = state.badges.some(
           (b) => b.badge_code === "detail_master"
         );
@@ -898,6 +1112,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           badges: updatedBadges,
           mysteryBoxCount: state.mysteryBoxCount + earnedMysteryBoxFromXp,
           isProudComboActive: isCombo,
+          particleBurstKey: state.particleBurstKey + 1,
+          particleBurstType: "both",
           profiles: state.profiles.map((p) =>
             p.role === "user"
               ? {
@@ -912,13 +1128,25 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                 }
               : p
           ),
+          celebrationModal: leveledUp
+            ? {
+                type: "level_up",
+                title: `Level Up! Kamu Naik ke Lv.${newLevel}!`,
+                subtitle: `Konsistensimu mencatat kas membawa Mochi menuju tahap ${
+                  MOCHI_STAGE_NAMES[getMochiStageFromLevel(newLevel)]
+                }!`,
+                newLevel,
+                mochiStage: getMochiStageFromLevel(newLevel),
+                rewardPoints: totalPointsEarned,
+              }
+            : state.celebrationModal,
           rewardToast: {
             id: `toast-${Date.now()}`,
             title: isCombo
-              ? "🔥 COMBO DETAIL! Misi Rinci Sukses!"
+              ? "COMBO DETAIL! Misi Rinci Sukses!"
               : dailyCapReached
               ? "Catatan Tersimpan! (Batas Poin Harian 5/5)"
-              : "✨ Catatan Kas Tersimpan!",
+              : "Catatan Kas Tersimpan!",
             subtitle: isCombo
               ? `${formattedItems.length} item rincian tercatat dengan jujur!`
               : payload.title,
@@ -961,13 +1189,15 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         const state = get();
         const todayStr = getRelativeDateStr(0);
         const userProf =
-          state.profiles.find((p) => p.role === "user") ||
-          state.profiles[0];
+          state.profiles.find((p) => p.role === "user") || state.profiles[0];
 
         const points = 25;
         const xp = 30;
+        const oldLevel = getLevelFromXp(userProf.xp).level;
         const newXp = userProf.xp + xp;
         const { level: newLevel } = getLevelFromXp(newXp);
+        const leveledUp = newLevel > oldLevel;
+
         const newStreak =
           userProf.last_recorded_date === todayStr
             ? userProf.current_streak
@@ -989,8 +1219,15 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           });
         }
 
+        const nextZeroSpendDates = state.zeroSpendDates.includes(todayStr)
+          ? state.zeroSpendDates
+          : [...state.zeroSpendDates, todayStr];
+
         set({
           badges: updatedBadges,
+          zeroSpendDates: nextZeroSpendDates,
+          particleBurstKey: state.particleBurstKey + 1,
+          particleBurstType: "both",
           profiles: state.profiles.map((p) =>
             p.role === "user"
               ? {
@@ -1005,9 +1242,28 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                 }
               : p
           ),
+          celebrationModal: !hasNoSpendBadge
+            ? {
+                type: "badge_unlocked",
+                title: "Lencana Baru Terbuka: Master Puasa Jajan!",
+                subtitle:
+                  "Berhasil melewati hari tanpa jajan impulsif! +25 Poin & +30 XP!",
+                badgeId: "no_spend_hero",
+                rewardPoints: points,
+              }
+            : leveledUp
+            ? {
+                type: "level_up",
+                title: `Level Up! Kamu Naik ke Lv.${newLevel}!`,
+                subtitle: "Puasa jajanmu membuat Mochi berevolusi makin keren!",
+                newLevel,
+                mochiStage: getMochiStageFromLevel(newLevel),
+                rewardPoints: points,
+              }
+            : state.celebrationModal,
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: "🛡️ Hari Ini Rp0 Pengeluaran!",
+            title: "Hari Ini Rp0 Pengeluaran!",
             subtitle: "Streak harian terjaga & lencana Master Puasa Jajan aktif!",
             points,
             xp,
@@ -1030,15 +1286,18 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         }
 
         const userProf =
-          state.profiles.find((p) => p.role === "user") ||
-          state.profiles[0];
+          state.profiles.find((p) => p.role === "user") || state.profiles[0];
+        const oldLevel = getLevelFromXp(userProf.xp).level;
         const newXp = userProf.xp + mission.reward_xp;
         const { level: newLevel } = getLevelFromXp(newXp);
+        const leveledUp = newLevel > oldLevel;
 
         set({
           missions: state.missions.map((m) =>
             m.id === missionId ? { ...m, is_claimed: true } : m
           ),
+          particleBurstKey: state.particleBurstKey + 1,
+          particleBurstType: "both",
           profiles: state.profiles.map((p) =>
             p.role === "user"
               ? {
@@ -1050,9 +1309,19 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                 }
               : p
           ),
+          celebrationModal: leveledUp
+            ? {
+                type: "level_up",
+                title: `Level Up! Selamat Naik ke Lv.${newLevel}!`,
+                subtitle: `Misi "${mission.title}" tuntas dan mengantar Mochi ke level baru!`,
+                newLevel,
+                mochiStage: getMochiStageFromLevel(newLevel),
+                rewardPoints: mission.reward_points,
+              }
+            : state.celebrationModal,
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: `🎯 Misi "${mission.title}" Selesai!`,
+            title: `Misi "${mission.title}" Selesai!`,
             subtitle: "Hadiah poin langsung masuk ke Dompet Poinmu!",
             points: mission.reward_points,
             xp: mission.reward_xp,
@@ -1078,7 +1347,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           };
         }
 
-        // Drop Table: 60% (+150 to +300 Poin), 25% (+500 Poin), 10% (1x Streak Freeze Shield), 5% (Jackpot +1.500 Poin!)
         const roll = Math.random() * 100;
         let rewardType: "points" | "shield" | "jackpot" = "points";
         let amount = 250;
@@ -1087,23 +1355,25 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         if (roll < 5) {
           rewardType = "jackpot";
           amount = 1500;
-          label = "🎉 JACKPOT SULTAN! +1.500 Poin (Rp1.500)!";
+          label = "JACKPOT SULTAN! +1.500 Poin (Rp1.500)!";
         } else if (roll < 15) {
           rewardType = "shield";
           amount = 1;
-          label = "🧊 +1x Perisai Es Streak Freeze!";
+          label = "+1x Perisai Es Streak Freeze!";
         } else if (roll < 40) {
           rewardType = "points";
           amount = 500;
-          label = "✨ Hadiah Langka! +500 Poin (Rp500)!";
+          label = "Hadiah Langka! +500 Poin (Rp500)!";
         } else {
           rewardType = "points";
           amount = Math.floor(150 + Math.random() * 151);
-          label = `🪙 Berkah Celengan! +${amount} Poin (Rp${amount})!`;
+          label = `Berkah Celengan! +${amount} Poin (Rp${amount})!`;
         }
 
         set({
           mysteryBoxCount: state.mysteryBoxCount - 1,
+          particleBurstKey: state.particleBurstKey + 1,
+          particleBurstType: rewardType === "shield" ? "xp" : "both",
           profiles: state.profiles.map((p) => {
             if (p.role !== "user") return p;
             if (rewardType === "shield") {
@@ -1118,9 +1388,18 @@ export const useBukuDompetStore = create<BukuDompetState>()(
               lifetime_points: p.lifetime_points + amount,
             };
           }),
+          celebrationModal:
+            rewardType === "jackpot"
+              ? {
+                  type: "milestone",
+                  title: "JACKPOT PETI MISTERI!",
+                  subtitle: label,
+                  rewardPoints: amount,
+                }
+              : state.celebrationModal,
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: "🎁 Peti Harta Gacha Terbuka!",
+            title: "Peti Harta Gacha Terbuka!",
             subtitle: label,
             points: rewardType === "shield" ? 0 : amount,
             xp: 50,
@@ -1140,6 +1419,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         set({
           openedCheckpointWeeks: [...state.openedCheckpointWeeks, weekNumber],
           mysteryBoxCount: state.mysteryBoxCount + 1,
+          particleBurstKey: state.particleBurstKey + 1,
+          particleBurstType: "both",
           profiles: state.profiles.map((p) =>
             p.role === "user"
               ? {
@@ -1149,9 +1430,16 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                 }
               : p
           ),
+          celebrationModal: {
+            type: "milestone",
+            title: `Peti Checkpoint Minggu Ke-${weekNumber} Terbuka!`,
+            subtitle:
+              "Selamat! Kamu mendapatkan +350 Poin (Rp350) & +1x Mystery Box Gacha!",
+            rewardPoints: bonusPoints,
+          },
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: `🏆 Peti Checkpoint Minggu Ke-${weekNumber}!`,
+            title: `Peti Checkpoint Minggu Ke-${weekNumber}!`,
             subtitle: "Kamu dapat +350 Poin & +1x Mystery Box Gacha!",
             points: bonusPoints,
             xp: 60,
@@ -1164,8 +1452,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       requestPointCashout: (points, note) => {
         const state = get();
         const userProf =
-          state.profiles.find((p) => p.role === "user") ||
-          state.profiles[0];
+          state.profiles.find((p) => p.role === "user") || state.profiles[0];
 
         if (points < 1000) {
           return {
@@ -1184,7 +1471,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           id: `red-${Date.now()}`,
           user_id: USER_ID,
           points_redeemed: points,
-          rupiah_value: points, // 1 Poin = Rp 1
+          rupiah_value: points,
           status: "pending",
           note:
             note.trim() ||
@@ -1202,7 +1489,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           ),
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: "🎫 Tiket Emas Pencairan Dibuat!",
+            title: "Tiket Emas Pencairan Dibuat!",
             subtitle: `Menunggu persetujuan Abang/Orang Tua sebesar Rp${points.toLocaleString(
               "id-ID"
             )}.`,
@@ -1241,7 +1528,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         );
 
         if (action === "approved") {
-          // Automatically create an income transaction "Hadiah Tukar Poin Gamifikasi" in user's cashbook
           const rewardIncomeTx: TransactionRecord = {
             id: `tx-cashout-${Date.now()}`,
             user_id: USER_ID,
@@ -1263,9 +1549,11 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           set({
             redemptions: updatedRedemptions,
             transactions: [rewardIncomeTx, ...state.transactions],
+            particleBurstKey: state.particleBurstKey + 1,
+            particleBurstType: "coin",
             rewardToast: {
               id: `toast-${Date.now()}`,
-              title: "✅ Pencairan Poin Disetujui!",
+              title: "Pencairan Poin Disetujui!",
               subtitle: `Rp${target.rupiah_value.toLocaleString(
                 "id-ID"
               )} otomatis masuk sebagai pemasukan di Buku Kas Adik!`,
@@ -1275,7 +1563,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             },
           });
         } else {
-          // Refund points back to user if rejected
           set({
             redemptions: updatedRedemptions,
             profiles: state.profiles.map((p) =>
@@ -1297,7 +1584,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           return {
             success: false,
             message:
-              "Stiker semangat hari ini sudah dikirim! Bisa kirim lagi besok ya 😊",
+              "Stiker semangat hari ini sudah dikirim! Bisa kirim lagi besok ya",
           };
         }
 
@@ -1305,6 +1592,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         set({
           lastSupervisorCheerDate: todayStr,
           supervisorCheersCount: state.supervisorCheersCount + 1,
+          particleBurstKey: state.particleBurstKey + 1,
+          particleBurstType: "both",
           profiles: state.profiles.map((p) =>
             p.role === "user"
               ? {
@@ -1317,7 +1606,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           ),
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: "💌 Stiker Semangat Orang Tua Terkirim!",
+            title: "Stiker Semangat Orang Tua Terkirim!",
             subtitle: "Adik mendapat tambahan +50 Poin (Rp50) & +30 XP!",
             points: bonus,
             xp: 30,
@@ -1341,7 +1630,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           })),
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: "⚙️ Target Anggaran Diperbarui!",
+            title: "Target Anggaran Diperbarui!",
             subtitle: `Jatah Bulanan: Rp${monthlyBudgetTarget.toLocaleString(
               "id-ID"
             )} | Target Tabungan: Rp${monthlySavingTarget.toLocaleString(
@@ -1361,7 +1650,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           title: payload.title,
           description: payload.description,
           target_value: payload.target_value,
-          current_value: payload.target_value, // Ready to claim or interactive
+          current_value: payload.target_value,
           reward_points: payload.reward_points,
           reward_xp: payload.reward_xp,
           is_claimed: false,
@@ -1371,7 +1660,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           missions: [newMission, ...state.missions],
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: "🎯 Misi Baru Ditambahkan!",
+            title: "Misi Baru Ditambahkan!",
             subtitle: `${payload.title} (+${payload.reward_points} Poin)`,
             points: payload.reward_points,
             xp: payload.reward_xp,
@@ -1386,12 +1675,16 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           missions: INITIAL_MISSIONS,
           badges: INITIAL_BADGES,
           redemptions: INITIAL_REDEMPTIONS,
+          equippedMochiStage: null,
+          equippedTitle: "Penabung Cerdas",
+          streakFreezeDates: [getRelativeDateStr(-6), getRelativeDateStr(-9)],
+          zeroSpendDates: [getRelativeDateStr(-7)],
           mysteryBoxCount: 2,
           openedCheckpointWeeks: [],
           lastSupervisorCheerDate: null,
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: "🔄 Data Demo Direset!",
+            title: "Data Demo Direset!",
             subtitle: "Seluruh data kembali ke kondisi awal yang segar.",
             points: 0,
             xp: 0,
@@ -1420,7 +1713,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       },
     }),
     {
-      name: "bukudompet-cozy-storage-v1",
+      name: "bukudompet-cozy-storage-v2",
       partialize: (state) => ({
         currentRole: state.currentRole,
         activeProfileId: state.activeProfileId,
@@ -1429,6 +1722,10 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         missions: state.missions,
         badges: state.badges,
         redemptions: state.redemptions,
+        equippedMochiStage: state.equippedMochiStage,
+        equippedTitle: state.equippedTitle,
+        streakFreezeDates: state.streakFreezeDates,
+        zeroSpendDates: state.zeroSpendDates,
         mysteryBoxCount: state.mysteryBoxCount,
         openedCheckpointWeeks: state.openedCheckpointWeeks,
         isSandboxMode: state.isSandboxMode,

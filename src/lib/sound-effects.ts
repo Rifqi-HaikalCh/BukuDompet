@@ -188,6 +188,34 @@ class BukuDompetSynthesizer {
       osc.stop(start + 0.14);
     });
   }
+
+  /**
+   * 6. Ascending Combo Step Note (Tangga nada naik saat menambah item rincian ke-1, 2, 3+)
+   */
+  comboStepNote(step: number) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const scale = [440, 523.25, 659.25, 783.99, 987.77, 1174.66]; // A4, C5, E5, G5, B5, D6
+    const freq = scale[Math.min(Math.max(0, step - 1), scale.length - 1)];
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.06, now + 0.14);
+
+    gain.gain.setValueAtTime(0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.17);
+  }
 }
 
 export const soundEffects = new BukuDompetSynthesizer();

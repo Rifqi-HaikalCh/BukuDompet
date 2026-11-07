@@ -1,43 +1,46 @@
 @import "tailwindcss";
 
 :root {
-  --bg-oat: #FFFDF7;
-  --bg-vanilla: #F7F2E7;
+  --bg-oat: #FFFDF9;
+  --bg-vanilla: #F6F0E4;
   --surface-white: #FFFFFF;
   --ink-espresso: #3D352E;
   --ink-mocha: #7A6E65;
 
   --matcha: #58CC02;
   --matcha-lip: #46A302;
-  --matcha-soft: #E5F9D7;
+  --matcha-soft: #EFFBE6;
 
   --sky: #38B6FF;
   --sky-lip: #1E88E5;
-  --sky-soft: #E0F4FF;
+  --sky-soft: #EEF8FF;
 
   --honey: #FFC800;
   --honey-lip: #E5A400;
-  --honey-soft: #FFF7D6;
+  --honey-soft: #FFFBEB;
 
   --peach: #FF8B7B;
   --peach-lip: #E06353;
-  --peach-soft: #FFE8E5;
+  --peach-soft: #FFF2F0;
 
   --berry: #FF4B4B;
   --berry-lip: #EA2B2B;
-  --berry-soft: #FFDEDE;
+  --berry-soft: #FFF0F0;
 
   --taro: #CE82FF;
   --taro-lip: #A552DB;
-  --taro-soft: #F5E6FF;
+  --taro-soft: #F8F0FF;
+
+  /* Map legacy --font-fredoka & --font-nunito used inside BukuDompetLogo SVG to Outfit & Plus Jakarta Sans */
+  --font-fredoka: var(--font-display);
+  --font-nunito: var(--font-sans);
 }
 
 @theme inline {
   --color-background: var(--bg-oat);
   --color-foreground: var(--ink-espresso);
-  --font-display: var(--font-fredoka), sans-serif;
-  --font-sans: var(--font-nunito), sans-serif;
-  --font-mono: var(--font-jetbrains-mono), monospace;
+  --font-display: var(--font-display), system-ui, sans-serif;
+  --font-sans: var(--font-sans), system-ui, sans-serif;
 }
 
 /* WAJIB: Perbaikan CSS SVG Transform-Box agar animasi Framer Motion berputar tepat pada engselnya */
@@ -46,19 +49,26 @@ svg g, svg path, svg rect, svg circle, svg ellipse, svg polygon {
 }
 
 body {
-  background-color: var(--bg-oat);
+  background-color: #FFFDF9;
+  background-image:
+    radial-gradient(circle at 18px 18px, rgba(212, 201, 180, 0.28) 1.5px, transparent 0),
+    linear-gradient(180deg, #FFFDF9 0%, #FAF5EB 55%, #F6F0E4 100%);
+  background-size: 28px 28px, 100% 100%;
+  background-attachment: fixed;
   color: var(--ink-espresso);
-  font-family: var(--font-nunito), sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   overflow-x: hidden;
-  selection-background-color: #FFF7D6;
 }
 
-h1, h2, h3, h4, .font-fredoka {
-  font-family: var(--font-fredoka), sans-serif;
+h1, h2, h3, h4, .font-fredoka, .font-display {
+  font-family: var(--font-display), system-ui, sans-serif;
 }
 
 .font-mono-num {
-  font-family: var(--font-jetbrains-mono), monospace;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
 }
 
 /* Custom Cozy Scrollbar */
@@ -68,15 +78,15 @@ h1, h2, h3, h4, .font-fredoka {
 }
 
 ::-webkit-scrollbar-track {
-  background: #F7F2E7;
+  background: #F6F0E4;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #D6CBB9;
+  background: #D4C9B4;
   border-radius: 9999px;
-  border: 2px solid #F7F2E7;
+  border: 2px solid #F6F0E4;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #7A6E65;
+  background: #B8AA93;
 }
