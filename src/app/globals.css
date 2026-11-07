@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --bg-oat: #FFFDF7;
+  --bg-vanilla: #F7F2E7;
+  --surface-white: #FFFFFF;
+  --ink-espresso: #3D352E;
+  --ink-mocha: #7A6E65;
+
+  --matcha: #58CC02;
+  --matcha-lip: #46A302;
+  --matcha-soft: #E5F9D7;
+
+  --sky: #38B6FF;
+  --sky-lip: #1E88E5;
+  --sky-soft: #E0F4FF;
+
+  --honey: #FFC800;
+  --honey-lip: #E5A400;
+  --honey-soft: #FFF7D6;
+
+  --peach: #FF8B7B;
+  --peach-lip: #E06353;
+  --peach-soft: #FFE8E5;
+
+  --berry: #FF4B4B;
+  --berry-lip: #EA2B2B;
+  --berry-soft: #FFDEDE;
+
+  --taro: #CE82FF;
+  --taro-lip: #A552DB;
+  --taro-soft: #F5E6FF;
+}
+
+@theme inline {
+  --color-background: var(--bg-oat);
+  --color-foreground: var(--ink-espresso);
+  --font-display: var(--font-fredoka), sans-serif;
+  --font-sans: var(--font-nunito), sans-serif;
+  --font-mono: var(--font-jetbrains-mono), monospace;
+}
+
+/* WAJIB: Perbaikan CSS SVG Transform-Box agar animasi Framer Motion berputar tepat pada engselnya */
+svg g, svg path, svg rect, svg circle, svg ellipse, svg polygon {
+  transform-box: fill-box;
+}
+
+body {
+  background-color: var(--bg-oat);
+  color: var(--ink-espresso);
+  font-family: var(--font-nunito), sans-serif;
+  overflow-x: hidden;
+  selection-background-color: #FFF7D6;
+}
+
+h1, h2, h3, h4, .font-fredoka {
+  font-family: var(--font-fredoka), sans-serif;
+}
+
+.font-mono-num {
+  font-family: var(--font-jetbrains-mono), monospace;
+}
+
+/* Custom Cozy Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F7F2E7;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D6CBB9;
+  border-radius: 9999px;
+  border: 2px solid #F7F2E7;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #7A6E65;
+}
