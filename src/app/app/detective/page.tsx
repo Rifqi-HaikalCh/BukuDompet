@@ -81,7 +81,7 @@ export default function SpendingDetectivePage() {
         <div className="flex flex-col sm:flex-row items-center gap-4 min-w-0">
           <div className="w-36 h-40 rounded-3xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex items-center justify-center shrink-0 p-1.5">
             <CustomizablePetAvatar
-              species={userProfile.activeSpecies || "cat"}
+              species={userProfile.activeSpecies || "chubby_cat"}
               stage={currentStage}
               mood={report.petMood}
               customName={petName}
@@ -109,33 +109,33 @@ export default function SpendingDetectivePage() {
 
         {/* Formula 1 & Formula 2 Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          <div className="p-3 rounded-2xl bg-white border border-[#E6DFD2] min-w-0 overflow-hidden">
-            <p className="text-[11px] font-bold text-[#7A6E65] truncate">
+          <div className="p-3 rounded-2xl bg-white border border-[#E6DFD2] min-w-0">
+            <p className="text-[11px] font-bold text-[#7A6E65]">
               Batas Aman Harian (DSSL)
             </p>
             <p
-              className="font-display font-extrabold tabular-nums text-base text-[#2E6F00] truncate"
+              className="font-display font-extrabold tabular-nums text-base text-[#2E6F00] break-words"
               title={formatRupiah(report.dssl)}
             >
               {formatCompactRupiah(report.dssl)}
             </p>
           </div>
-          <div className="p-3 rounded-2xl bg-white border border-[#E6DFD2] min-w-0 overflow-hidden">
-            <p className="text-[11px] font-bold text-[#7A6E65] truncate">
+          <div className="p-3 rounded-2xl bg-white border border-[#E6DFD2] min-w-0">
+            <p className="text-[11px] font-bold text-[#7A6E65]">
               Terpakai Hari Ini
             </p>
             <p
-              className="font-display font-extrabold tabular-nums text-base text-[#C83E2B] truncate"
+              className="font-display font-extrabold tabular-nums text-base text-[#C83E2B] break-words"
               title={formatRupiah(report.todayTotalSpend)}
             >
               -{formatCompactRupiah(report.todayTotalSpend)}
             </p>
           </div>
-          <div className="p-3 rounded-2xl bg-white border border-[#E6DFD2] col-span-2 sm:col-span-1 min-w-0 overflow-hidden">
-            <p className="text-[11px] font-bold text-[#7A6E65] truncate">
+          <div className="p-3 rounded-2xl bg-white border border-[#E6DFD2] col-span-2 sm:col-span-1 min-w-0">
+            <p className="text-[11px] font-bold text-[#7A6E65]">
               Butuh vs Ingin Hari Ini
             </p>
-            <p className="font-display font-extrabold tabular-nums text-xs text-[#3D352E] mt-1 truncate">
+            <p className="font-display font-extrabold tabular-nums text-xs text-[#3D352E] mt-1 break-words">
               Butuh {formatCompactRupiah(report.todayNeedsSpend)} | Ingin{" "}
               {formatCompactRupiah(report.todayWantsSpend)}
             </p>
@@ -211,68 +211,68 @@ export default function SpendingDetectivePage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="p-4 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] space-y-1.5 min-w-0 overflow-hidden">
+          <div className="p-4 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] space-y-1.5 min-w-0">
             <div className="flex items-center justify-between text-xs font-bold text-[#7A6E65]">
-              <span className="truncate">Total Pemasukan Bulan Ini</span>
+              <span>Total Pemasukan Bulan Ini</span>
               <CozyIcon name="cat_income" size={20} />
             </div>
             <p
-              className="font-display font-extrabold tabular-nums text-xl text-[#2E6F00] truncate"
+              className="font-display font-extrabold tabular-nums text-xl text-[#2E6F00] break-words"
               title={formatRupiah(report.totalIncomeThisMonth)}
             >
               +{formatCompactRupiah(report.totalIncomeThisMonth)}
             </p>
-            <p className="text-[11px] font-bold text-[#7A6E65] truncate tabular-nums">
+            <p className="text-[11px] font-bold text-[#7A6E65] break-words tabular-nums">
               Target Tabungan Dikunci:{" "}
               {formatCompactRupiah(report.monthlySavingTarget)}
             </p>
           </div>
 
-          <div className="p-4 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] space-y-1.5 min-w-0 overflow-hidden">
+          <div className="p-4 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] space-y-1.5 min-w-0">
             <div className="flex items-center justify-between text-xs font-bold text-[#7A6E65]">
-              <span className="truncate">Total Terpakai Bulan Ini</span>
+              <span>Total Terpakai Bulan Ini</span>
               <CozyIcon name="cat_snack" size={20} />
             </div>
             <p
-              className="font-display font-extrabold tabular-nums text-xl text-[#C83E2B] truncate"
+              className="font-display font-extrabold tabular-nums text-xl text-[#C83E2B] break-words"
               title={formatRupiah(report.totalSpentThisMonth)}
             >
               -{formatCompactRupiah(report.totalSpentThisMonth)}
             </p>
-            <p className="text-[11px] font-bold text-[#7A6E65] truncate tabular-nums">
+            <p className="text-[11px] font-bold text-[#7A6E65] break-words tabular-nums">
               Dari Kuota Belanja Aman:{" "}
               {formatCompactRupiah(report.monthlySpendablePool)}
             </p>
           </div>
 
-          <div className="p-4 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] space-y-1.5 min-w-0 overflow-hidden">
+          <div className="p-4 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] space-y-1.5 min-w-0">
             <div className="flex items-center justify-between text-xs font-bold text-[#7A6E65]">
-              <span className="truncate">Sisa Uang Minggu Ini</span>
+              <span>Sisa Uang Minggu Ini</span>
               <CozyIcon name="calendar_streak" size={20} />
             </div>
             <p
-              className="font-display font-extrabold tabular-nums text-xl text-[#2E6F00] truncate"
+              className="font-display font-extrabold tabular-nums text-xl text-[#2E6F00] break-words"
               title={formatRupiah(report.remainingWeeklyBudget)}
             >
               {formatCompactRupiah(report.remainingWeeklyBudget)}
             </p>
-            <p className="text-[11px] font-bold text-[#7A6E65] truncate tabular-nums">
+            <p className="text-[11px] font-bold text-[#7A6E65] break-words tabular-nums">
               Terpakai Minggu Ini: -{formatCompactRupiah(report.totalSpentThisWeek)}
             </p>
           </div>
 
-          <div className="p-4 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] space-y-1.5 min-w-0 overflow-hidden">
+          <div className="p-4 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] space-y-1.5 min-w-0">
             <div className="flex items-center justify-between text-xs font-bold text-[#7A6E65]">
-              <span className="truncate">Sisa Uang Bulan Ini</span>
+              <span>Sisa Uang Bulan Ini</span>
               <CozyIcon name="cat_saving" size={20} />
             </div>
             <p
-              className="font-display font-extrabold tabular-nums text-xl text-[#2E6F00] truncate"
+              className="font-display font-extrabold tabular-nums text-xl text-[#2E6F00] break-words"
               title={formatRupiah(report.remainingTotalBalanceThisMonth)}
             >
               {formatCompactRupiah(report.remainingTotalBalanceThisMonth)}
             </p>
-            <p className="text-[11px] font-bold text-[#7A6E65] truncate tabular-nums">
+            <p className="text-[11px] font-bold text-[#7A6E65] break-words tabular-nums">
               Sisa Belanja (Di Luar Tabungan):{" "}
               {formatCompactRupiah(report.remainingMonthlyPool)}
             </p>

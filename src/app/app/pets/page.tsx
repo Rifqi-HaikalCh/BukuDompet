@@ -1,64 +1,70 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useState, useMemo, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
 import {
   Pencil,
   Check,
   X,
-  ShoppingBag,
-  Sparkles,
   Lock,
-  HelpCircle,
+  Sparkles,
+  ShoppingBag,
+  Shirt,
+  Egg,
+  MessageCircleHeart,
+  RefreshCw,
 } from "lucide-react";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import {
+  analyzeSpendingDetective,
   getLevelFromXp,
-  CASTE_STAGE_TARGETS,
+  GROWTH_STAGE_TARGETS,
 } from "@/lib/spending-detective";
 import {
   CustomizablePetAvatar,
   AccessoryPreviewIcon,
-  CASTE_STAGES,
-  CASTE_META,
-  PET_SPECIES_LIST,
-  PET_SPECIES_META,
+  GROWTH_STAGE_META,
+  GROWTH_STAGES,
+  PET_SPECIES_CATALOG,
   ACCESSORY_CATALOG,
+  ACCESSORY_BY_ID,
+  ACCESSORY_SLOTS,
   SLOT_LABEL,
-  type CasteStage,
-  type PetMood,
+  getSpeciesInfo,
   type PetSpecies,
+  type GrowthStage,
+  type AccessorySlot,
 } from "@/components/illustrations/PetAvatarSystem";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
-import { BADGE_META, BADGE_IDS } from "@/components/illustrations/PraiseBadges";
 import {
   TactileButton,
   CozyCard,
   ChunkyProgressBar,
+  formatRupiah,
 } from "@/components/ui/CozyPrimitives";
+import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 import { cn } from "@/lib/utils";
 
-const MOOD_OPTIONS: { id: PetMood; label: string; desc: string }[] = [
-  { id: "happy", label: "Senang", desc: "Dompet Aman" },
-  { id: "proud", label: "Bangga Rinci", desc: "Jurnal Rinci Aktif" },
-  { id: "worried", label: "Cemas", desc: "Hampir Batas Harian" },
-  { id: "shocked_boros", label: "Detektif Kaget", desc: "Alarm Boros" },
-];
+type PetBoutiqueTab = "wardrobe" | "shop" | "kandang";
 
-export default function MochiPetGalleryPage() {
+function PetsAndBoutiqueContent() {
+  const searchParams = useSearchParams();
+  const initialTabParam = searchParams.get("tab");
+
   const {
     activeProfileId,
     profiles,
-    badges,
+    transactions,
     equippedTitle,
-    equipSpecialTitle,
-    petMochiForAffection,
-    triggerParticleBurst,
+    isProudComboActive,
     renamePet,
     equipPetSpecies,
+    buyPetSpecies,
+    buyAccessory,
     toggleEquipAccessory,
+    buyStreakFreezeShield,
   } = useBukuDompetStore();
 
   const userProfile =
@@ -66,22 +72,134 @@ export default function MochiPetGalleryPage() {
     profiles.find((p) => p.role === "user") ||
     profiles[0];
 
+  const userTransactions = useMemo(
+    () => transactions.filter((t) => t.user_id === userProfile.id),
+    [transactions, userProfile.id]
+  );
+
+  const activeSpecies: PetSpecies = userProfile.activeSpecies || "chubby_cat";
+  const speciesInfo = getSpeciesInfo(activeSpecies);
+  const currentStage: GrowthStage = userProfile.currentStage || 1;
+  const stageMeta = GROWTH_STAGE_META[currentStage] || GROWTH_STAGE_META[1];
+  const stageTarget = GROWTH_STAGE_TARGETS[currentStage];
+  const petName = userProfile.petCustomName || speciesInfo.defaultName;
   const levelInfo = getLevelFromXp(userProfile.xp);
-  const currentStage: CasteStage = userProfile.currentStage || 1;
-  const currentStageTarget = CASTE_STAGE_TARGETS[currentStage];
-  const petName = userProfile.petCustomName || "Mochi";
-  const activeSpecies: PetSpecies = userProfile.activeSpecies || "cat";
-  const unlockedSpecies = userProfile.unlockedSpecies || ["cat"];
-  const equippedAccessories = userProfile.equippedAccessories || {};
 
-  const [showcaseStage, setShowcaseStage] = useState<CasteStage>(currentStage);
-  const [showcaseMood, setShowcaseMood] = useState<PetMood>("happy");
-  const [isBouncing, setIsBouncing] = useState<boolean>(false);
-  const [floatingHearts, setFloatingHearts] = useState<number[]>([]);
+  const report = analyzeSpendingDetective({
+    transactions: userTransactions,
+    monthlyBudgetTarget: userProfile.monthly_budget_target,
+    monthlySavingTarget: userProfile.monthly_saving_target,
+    userLevel: levelInfo.level,
+    currentStage,
+    petCustomName: petName,
+    isProudComboActive,
+  });
 
-  // Rename Pet State
+  // Main Sub-Tab State
+  const [activeTab, setActiveTab] = useState<PetBoutiqueTab>(() => {
+    if (initialTabParam === "shop") return "shop";
+    if (initialTabParam === "kandang" || initialTabParam === "adopt")
+      return "kandang";
+    return "wardrobe";
+  });
+
+  useEffect(() => {
+    if (initialTabParam === "shop") setActiveTab("shop");
+    else if (initialTabParam === "kandang" || initialTabParam === "adopt")
+      setActiveTab("kandang");
+    else if (initialTabParam === "wardrobe") setActiveTab("wardrobe");
+  }, [initialTabParam]);
+
+  // Wardrobe & Shop Filters
+  const [wardrobeSlotFilter, setWardrobeSlotFilter] = useState<
+    "all" | AccessorySlot
+  >("all");
+  const [shopStageFilter, setShopStageFilter] = useState<
+    "all" | GrowthStage
+  >(currentStage);
+  const [shopSlotFilter, setShopSlotFilter] = useState<"all" | AccessorySlot>(
+    "all"
+  );
+
+  // Sync shop stage filter when active pet changes
+  useEffect(() => {
+    setShopStageFilter(currentStage);
+  }, [currentStage, activeSpecies]);
+
+  // Inline Rename State
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
   const [nameInput, setNameInput] = useState<string>(petName);
+
+  // TUGAS 4: Interactive "Cek Kabar & Mood Finansial Pet" State (0 Free XP/Points)
+  const [petHopKey, setPetHopKey] = useState<number>(0);
+  const [dialogueIndex, setDialogueIndex] = useState<number>(0);
+
+  // Preview Growth Stage on Left Stage (defaults to active pet's currentStage)
+  const [previewStage, setPreviewStage] = useState<GrowthStage>(currentStage);
+  useEffect(() => {
+    setPreviewStage(currentStage);
+  }, [currentStage, activeSpecies]);
+
+  // Confirmation Modal States
+  const [confirmBuyItemId, setConfirmBuyItemId] = useState<string | null>(null);
+  const [confirmAdoptSpecies, setConfirmAdoptSpecies] =
+    useState<PetSpecies | null>(null);
+
+  const smartDialogues = useMemo(() => {
+    const remXp = Math.max(
+      0,
+      stageTarget.nextStageXpTarget - userProfile.stageXp
+    );
+    const remDays = Math.max(
+      0,
+      stageTarget.nextStageDaysTarget - userProfile.stageRecordedDays
+    );
+    const nextStageName =
+      currentStage < 8
+        ? GROWTH_STAGE_META[(currentStage + 1) as GrowthStage].name
+        : "Sepuh Bijaksana";
+
+    const list: string[] = [
+      report.mochiSpeech,
+      `📊 Kabar Dompet Hari Ini: Sisa jatah aman harianmu ${formatRupiah(
+        report.remainingDailySafeSpend
+      )} dari batas ${formatRupiah(report.dssl)} (Status: ${
+        report.walletStatus
+      }).`,
+      currentStage < 8
+        ? `🌱 Progres Pertumbuhan ${petName}: Saat ini di Fase ${currentStage}/8 (${stageMeta.name}). Butuh ${remXp} Stage XP & ${remDays} hari mencatat lagi untuk tumbuh ke Fase ${
+            currentStage + 1
+          } (${nextStageName})!`
+        : `👑 ${petName} sudah mencapai Fase 8 (Sepuh Bijaksana)! Terima kasih sudah konsisten merawat dan mencatat kas setiap hari!`,
+      `🔥 Konsistensi Api Streak: Kamu sudah mencatat kas ${userProfile.current_streak} hari berturut-turut dan punya ${userProfile.streak_freeze_count} Perisai Es pelindung!`,
+    ];
+
+    if (report.microLeaks.length > 0) {
+      list.push(report.microLeaks[0].message);
+    }
+
+    return list;
+  }, [
+    report.mochiSpeech,
+    report.remainingDailySafeSpend,
+    report.dssl,
+    report.walletStatus,
+    report.microLeaks,
+    stageTarget,
+    userProfile.stageXp,
+    userProfile.stageRecordedDays,
+    userProfile.current_streak,
+    userProfile.streak_freeze_count,
+    currentStage,
+    petName,
+    stageMeta.name,
+  ]);
+
+  const handleCheckPetMood = () => {
+    soundEffects.tactileClick();
+    setPetHopKey((k) => k + 1);
+    setDialogueIndex((prev) => (prev + 1) % smartDialogues.length);
+  };
 
   const handleSaveName = () => {
     const res = renamePet(nameInput);
@@ -93,617 +211,1079 @@ export default function MochiPetGalleryPage() {
     }
   };
 
-  const handlePetMochi = () => {
-    soundEffects.comboFanfare();
-    setIsBouncing(true);
-    setShowcaseMood("proud");
-    setFloatingHearts((prev) => [...prev, Date.now()]);
-    petMochiForAffection();
-    setTimeout(() => {
-      setIsBouncing(false);
-    }, 650);
-  };
-
-  const handleTossCoin = () => {
-    soundEffects.coinChime();
-    fireCozyConfetti("normal");
-    setIsBouncing(true);
-    triggerParticleBurst("coin");
-    setTimeout(() => {
-      setIsBouncing(false);
-    }, 550);
-  };
-
+  // Wardrobe Items (Owned by user)
   const ownedAccessoryItems = useMemo(() => {
-    const owned = userProfile.ownedAccessories || [];
-    return ACCESSORY_CATALOG.filter((item) => owned.includes(item.id));
-  }, [userProfile.ownedAccessories]);
+    const ownedIds = userProfile.ownedAccessories || [];
+    return ACCESSORY_CATALOG.filter((item) => {
+      if (!ownedIds.includes(item.id)) return false;
+      if (wardrobeSlotFilter !== "all" && item.slot !== wardrobeSlotFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [userProfile.ownedAccessories, wardrobeSlotFilter]);
 
-  const userBadges = useMemo(
-    () => badges.filter((b) => b.user_id === userProfile.id),
-    [badges, userProfile.id]
-  );
-  const earnedBadgeCodes = new Set(userBadges.map((b) => b.badge_code));
+  // Boutique Shop Items (STRICTLY source === "shop" per Tugas 6)
+  const shopAccessoryItems = useMemo(() => {
+    return ACCESSORY_CATALOG.filter((item) => {
+      if (item.source !== "shop") return false;
+      if (
+        shopStageFilter !== "all" &&
+        item.stageRequirement !== shopStageFilter
+      ) {
+        return false;
+      }
+      if (shopSlotFilter !== "all" && item.slot !== shopSlotFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [shopStageFilter, shopSlotFilter]);
 
-  const isShowcaseLocked = showcaseStage > currentStage;
+  const pendingBuyItem = confirmBuyItemId
+    ? ACCESSORY_BY_ID[confirmBuyItemId]
+    : null;
+  const pendingAdoptInfo = confirmAdoptSpecies
+    ? getSpeciesInfo(confirmAdoptSpecies)
+    : null;
 
   return (
-    <div className="space-y-5 min-w-0 max-w-full overflow-hidden">
-      {/* 1. Interactive Stage Showcase (Single Soft Pastel Taro Hero Card per Tugas 1.2) */}
-      <CozyCard tone="taro" className="p-5 space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-2 min-w-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <CozyIcon name="pet_paw" size={32} animated />
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-full bg-white border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#A552DB]">
-                  Gelar: {equippedTitle}
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full bg-[#E3F4FF] border border-[#9AD2FF] text-[11px] font-display font-extrabold text-[#1565C0]">
-                  Lv.{levelInfo.level} ({userProfile.xp} Total XP)
-                </span>
-              </div>
+    <div className="space-y-6 min-w-0 max-w-full">
+      {/* Confirm Buy Accessory Modal */}
+      <CozyConfirmModal
+        open={pendingBuyItem !== null}
+        onClose={() => setConfirmBuyItemId(null)}
+        onConfirm={() => {
+          if (!pendingBuyItem) return;
+          const res = buyAccessory(pendingBuyItem.id);
+          if (res.success) {
+            soundEffects.coinChime();
+            fireCozyConfetti("combo");
+          } else {
+            soundEffects.tactileClick();
+          }
+          setConfirmBuyItemId(null);
+        }}
+        title={
+          pendingBuyItem
+            ? `Beli "${pendingBuyItem.name}"?`
+            : "Beli Kostum Pet?"
+        }
+        description={
+          pendingBuyItem
+            ? `Tukarkan ${pendingBuyItem.pricePoints.toLocaleString(
+                "id-ID"
+              )} Poin untuk membeli ${pendingBuyItem.name} (Slot: ${
+                SLOT_LABEL[pendingBuyItem.slot]
+              }) dan langsung memasangnya ke ${petName}?`
+            : ""
+        }
+        confirmLabel={
+          pendingBuyItem
+            ? `Ya, Beli (${pendingBuyItem.pricePoints.toLocaleString(
+                "id-ID"
+              )} Poin)`
+            : "Ya, Beli"
+        }
+        confirmVariant="matcha"
+        mochiStage={report.mochiStage}
+        badgeText="Butik Kostum Pet"
+      />
 
-              {/* Pet Name + Inline Edit */}
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                {isEditingName ? (
-                  <div className="inline-flex items-center gap-1.5 bg-white border-2 border-[#38B6FF] rounded-xl px-2.5 py-1">
-                    <input
-                      type="text"
-                      value={nameInput}
-                      maxLength={24}
-                      onChange={(e) => setNameInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSaveName();
-                        if (e.key === "Escape") setIsEditingName(false);
-                      }}
-                      className="w-32 bg-transparent font-display text-sm font-extrabold text-[#3D352E] focus:outline-none"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveName}
-                      className="p-1 rounded-lg bg-[#58CC02] text-white cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingName(false)}
-                      className="p-1 rounded-lg bg-[#E6DFD2] text-[#3D352E] cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 min-w-0">
-                    <h1 className="font-display text-xl sm:text-2xl font-extrabold text-[#3D352E] truncate">
-                      {petName} —{" "}
-                      {isShowcaseLocked
-                        ? `Kasta Rahasia #${showcaseStage}`
-                        : CASTE_META[showcaseStage].name}
-                    </h1>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEffects.tactileClick();
-                        setNameInput(petName);
-                        setIsEditingName(true);
-                      }}
-                      className="p-1.5 rounded-xl bg-white hover:bg-[#FFFBEB] border border-[#E2C6FF] text-[#3D352E] cursor-pointer transition-colors shrink-0"
-                      title="Ubah Nama Pet"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
+      {/* Confirm Adopt New Pet Egg Modal */}
+      <CozyConfirmModal
+        open={pendingAdoptInfo !== null}
+        onClose={() => setConfirmAdoptSpecies(null)}
+        onConfirm={() => {
+          if (!pendingAdoptInfo) return;
+          const res = buyPetSpecies(pendingAdoptInfo.id);
+          if (res.success) {
+            soundEffects.comboFanfare();
+            fireCozyConfetti("jackpot");
+          } else {
+            soundEffects.tactileClick();
+          }
+          setConfirmAdoptSpecies(null);
+        }}
+        title={
+          pendingAdoptInfo
+            ? `Adopsi Telur ${pendingAdoptInfo.name}? 🥚`
+            : "Adopsi Telur Pet?"
+        }
+        description={
+          pendingAdoptInfo
+            ? `Tukarkan ${pendingAdoptInfo.pricePoints.toLocaleString(
+                "id-ID"
+              )} Poin untuk mengadopsi ${
+                pendingAdoptInfo.name
+              }? Pet baru akan menetas mulai dari Fase 1 (Telur Ajaib — 0 Stage XP & 0 Hari Mencatat) agar kamu bisa merawat pertumbuhannya dari awal!`
+            : ""
+        }
+        confirmLabel={
+          pendingAdoptInfo
+            ? `Adopsi Telur (${pendingAdoptInfo.pricePoints.toLocaleString(
+                "id-ID"
+              )} Poin)`
+            : "Adopsi"
+        }
+        confirmVariant="matcha"
+        mochiStage={1}
+        badgeText="Adopsi Telur Kawaii Baru"
+      />
+
+      {/* Top Page Header Banner */}
+      <CozyCard tone="white" className="p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1 min-w-0">
+            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#F8F0FF] border border-[#E2C6FF] text-xs font-display font-extrabold text-[#A552DB]">
+              <Sparkles className="w-3.5 h-3.5" /> Dunia Pet & Butik Terpadu
             </div>
+            <h1 className="font-display text-xl sm:text-2xl font-extrabold text-[#3D352E] leading-snug break-words">
+              Panggung Pet, Lemari 7 Slot & Butik 8 Fase Hidup
+            </h1>
+            <p className="text-xs sm:text-sm font-bold text-[#7A6E65] leading-relaxed break-words">
+              Rawat pet dari Telur Ajaib hingga Sepuh Bijaksana, padu-padankan
+              kostum di panggung kiri, dan belanja item sesuai fase pertumbuhan!
+            </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="px-3 py-1 rounded-2xl bg-white border-2 border-[#E2C6FF] border-b-[4px] border-b-[#C99BFF] text-xs font-display font-extrabold text-[#3D352E]">
-              Kasta Aktif: #{currentStage} / 8
+          {/* User Points Balance Card (Never Truncated per Tugas 1) */}
+          <div className="bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C] rounded-2xl p-3.5 flex flex-col items-start gap-1 shrink-0">
+            <span className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">
+              Saldo Poin Belanja & Tabungan
             </span>
-            <Link
-              href="/app/shop"
-              onClick={() => soundEffects.tactileClick()}
-              className="px-3 py-1 rounded-2xl bg-[#FFFBEB] border-2 border-[#FDE08D] border-b-[4px] border-b-[#F5C84C] text-xs font-display font-extrabold text-[#4A3500] inline-flex items-center gap-1.5 hover:bg-[#FFF4CE]"
-            >
-              <ShoppingBag className="w-3.5 h-3.5" /> Butik Shop
-            </Link>
-          </div>
-        </div>
-
-        {/* Big Interactive Stage */}
-        <div className="relative rounded-3xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] p-6 flex flex-col items-center justify-center overflow-hidden">
-          {/* Floating Affection Hearts */}
-          <AnimatePresence>
-            {floatingHearts.map((hid) => (
-              <motion.div
-                key={hid}
-                initial={{ opacity: 1, y: 10, scale: 0.6 }}
-                animate={{ opacity: 0, y: -90, scale: 1.35 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.9, ease: "easeOut" }}
-                className="absolute top-12 z-20 pointer-events-none flex items-center gap-1 px-3 py-1 rounded-full bg-[#FFF2F0] border border-[#FFCDC6] font-display font-extrabold text-xs text-[#C83E2B]"
-              >
-                <CozyIcon name="parent_heart" size={20} /> +2 XP Sayang{" "}
-                {petName}!
-              </motion.div>
-            ))}
-          </AnimatePresence>
-
-          <motion.div
-            animate={
-              isBouncing
-                ? { y: [0, -18, 0], scale: [1, 1.08, 1] }
-                : { y: 0, scale: 1 }
-            }
-            transition={{ duration: 0.45 }}
-            onClick={handlePetMochi}
-            className="cursor-pointer"
-          >
-            <CustomizablePetAvatar
-              species={activeSpecies}
-              stage={showcaseStage}
-              mood={showcaseMood}
-              customName={petName}
-              equippedAccessories={equippedAccessories}
-              isMysteryLocked={isShowcaseLocked}
-              className="w-56 h-60 sm:w-64 sm:h-68"
-            />
-          </motion.div>
-
-          {/* Species Switcher (Unlocked Species) */}
-          <div className="w-full max-w-lg mt-3">
-            <p className="text-[11px] font-display font-extrabold uppercase tracking-wider text-center text-[#7A6E65] mb-2">
-              Pilih Spesies Pet ({unlockedSpecies.length}/4 Terbuka):
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {PET_SPECIES_LIST.map((sp) => {
-                const isUnlocked = unlockedSpecies.includes(sp);
-                const isSelected = activeSpecies === sp;
-                const spMeta = PET_SPECIES_META[sp];
-
-                return (
-                  <button
-                    key={sp}
-                    type="button"
-                    disabled={!isUnlocked}
-                    onClick={() => {
-                      if (isUnlocked) {
-                        soundEffects.tactileClick();
-                        equipPetSpecies(sp);
-                      }
-                    }}
-                    className={cn(
-                      "py-2 px-2.5 rounded-2xl text-center transition-all border-2",
-                      isSelected
-                        ? "bg-[#58CC02] border-[#58CC02] border-b-[4px] border-b-[#46A302] font-display font-extrabold text-white cursor-pointer"
-                        : isUnlocked
-                        ? "bg-[#F7F3EB] border-[#E6DFD2] text-[#3D352E] hover:bg-white font-bold cursor-pointer"
-                        : "bg-[#F7F3EB] border-[#E6DFD2] text-[#7A6E65] opacity-60 cursor-not-allowed"
-                    )}
-                  >
-                    <span className="text-xs block truncate">{spMeta.name}</span>
-                    <span className="text-[10px] opacity-85 block truncate">
-                      {isSelected
-                        ? "Sedang Aktif"
-                        : isUnlocked
-                        ? "Klik Pakai"
-                        : "Adopsi di Shop"}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Mood Tester Switcher (Sky Blue Active Tab) */}
-          <div className="w-full max-w-lg mt-3">
-            <p className="text-[11px] font-display font-extrabold uppercase tracking-wider text-center text-[#7A6E65] mb-2">
-              Uji Ekspresi & Mood {petName}:
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {MOOD_OPTIONS.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    soundEffects.tactileClick();
-                    setShowcaseMood(m.id);
-                  }}
-                  className={cn(
-                    "py-2 px-2.5 rounded-2xl text-center transition-all cursor-pointer border-2",
-                    showcaseMood === m.id
-                      ? "bg-[#38B6FF] border-[#38B6FF] border-b-[4px] border-b-[#1E88E5] font-display font-extrabold text-white"
-                      : "bg-[#F7F3EB] border-[#E6DFD2] text-[#3D352E] hover:bg-white font-bold"
-                  )}
-                >
-                  <span className="text-xs block truncate">{m.label}</span>
-                  <span className="text-[10px] opacity-85 block truncate">
-                    {m.desc}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Interactive Action Buttons */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mt-4">
-            <TactileButton
-              variant="matcha"
-              size="md"
-              onClick={handlePetMochi}
-            >
-              <CozyIcon name="parent_heart" size={22} />
-              Elus {petName} (+2 Stage XP)
-            </TactileButton>
-            <TactileButton
-              variant="honey"
-              size="md"
-              onClick={handleTossCoin}
-            >
+            <div className="flex items-center gap-1.5 flex-wrap">
               <CozyIcon name="coin_rupiah" size={22} />
-              Lempar Koin Keberuntungan!
-            </TactileButton>
-          </div>
-        </div>
-
-        {/* Active Caste Stage Reset Progress Panel */}
-        <div className="rounded-2xl bg-white border-2 border-[#E6DFD2] p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div>
-              <h3 className="font-display text-sm sm:text-base font-extrabold text-[#3D352E]">
-                Progres Kasta Saat Ini: Stage {currentStage} (
-                {CASTE_META[currentStage].name})
-              </h3>
-              <p className="text-xs font-bold text-[#7A6E65]">
-                {currentStage < 8
-                  ? `Penuhi kedua syarat di bawah untuk naik ke Kasta #${
-                      currentStage + 1
-                    }. Saat naik kasta, progres Stage XP & Hari Mencatat di-reset kembali ke 0!`
-                  : "Selamat! Kamu telah mencapai Kasta Puncak Maharaja Berlian (Stage 8)!"}
-              </p>
+              <span className="font-display text-xl font-extrabold tabular-nums text-[#4A3500] break-words">
+                {userProfile.points_balance.toLocaleString("id-ID")} Poin
+              </span>
             </div>
-            <span className="px-2.5 py-1 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-display font-extrabold text-[#3D352E]">
-              Reset per Kasta Aktif
+            <span className="px-2 py-0.5 rounded-lg bg-white border border-[#FDE08D] text-[10px] font-display font-extrabold text-[#2E6F00]">
+              Setara {formatRupiah(userProfile.points_balance)}
             </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <ChunkyProgressBar
-              value={userProfile.stageXp}
-              max={currentStageTarget.nextStageXpTarget}
-              variant="sky"
-              label="Syarat 1: Stage XP Terkumpul"
-              showFraction
-            />
-            <ChunkyProgressBar
-              value={userProfile.stageRecordedDays}
-              max={currentStageTarget.nextStageDaysTarget}
-              variant="matcha"
-              label="Syarat 2: Hari Mencatat di Kasta Ini"
-              showFraction
-            />
           </div>
         </div>
       </CozyCard>
 
-      {/* 2. Interactive Wardrobe / Lemari Aksesoris (Neutral White Card) */}
-      <CozyCard tone="white" className="space-y-4">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Sparkles className="w-6 h-6 text-[#FFC800] shrink-0" />
-            <div className="min-w-0">
-              <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] truncate">
-                Lemari Aksesoris & Kostum {petName} ({ownedAccessoryItems.length}
-                /24 Dimiliki)
-              </h2>
-              <p className="text-xs font-bold text-[#7A6E65]">
-                Klik Pasang / Lepas untuk memakaikan aksesoris yang sudah kamu
-                miliki!
+      {/* TUGAS 6.2: SPLIT-VIEW LAYOUT (Left lg:col-span-5 Sticky Stage + Right lg:col-span-7 Tabs) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* ================= LEFT COLUMN (lg:col-span-5 — Sticky Live Pet Stage) ================= */}
+        <div className="lg:col-span-5 lg:sticky lg:top-20 space-y-4 min-w-0">
+          <CozyCard tone="white" className="p-4 sm:p-5 space-y-4">
+            {/* Pet Name + Inline Edit + Species & Stage Badges */}
+            <div className="flex flex-col items-center text-center gap-2">
+              <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#EEF8FF] border border-[#BCE3FF] text-xs font-display font-extrabold text-[#1565C0]">
+                  Fase {currentStage}/8: {stageMeta.name}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-[#F8F0FF] border border-[#E2C6FF] text-xs font-display font-extrabold text-[#A552DB] leading-snug break-words">
+                  {equippedTitle}
+                </span>
+              </div>
+
+              {isEditingName ? (
+                <div className="inline-flex items-center gap-1.5 bg-[#F7F3EB] border-2 border-[#38B6FF] rounded-2xl px-3 py-1">
+                  <input
+                    type="text"
+                    value={nameInput}
+                    maxLength={18}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveName();
+                      if (e.key === "Escape") setIsEditingName(false);
+                    }}
+                    className="w-36 bg-transparent font-display text-base font-extrabold text-[#3D352E] text-center focus:outline-none"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveName}
+                    className="p-1.5 rounded-xl bg-[#58CC02] text-white cursor-pointer"
+                    title="Simpan Nama"
+                  >
+                    <Check className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingName(false)}
+                    className="p-1.5 rounded-xl bg-[#E6DFD2] text-[#3D352E] cursor-pointer"
+                    title="Batal"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  <h2 className="font-display text-2xl font-extrabold text-[#3D352E] leading-snug break-words">
+                    {petName}
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEffects.tactileClick();
+                      setNameInput(petName);
+                      setIsEditingName(true);
+                    }}
+                    className="p-1.5 rounded-xl bg-[#F7F3EB] hover:bg-[#FFFBEB] border border-[#E6DFD2] text-[#7A6E65] hover:text-[#3D352E] cursor-pointer transition-colors"
+                    title="Ubah Nama Pet"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <p className="text-xs font-bold text-[#7A6E65] leading-snug break-words">
+                Spesies: {speciesInfo.name} •{" "}
+                {GROWTH_STAGE_META[previewStage].description}
               </p>
             </div>
-          </div>
-          <Link href="/app/shop" onClick={() => soundEffects.tactileClick()}>
-            <TactileButton variant="honey" size="sm">
-              <ShoppingBag className="w-4 h-4" /> Belanja di Butik Shop
-            </TactileButton>
-          </Link>
+
+            {/* Interactive Live Pet Avatar Canvas */}
+            <div
+              onClick={handleCheckPetMood}
+              className="relative rounded-3xl bg-[#FFFDF9] border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] p-4 flex flex-col items-center justify-center cursor-pointer group overflow-hidden"
+              title="Ketuk untuk cek kabar & mood finansial Pet!"
+            >
+              {previewStage !== currentStage && (
+                <div className="mb-2 px-3 py-1 rounded-full bg-[#FFFBEB] border border-[#FDE08D] text-[11px] font-display font-extrabold text-[#4A3500]">
+                  {previewStage > currentStage
+                    ? `🔒 Siluet Rahasia Fase ${previewStage}: ${GROWTH_STAGE_META[previewStage].name}`
+                    : `👀 Pratinjau Wujud Fase ${previewStage}: ${GROWTH_STAGE_META[previewStage].name}`}
+                </div>
+              )}
+
+              <motion.div
+                key={petHopKey}
+                initial={{ y: -12, scale: 1.04 }}
+                animate={{ y: 0, scale: 1 }}
+                transition={{ type: "spring", stiffness: 320, damping: 16 }}
+                className="w-56 h-56 sm:w-64 sm:h-64 flex items-center justify-center"
+              >
+                <CustomizablePetAvatar
+                  species={activeSpecies}
+                  stage={previewStage}
+                  mood={report.petMood}
+                  customName={petName}
+                  equippedAccessories={userProfile.equippedAccessories}
+                  isMysteryLocked={previewStage > currentStage}
+                  className="w-full h-full"
+                />
+              </motion.div>
+
+              {previewStage === 1 && (
+                <span className="mt-1 px-3 py-1 rounded-xl bg-[#FFFBEB] border border-[#FDE08D] text-[11px] font-bold text-[#4A3500] text-center leading-snug">
+                  🥚 Catatan: Saat masih Fase 1 (Telur Ajaib), hanya Topi,
+                  Properti Alas, Aura, dan Latar yang terlihat!
+                </span>
+              )}
+            </div>
+
+            {/* TUGAS 4: Meaningful Interaction — "Cek Kabar & Mood Finansial Pet" (Replaces Gimmick Elus/Lempar Koin) */}
+            <div className="space-y-2.5">
+              <div className="bg-[#F7F3EB] border-2 border-[#E6DFD2] rounded-2xl p-3.5 text-xs sm:text-sm font-bold text-[#3D352E] leading-relaxed break-words">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#2E6F00]">
+                    💬 Mood & Diagnosis Finansial {petName}:
+                  </span>
+                  <span className="text-[10px] font-bold text-[#7A6E65]">
+                    Pesan {(dialogueIndex % smartDialogues.length) + 1}/
+                    {smartDialogues.length}
+                  </span>
+                </div>
+                <p>&ldquo;{smartDialogues[dialogueIndex % smartDialogues.length]}&rdquo;</p>
+              </div>
+
+              <TactileButton
+                variant="sky"
+                size="sm"
+                fullWidth
+                onClick={handleCheckPetMood}
+              >
+                <MessageCircleHeart className="w-4 h-4" />
+                <span>Cek Kabar & Mood Finansial {petName}</span>
+              </TactileButton>
+            </div>
+
+            {/* 8 Growth Stage Switcher Bar (1: Telur Ajaib .. 8: Sepuh Bijaksana) */}
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-xs font-display font-extrabold text-[#3D352E]">
+                  8 Fase Pertumbuhan Hidup:
+                </span>
+                {previewStage !== currentStage && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEffects.tactileClick();
+                      setPreviewStage(currentStage);
+                    }}
+                    className="text-[11px] font-display font-extrabold text-[#1E88E5] underline cursor-pointer"
+                  >
+                    Kembali ke Fase Aktif ({currentStage})
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {GROWTH_STAGES.map((st) => {
+                  const unlocked = st <= currentStage;
+                  const isPreview = previewStage === st;
+                  const meta = GROWTH_STAGE_META[st];
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => {
+                        soundEffects.tactileClick();
+                        setPreviewStage(st);
+                      }}
+                      className={cn(
+                        "p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-0.5",
+                        isPreview
+                          ? "bg-[#EEF8FF] border-2 border-[#38B6FF] border-b-[3px] border-b-[#1E88E5] text-[#1565C0]"
+                          : unlocked
+                          ? "bg-[#F7F3EB] border-[#E6DFD2] text-[#3D352E] hover:bg-white"
+                          : "bg-[#F5EFE6] border-[#E6DFD2] text-[#7A6E65] opacity-80"
+                      )}
+                    >
+                      <span className="font-display text-xs font-extrabold">
+                        {unlocked ? `Fase ${st}` : `🔒 Fase ${st}`}
+                      </span>
+                      <span className="text-[10px] font-bold leading-tight break-words">
+                        {unlocked ? meta.name : "???"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Dual Progress Bars for Active Pet's Growth Stage (Reset to 0 at every new stage!) */}
+            {currentStage < 8 ? (
+              <div className="p-3.5 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] space-y-2.5">
+                <p className="text-xs font-display font-extrabold text-[#3D352E] leading-snug break-words">
+                  Syarat Tumbuh ke Fase {currentStage + 1} (
+                  {GROWTH_STAGE_META[(currentStage + 1) as GrowthStage].name}):
+                </p>
+                <ChunkyProgressBar
+                  value={userProfile.stageXp}
+                  max={stageTarget.nextStageXpTarget}
+                  variant="sky"
+                  label="Stage XP (Direset 0 tiap naik Fase)"
+                  showFraction
+                />
+                <ChunkyProgressBar
+                  value={userProfile.stageRecordedDays}
+                  max={stageTarget.nextStageDaysTarget}
+                  variant="honey"
+                  label="Hari Mencatat di Fase Ini"
+                  showFraction
+                />
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-[#EFFBE6] border-2 border-[#C3EFA4] text-center font-display text-xs font-extrabold text-[#2E6F00]">
+                👑 Fase Puncak (Stage 8: Sepuh Bijaksana) Telah Tercapai!
+              </div>
+            )}
+
+            {/* 7 Equipped Accessory Slots Summary */}
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-display font-extrabold text-[#3D352E]">
+                7 Slot Kosmetik Terpasang Saat Ini:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {ACCESSORY_SLOTS.map((slot) => {
+                  const eqId = userProfile.equippedAccessories?.[slot];
+                  const eqItem = eqId ? ACCESSORY_BY_ID[eqId] : null;
+                  return (
+                    <div
+                      key={slot}
+                      className="p-2.5 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] flex items-center justify-between gap-2 min-w-0"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-display font-extrabold uppercase text-[#7A6E65] block">
+                          {SLOT_LABEL[slot]}
+                        </span>
+                        <span className="text-xs font-extrabold text-[#3D352E] leading-snug break-words block">
+                          {eqItem ? eqItem.name : "Polos (Kosong)"}
+                        </span>
+                      </div>
+                      {eqItem && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEffects.tactileClick();
+                            toggleEquipAccessory(eqItem.id);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-white hover:bg-[#FFEAE6] border border-[#E6DFD2] text-[10px] font-display font-extrabold text-[#C83E2B] cursor-pointer shrink-0"
+                        >
+                          Lepas
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </CozyCard>
         </div>
 
-        {ownedAccessoryItems.length === 0 ? (
-          <div className="p-6 rounded-2xl bg-[#F7F3EB] border-2 border-dashed border-[#D4C9B4] text-center space-y-2">
-            <p className="font-display text-base font-extrabold text-[#3D352E]">
-              Belum ada aksesoris yang dimiliki
-            </p>
-            <p className="text-xs font-bold text-[#7A6E65]">
-              Kunjungi Butik Shop atau klaim peti Checkpoint di Jalur Kas
-              Harian!
-            </p>
+        {/* ================= RIGHT COLUMN (lg:col-span-7 — 3 Sub-Tabs: Lemari, Butik Shop, Kandang) ================= */}
+        <div className="lg:col-span-7 space-y-4 min-w-0">
+          {/* 3 Main Sub-Tabs Switcher */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-[#F7F3EB] p-1.5 rounded-2xl border-2 border-[#E6DFD2]">
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.tactileClick();
+                setActiveTab("wardrobe");
+              }}
+              className={cn(
+                "py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all",
+                activeTab === "wardrobe"
+                  ? "bg-[#38B6FF] text-white border-b-[3px] border-b-[#1E88E5]"
+                  : "bg-white text-[#3D352E] border border-[#E6DFD2] hover:bg-[#FFFDF9]"
+              )}
+            >
+              <Shirt className="w-4 h-4 shrink-0" />
+              <span>👗 Lemari Kostum ({userProfile.ownedAccessories.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.tactileClick();
+                setActiveTab("shop");
+              }}
+              className={cn(
+                "py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all",
+                activeTab === "shop"
+                  ? "bg-[#38B6FF] text-white border-b-[3px] border-b-[#1E88E5]"
+                  : "bg-white text-[#3D352E] border border-[#E6DFD2] hover:bg-[#FFFDF9]"
+              )}
+            >
+              <ShoppingBag className="w-4 h-4 shrink-0" />
+              <span>🛍️ Butik Shop</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.tactileClick();
+                setActiveTab("kandang");
+              }}
+              className={cn(
+                "py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all",
+                activeTab === "kandang"
+                  ? "bg-[#38B6FF] text-white border-b-[3px] border-b-[#1E88E5]"
+                  : "bg-white text-[#3D352E] border border-[#E6DFD2] hover:bg-[#FFFDF9]"
+              )}
+            >
+              <Egg className="w-4 h-4 shrink-0" />
+              <span>
+                🥚 Kandang & Adopsi ({userProfile.unlockedSpecies.length}/8)
+              </span>
+            </button>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {ownedAccessoryItems.map((acc) => {
-              const isEquipped = equippedAccessories[acc.slot] === acc.id;
-              return (
-                <div
-                  key={acc.id}
+
+          {/* ================= TAB 1: 👗 LEMARI KOSTUM (WARDROBE) ================= */}
+          {activeTab === "wardrobe" && (
+            <CozyCard tone="white" className="p-4 sm:p-5 space-y-4">
+              <div className="space-y-1">
+                <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
+                  👗 Lemari Koleksi Kostum & Properti ({ownedAccessoryItems.length} Item)
+                </h2>
+                <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
+                  Pilih slot kategori di bawah untuk memadu-padankan pakaian,
+                  topi, kacamata, properti, aura, dan latar belakang pada{" "}
+                  {petName}.
+                </p>
+              </div>
+
+              {/* 7 Slot Category Filter Pills */}
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEffects.tactileClick();
+                    setWardrobeSlotFilter("all");
+                  }}
                   className={cn(
-                    "p-3.5 rounded-2xl border-2 flex items-center justify-between gap-3 transition-all min-w-0",
-                    isEquipped
-                      ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[4px] border-b-[#9EE070]"
-                      : "bg-[#F7F3EB] border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4]"
+                    "px-3 py-1.5 rounded-xl font-display text-xs font-extrabold border cursor-pointer transition-all",
+                    wardrobeSlotFilter === "all"
+                      ? "bg-[#38B6FF] text-white border-[#1E88E5] border-b-[3px]"
+                      : "bg-[#F7F3EB] text-[#3D352E] border-[#E6DFD2] hover:bg-white"
                   )}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-14 h-14 rounded-2xl bg-white border border-[#E6DFD2] flex items-center justify-center shrink-0">
-                      <AccessoryPreviewIcon
-                        accessoryId={acc.id}
-                        className="w-12 h-12"
-                      />
+                  Semua Slot ({userProfile.ownedAccessories.length})
+                </button>
+                {ACCESSORY_SLOTS.map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => {
+                      soundEffects.tactileClick();
+                      setWardrobeSlotFilter(slot);
+                    }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl font-display text-xs font-extrabold border cursor-pointer transition-all",
+                      wardrobeSlotFilter === slot
+                        ? "bg-[#38B6FF] text-white border-[#1E88E5] border-b-[3px]"
+                        : "bg-[#F7F3EB] text-[#3D352E] border-[#E6DFD2] hover:bg-white"
+                    )}
+                  >
+                    {SLOT_LABEL[slot]}
+                  </button>
+                ))}
+              </div>
+
+              {ownedAccessoryItems.length === 0 ? (
+                <div className="p-8 rounded-3xl bg-[#F7F3EB] border-2 border-dashed border-[#D4C9B4] text-center space-y-3">
+                  <p className="font-display text-base font-extrabold text-[#3D352E]">
+                    Belum ada koleksi di kategori slot ini!
+                  </p>
+                  <p className="text-xs font-bold text-[#7A6E65]">
+                    Yuk kunjungi tab Butik Shop atau buka Peti Harta di Peta
+                    Jalur Kas Harian untuk mengoleksi item baru!
+                  </p>
+                  <TactileButton
+                    variant="sky"
+                    size="sm"
+                    onClick={() => setActiveTab("shop")}
+                  >
+                    <ShoppingBag className="w-4 h-4" /> Buka Butik Shop Sekarang
+                  </TactileButton>
+                </div>
+              ) : (
+                /* TUGAS 1.1 & 6.2: Vertical Card Layout (`flex-col items-center text-center p-4 gap-2`, Never Truncate) */
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {ownedAccessoryItems.map((item) => {
+                    const equippedInSlotId =
+                      userProfile.equippedAccessories?.[item.slot];
+                    const isEquipped = equippedInSlotId === item.id;
+                    const otherEquippedItem =
+                      equippedInSlotId && equippedInSlotId !== item.id
+                        ? ACCESSORY_BY_ID[equippedInSlotId]
+                        : null;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "rounded-3xl border-2 border-b-[4px] flex flex-col items-center text-center p-4 gap-2 transition-all",
+                          isEquipped
+                            ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[#9EE070]"
+                            : "bg-white border-[#E6DFD2] border-b-[#D4C9B4]"
+                        )}
+                      >
+                        {/* 1. Large Vector Preview Icon on Top */}
+                        <div className="w-24 h-24 rounded-2xl bg-[#FFFDF9] border-2 border-[#E6DFD2] flex items-center justify-center p-2 shrink-0">
+                          <AccessoryPreviewIcon
+                            accessoryId={item.id}
+                            className="w-20 h-20"
+                          />
+                        </div>
+
+                        {/* 2. Full Item Name (No Truncate!) */}
+                        <h3 className="font-display text-base font-extrabold text-[#3D352E] leading-snug break-words">
+                          {item.name}
+                        </h3>
+
+                        {/* 3. Slot & Stage Metadata Badges */}
+                        <div className="flex flex-wrap items-center justify-center gap-1.5">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#A552DB]">
+                            Slot: {SLOT_LABEL[item.slot]}
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F7F3EB] border border-[#E6DFD2] text-[11px] font-display font-extrabold text-[#7A6E65]">
+                            Fase {item.stageRequirement}
+                          </span>
+                          {item.source === "path_drop" && (
+                            <span className="px-2.5 py-0.5 rounded-lg bg-[#FFFBEB] border border-[#FDE08D] text-[10px] font-display font-extrabold text-[#4A3500]">
+                              🎁 Eksklusif Jalur Kas
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
+                          {item.description}
+                        </p>
+
+                        {/* Explicit Replacement Info if another item occupies the same slot */}
+                        {otherEquippedItem && (
+                          <div className="w-full px-3 py-1.5 rounded-xl bg-[#EEF8FF] border border-[#BCE3FF] text-[11px] font-bold text-[#1565C0] leading-snug break-words">
+                            Menggantikan: <strong>{otherEquippedItem.name}</strong>
+                          </div>
+                        )}
+
+                        {/* 4. Full-Width Action Button at the Bottom */}
+                        <div className="w-full pt-1 mt-auto">
+                          <TactileButton
+                            variant={
+                              isEquipped
+                                ? "cream"
+                                : otherEquippedItem
+                                ? "sky"
+                                : "matcha"
+                            }
+                            size="sm"
+                            fullWidth
+                            onClick={() => {
+                              soundEffects.tactileClick();
+                              toggleEquipAccessory(item.id);
+                            }}
+                          >
+                            {isEquipped ? (
+                              <>Lepas dari {SLOT_LABEL[item.slot]}</>
+                            ) : otherEquippedItem ? (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5" /> Tukar{" "}
+                                {SLOT_LABEL[item.slot]}
+                              </>
+                            ) : (
+                              <>✨ Pasang ke Pet</>
+                            )}
+                          </TactileButton>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CozyCard>
+          )}
+
+          {/* ================= TAB 2: 🛍️ BUTIK SHOP (BELI KOSTUM & AURA) ================= */}
+          {activeTab === "shop" && (
+            <CozyCard tone="white" className="p-4 sm:p-5 space-y-4">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
+                    🛍️ Butik Kostum, Properti & Latar (32 Item Shop)
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#EFFBE6] border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00]">
+                    Fase Aktif {petName}: Fase {currentStage}/8
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
+                  Beli kostum sesuai Fase Pertumbuhan {petName}. Item dari Fase
+                  di atas Fase {currentStage} masih terkunci dalam Siluet
+                  Rahasia. (16 Item Eksklusif Jalur Kas tidak dijual di sini —
+                  dapatkan gratis dari Peti Harta Peta Jalur Kas!)
+                </p>
+              </div>
+
+              {/* Filter by Growth Stage (Fase 1..8) */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">
+                  Filter Berdasarkan Fase Pertumbuhan:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEffects.tactileClick();
+                      setShopStageFilter("all");
+                    }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl font-display text-xs font-extrabold border cursor-pointer transition-all",
+                      shopStageFilter === "all"
+                        ? "bg-[#38B6FF] text-white border-[#1E88E5] border-b-[3px]"
+                        : "bg-[#F7F3EB] text-[#3D352E] border-[#E6DFD2] hover:bg-white"
+                    )}
+                  >
+                    Semua Fase (32)
+                  </button>
+                  {GROWTH_STAGES.map((st) => {
+                    const isUnlocked = st <= currentStage;
+                    return (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => {
+                          soundEffects.tactileClick();
+                          setShopStageFilter(st);
+                        }}
+                        className={cn(
+                          "px-2.5 py-1.5 rounded-xl font-display text-xs font-extrabold border cursor-pointer transition-all",
+                          shopStageFilter === st
+                            ? "bg-[#38B6FF] text-white border-[#1E88E5] border-b-[3px]"
+                            : isUnlocked
+                            ? "bg-[#F7F3EB] text-[#3D352E] border-[#E6DFD2] hover:bg-white"
+                            : "bg-[#F5EFE6] text-[#7A6E65] border-[#E6DFD2]"
+                        )}
+                      >
+                        {isUnlocked ? `Fase ${st}` : `🔒 Fase ${st}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Filter by Slot */}
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEffects.tactileClick();
+                    setShopSlotFilter("all");
+                  }}
+                  className={cn(
+                    "px-2.5 py-1 rounded-xl font-display text-[11px] font-extrabold border cursor-pointer transition-all",
+                    shopSlotFilter === "all"
+                      ? "bg-[#A552DB] text-white border-[#7E3AF2]"
+                      : "bg-white text-[#7A6E65] border-[#E6DFD2]"
+                  )}
+                >
+                  Semua Slot
+                </button>
+                {ACCESSORY_SLOTS.map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => {
+                      soundEffects.tactileClick();
+                      setShopSlotFilter(slot);
+                    }}
+                    className={cn(
+                      "px-2.5 py-1 rounded-xl font-display text-[11px] font-extrabold border cursor-pointer transition-all",
+                      shopSlotFilter === slot
+                        ? "bg-[#A552DB] text-white border-[#7E3AF2]"
+                        : "bg-white text-[#7A6E65] border-[#E6DFD2]"
+                    )}
+                  >
+                    {SLOT_LABEL[slot]}
+                  </button>
+                ))}
+              </div>
+
+              {/* Shop Item Cards Grid — Vertical Layout (`flex-col items-center text-center p-4 gap-2`) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {shopAccessoryItems.map((item) => {
+                  const isOwned = userProfile.ownedAccessories.includes(
+                    item.id
+                  );
+                  const isMysteryLocked = item.stageRequirement > currentStage;
+                  const canAfford =
+                    userProfile.points_balance >= item.pricePoints;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "rounded-3xl border-2 border-b-[4px] flex flex-col items-center text-center p-4 gap-2 transition-all",
+                        isOwned
+                          ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[#9EE070]"
+                          : isMysteryLocked
+                          ? "bg-[#F7F3EB] border-[#E6DFD2] border-b-[#D4C9B4]"
+                          : "bg-white border-[#E6DFD2] border-b-[#D4C9B4]"
+                      )}
+                    >
+                      {/* 1. Vector Icon or Mystery Locked Silhouette */}
+                      <div className="w-24 h-24 rounded-2xl bg-[#FFFDF9] border-2 border-[#E6DFD2] flex items-center justify-center p-2 shrink-0">
+                        <AccessoryPreviewIcon
+                          accessoryId={item.id}
+                          isMysteryLocked={isMysteryLocked}
+                          className="w-20 h-20"
+                        />
+                      </div>
+
+                      {/* 2. Item Name (Mystery Locked hides name per Tugas 6) */}
+                      <h3 className="font-display text-base font-extrabold text-[#3D352E] leading-snug break-words">
+                        {isMysteryLocked
+                          ? `Item Rahasia Fase #${item.stageRequirement}`
+                          : item.name}
+                      </h3>
+
+                      {/* 3. Slot & Stage Requirement Badges */}
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        <span className="px-2.5 py-0.5 rounded-lg bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#A552DB]">
+                          Slot: {SLOT_LABEL[item.slot]}
+                        </span>
+                        <span
+                          className={cn(
+                            "px-2.5 py-0.5 rounded-lg border text-[11px] font-display font-extrabold",
+                            isMysteryLocked
+                              ? "bg-[#FFF2F0] border-[#FFCDC6] text-[#C83E2B]"
+                              : "bg-[#EEF8FF] border-[#BCE3FF] text-[#1565C0]"
+                          )}
+                        >
+                          Fase {item.stageRequirement}:{" "}
+                          {GROWTH_STAGE_META[item.stageRequirement].name}
+                        </span>
+                      </div>
+
+                      {/* Description */}
+                      <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
+                        {isMysteryLocked
+                          ? `Rawat ${petName} hingga mencapai Fase ${item.stageRequirement} (${GROWTH_STAGE_META[item.stageRequirement].name}) untuk membuka siluet rahasia ini!`
+                          : item.description}
+                      </p>
+
+                      {/* Price Pill */}
+                      {!isMysteryLocked && (
+                        <div className="px-3 py-1 rounded-xl bg-[#FFFBEB] border border-[#FDE08D] font-display text-xs font-extrabold text-[#4A3500] inline-flex items-center gap-1">
+                          <CozyIcon name="coin_rupiah" size={16} />
+                          <span>
+                            {item.pricePoints.toLocaleString("id-ID")} Poin
+                          </span>
+                        </div>
+                      )}
+
+                      {/* 4. Full-Width Action Button */}
+                      <div className="w-full pt-1 mt-auto">
+                        {isOwned ? (
+                          <TactileButton
+                            variant="cream"
+                            size="sm"
+                            fullWidth
+                            onClick={() => {
+                              soundEffects.tactileClick();
+                              setActiveTab("wardrobe");
+                            }}
+                          >
+                            ✅ Sudah di Lemari (Buka Lemari)
+                          </TactileButton>
+                        ) : isMysteryLocked ? (
+                          <TactileButton
+                            variant="cream"
+                            size="sm"
+                            fullWidth
+                            disabled
+                            className="opacity-75 cursor-not-allowed"
+                          >
+                            <Lock className="w-3.5 h-3.5" /> Buka Fase Stage #
+                            {item.stageRequirement} Dulu
+                          </TactileButton>
+                        ) : (
+                          <TactileButton
+                            variant={canAfford ? "matcha" : "cream"}
+                            size="sm"
+                            fullWidth
+                            onClick={() => {
+                              soundEffects.tactileClick();
+                              if (canAfford) {
+                                setConfirmBuyItemId(item.id);
+                              } else {
+                                buyAccessory(item.id);
+                              }
+                            }}
+                          >
+                            {canAfford
+                              ? `Beli & Pasang (${item.pricePoints.toLocaleString(
+                                  "id-ID"
+                                )} Poin)`
+                              : `Poin Belum Cukup (${item.pricePoints.toLocaleString(
+                                  "id-ID"
+                                )} Poin)`}
+                          </TactileButton>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CozyCard>
+          )}
+
+          {/* ================= TAB 3: 🥚 KANDANG & ADOPSI TELUR PET (8 SPESIES KAWAII) ================= */}
+          {activeTab === "kandang" && (
+            <div className="space-y-4">
+              <CozyCard tone="white" className="p-4 sm:p-5 space-y-4">
+                <div className="space-y-1">
+                  <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
+                    🥚 Kandang Pet & Adopsi Telur Baru (8 Spesies Kawaii)
+                  </h2>
+                  <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
+                    Setiap spesies Pet yang kamu adopsi dimulai dari{" "}
+                    <strong>Fase 1: Telur Ajaib (0 Stage XP & 0 Hari)</strong>{" "}
+                    dan menyimpan progres pertumbuhannya masing-masing secara
+                    mandiri!
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {PET_SPECIES_CATALOG.map((sp) => {
+                    const isUnlocked = userProfile.unlockedSpecies.includes(
+                      sp.id
+                    );
+                    const isActive = activeSpecies === sp.id;
+                    const petInstance = userProfile.ownedPets?.[sp.id];
+                    const instStage: GrowthStage =
+                      petInstance?.currentStage || (isActive ? currentStage : 1);
+                    const instMeta = GROWTH_STAGE_META[instStage];
+                    const canAfford =
+                      userProfile.points_balance >= sp.pricePoints;
+
+                    return (
+                      <div
+                        key={sp.id}
+                        className={cn(
+                          "rounded-3xl border-2 border-b-[4px] flex flex-col items-center text-center p-4 gap-2.5 transition-all",
+                          isActive
+                            ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[#9EE070]"
+                            : isUnlocked
+                            ? "bg-white border-[#E6DFD2] border-b-[#D4C9B4]"
+                            : "bg-[#FFFDF9] border-[#E6DFD2] border-b-[#D4C9B4]"
+                        )}
+                      >
+                        {/* Avatar Preview: Owned shows its current stage, Unowned shows Cute Preview + Egg Badge */}
+                        <div className="relative w-32 h-32 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] flex items-center justify-center p-2">
+                          <CustomizablePetAvatar
+                            species={sp.id}
+                            stage={isUnlocked ? instStage : 3}
+                            mood="happy"
+                            className="w-28 h-28"
+                          />
+                          <span className="absolute -top-2 right-2 px-2 py-0.5 rounded-full bg-[#FFFBEB] border border-[#FDE08D] text-[10px] font-display font-extrabold text-[#4A3500]">
+                            Tier Kawaii ★{sp.kawaiiTier}
+                          </span>
+                        </div>
+
+                        <h3 className="font-display text-base font-extrabold text-[#3D352E] leading-snug break-words">
+                          {isUnlocked && petInstance?.customName
+                            ? `${petInstance.customName} (${sp.name})`
+                            : sp.name}
+                        </h3>
+
+                        {isUnlocked ? (
+                          <div className="flex flex-wrap items-center justify-center gap-1.5">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-[#EEF8FF] border border-[#BCE3FF] text-[11px] font-display font-extrabold text-[#1565C0]">
+                              Fase {instStage}/8: {instMeta.name}
+                            </span>
+                            <span className="px-2.5 py-0.5 rounded-lg bg-[#F7F3EB] border border-[#E6DFD2] text-[11px] font-bold text-[#7A6E65]">
+                              {petInstance?.stageXp ?? 0} XP •{" "}
+                              {petInstance?.stageRecordedDays ?? 0} Hari
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#A552DB]">
+                            🥚 Diadopsi Mulai Fase 1: Telur Ajaib
+                          </span>
+                        )}
+
+                        <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
+                          {sp.description}
+                        </p>
+
+                        {!isUnlocked && (
+                          <div className="px-3 py-1 rounded-xl bg-[#FFFBEB] border border-[#FDE08D] font-display text-xs font-extrabold text-[#4A3500] inline-flex items-center gap-1">
+                            <CozyIcon name="coin_rupiah" size={16} />
+                            <span>
+                              {sp.pricePoints === 0
+                                ? "Gratis (Starter)"
+                                : `${sp.pricePoints.toLocaleString(
+                                    "id-ID"
+                                  )} Poin`}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="w-full pt-1 mt-auto">
+                          {isActive ? (
+                            <TactileButton
+                              variant="cream"
+                              size="sm"
+                              fullWidth
+                              disabled
+                            >
+                              ✨ Sedang Aktif di Panggung
+                            </TactileButton>
+                          ) : isUnlocked ? (
+                            <TactileButton
+                              variant="sky"
+                              size="sm"
+                              fullWidth
+                              onClick={() => {
+                                soundEffects.tactileClick();
+                                equipPetSpecies(sp.id);
+                              }}
+                            >
+                              Panggil ke Panggung Pet
+                            </TactileButton>
+                          ) : (
+                            <TactileButton
+                              variant={canAfford ? "matcha" : "cream"}
+                              size="sm"
+                              fullWidth
+                              onClick={() => {
+                                soundEffects.tactileClick();
+                                if (canAfford) {
+                                  setConfirmAdoptSpecies(sp.id);
+                                } else {
+                                  buyPetSpecies(sp.id);
+                                }
+                              }}
+                            >
+                              🥚 Adopsi Telur (
+                              {sp.pricePoints.toLocaleString("id-ID")} Poin)
+                            </TactileButton>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CozyCard>
+
+              {/* Utility Item: Perisai Es Pelindung Streak */}
+              <CozyCard tone="white" className="p-4 sm:p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-14 h-14 rounded-2xl bg-[#EEF8FF] border-2 border-[#BCE3FF] flex items-center justify-center shrink-0">
+                      <CozyIcon name="ice_shield" size={32} />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[10px] font-display font-extrabold uppercase text-[#7A6E65] block truncate">
-                        {SLOT_LABEL[acc.slot]}
-                      </span>
-                      <p className="font-display text-sm font-extrabold text-[#3D352E] truncate">
-                        {acc.name}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-display text-base font-extrabold text-[#3D352E] leading-snug break-words">
+                          Perisai Es Pelindung Streak (Streak Freeze)
+                        </h3>
+                        <span className="px-2.5 py-0.5 rounded-lg bg-[#EEF8FF] border border-[#BCE3FF] text-xs font-display font-extrabold text-[#1565C0]">
+                          Dimiliki: {userProfile.streak_freeze_count} Perisai
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words mt-0.5">
+                        Melindungi api streak harianmu agar tidak kembali ke 0
+                        saat lupa mencatat kas 1 hari.
                       </p>
-                      <span className="text-[10px] font-bold text-[#2E6F00]">
-                        {isEquipped ? "Sedang Dipakai" : "Tersimpan di Lemari"}
-                      </span>
                     </div>
                   </div>
 
                   <TactileButton
-                    variant={isEquipped ? "matcha" : "cream"}
+                    variant="sky"
                     size="sm"
                     onClick={() => {
-                      soundEffects.tactileClick();
-                      toggleEquipAccessory(acc.id);
+                      const res = buyStreakFreezeShield();
+                      if (res.success) {
+                        soundEffects.coinChime();
+                      } else {
+                        soundEffects.tactileClick();
+                      }
                     }}
-                    className="shrink-0"
+                    className="shrink-0 w-full sm:w-auto"
                   >
-                    {isEquipped ? "Lepas" : "Pasang"}
+                    Beli +1 Perisai (500 Poin)
                   </TactileButton>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </CozyCard>
-
-      {/* 3. 8 Caste Evolution Stages Grid with Mystery Silhouette Lock (`???`) */}
-      <CozyCard tone="white" className="space-y-4">
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          <div className="min-w-0">
-            <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] truncate">
-              8 Kasta Evolusi Karakter (Perantau Kardus &rarr; Maharaja Berlian)
-            </h2>
-            <p className="text-xs font-bold text-[#7A6E65]">
-              Kasta di atas Stage {currentStage} masih diselimuti siluet rahasia
-              (`???`). Rajinlah mencatat setiap hari untuk membukanya!
-            </p>
-          </div>
+              </CozyCard>
+            </div>
+          )}
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {CASTE_STAGES.map((stageNum) => {
-            const isUnlocked = stageNum <= currentStage;
-            const isPreviewed = showcaseStage === stageNum;
-            const meta = CASTE_META[stageNum];
-            const prevStageReq =
-              stageNum > 1
-                ? CASTE_STAGE_TARGETS[(stageNum - 1) as CasteStage]
-                : null;
-            const isNextImmediateStage = stageNum === currentStage + 1;
-
-            return (
-              <div
-                key={stageNum}
-                className={cn(
-                  "rounded-3xl p-4 flex flex-col justify-between gap-3 transition-all border-2 min-w-0 overflow-hidden",
-                  isPreviewed && isUnlocked
-                    ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[4px] border-b-[#9EE070]"
-                    : isUnlocked
-                    ? "bg-white border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4]"
-                    : "bg-[#F7F3EB] border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4]"
-                )}
-              >
-                <div className="space-y-3 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="px-2.5 py-0.5 rounded-xl bg-white border border-[#E6DFD2] text-[11px] font-display font-extrabold text-[#3D352E]">
-                      Kasta #{stageNum} / 8
-                    </span>
-                    {isUnlocked ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-display font-extrabold text-[#2E6F00]">
-                        <CozyIcon name="check_badge" size={18} /> Terbuka
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-xs font-display font-extrabold text-[#7A6E65]">
-                        <Lock className="w-3.5 h-3.5" /> Rahasia (???)
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Avatar Preview OR Strict Mystery Silhouette (`isMysteryLocked={true}`) */}
-                  <div
-                    onClick={() => {
-                      soundEffects.tactileClick();
-                      setShowcaseStage(stageNum);
-                    }}
-                    className="relative rounded-2xl bg-white border border-[#E6DFD2] py-3 flex items-center justify-center cursor-pointer group"
-                  >
-                    <CustomizablePetAvatar
-                      species={activeSpecies}
-                      stage={stageNum}
-                      mood="happy"
-                      customName={isUnlocked ? petName : "???"}
-                      equippedAccessories={
-                        isUnlocked ? equippedAccessories : undefined
-                      }
-                      isMysteryLocked={!isUnlocked}
-                      className="w-36 h-40 group-hover:scale-105 transition-transform"
-                    />
-                  </div>
-
-                  {/* Strict Anti-Spoiler Text for Locked Stages (Tugas 3.2) */}
-                  <div className="min-w-0">
-                    <h3 className="font-display text-base sm:text-lg font-extrabold text-[#3D352E] truncate flex items-center gap-1.5">
-                      {isUnlocked ? (
-                        meta.name
-                      ) : (
-                        <>
-                          <HelpCircle className="w-4 h-4 text-[#7A6E65] shrink-0" />
-                          <span>Kasta Rahasia #{stageNum}</span>
-                        </>
-                      )}
-                    </h3>
-                    <p className="text-[11px] font-display font-bold text-[#A552DB]">
-                      {isUnlocked
-                        ? `Aura Kemakmuran: ${meta.aura}`
-                        : "Aura & Kostum: ??? (Masih Disegel)"}
-                    </p>
-                    <p className="text-xs font-bold text-[#7A6E65] mt-1 leading-relaxed">
-                      {isUnlocked
-                        ? meta.description
-                        : `Wujud asli dan gelar kasta ke-${stageNum} baru akan terungkap setelah kamu menyelesaikan syarat di Kasta #${
-                            stageNum - 1
-                          }!`}
-                    </p>
-                  </div>
-                </div>
-
-                {isUnlocked ? (
-                  <div className="pt-1">
-                    <TactileButton
-                      variant={isPreviewed ? "matcha" : "cream"}
-                      size="sm"
-                      fullWidth
-                      onClick={() => {
-                        soundEffects.tactileClick();
-                        setShowcaseStage(stageNum);
-                      }}
-                    >
-                      {isPreviewed ? (
-                        <>
-                          <CozyIcon name="check_badge" size={18} />
-                          Sedang Ditampilkan di Panggung
-                        </>
-                      ) : (
-                        "Lihat Wujud Kasta Ini di Panggung"
-                      )}
-                    </TactileButton>
-                  </div>
-                ) : (
-                  prevStageReq && (
-                    <div className="space-y-2 pt-2 border-t border-[#E6DFD2]">
-                      <div className="flex items-center justify-between text-[11px] font-display font-extrabold text-[#3D352E]">
-                        <span>Syarat Buka dari Kasta #{stageNum - 1}:</span>
-                        <span className="text-[#1565C0]">
-                          {prevStageReq.nextStageXpTarget} XP &{" "}
-                          {prevStageReq.nextStageDaysTarget} Hari
-                        </span>
-                      </div>
-                      <ChunkyProgressBar
-                        value={
-                          isNextImmediateStage ? userProfile.stageXp : 0
-                        }
-                        max={prevStageReq.nextStageXpTarget}
-                        variant="sky"
-                        label={`Stage XP (${
-                          isNextImmediateStage ? userProfile.stageXp : 0
-                        }/${prevStageReq.nextStageXpTarget})`}
-                      />
-                      <ChunkyProgressBar
-                        value={
-                          isNextImmediateStage
-                            ? userProfile.stageRecordedDays
-                            : 0
-                        }
-                        max={prevStageReq.nextStageDaysTarget}
-                        variant="matcha"
-                        label={`Hari Mencatat (${
-                          isNextImmediateStage
-                            ? userProfile.stageRecordedDays
-                            : 0
-                        }/${prevStageReq.nextStageDaysTarget} Hari)`}
-                      />
-                    </div>
-                  )
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </CozyCard>
-
-      {/* 4. Special Titles / Gelar Kehormatan (Neutral White Card) */}
-      <CozyCard tone="white" className="space-y-3.5">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <CozyIcon name="crown_sultan" size={28} />
-          <div className="min-w-0">
-            <h2 className="font-display text-lg font-extrabold text-[#3D352E] truncate">
-              Koleksi Gelar Kehormatan {petName}
-            </h2>
-            <p className="text-xs font-bold text-[#7A6E65]">
-              Terbuka otomatis dari lencana pencapaian yang berhasil kamu raih!
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          {BADGE_IDS.map((bid) => {
-            const unlocked = earnedBadgeCodes.has(bid);
-            const meta = BADGE_META[bid];
-            const isSelected = equippedTitle === meta.title;
-
-            return (
-              <button
-                key={bid}
-                type="button"
-                disabled={!unlocked}
-                onClick={() => {
-                  if (unlocked) {
-                    soundEffects.tactileClick();
-                    equipSpecialTitle(meta.title);
-                  }
-                }}
-                className={cn(
-                  "p-3 rounded-2xl text-left border-2 transition-all flex items-center justify-between gap-2 min-w-0",
-                  isSelected
-                    ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[4px] border-b-[#9EE070] cursor-pointer"
-                    : unlocked
-                    ? "bg-white border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] hover:bg-[#F7F3EB] cursor-pointer"
-                    : "bg-[#F7F3EB] border-[#E6DFD2] opacity-60 cursor-not-allowed"
-                )}
-              >
-                <div className="min-w-0">
-                  <p className="font-display text-xs sm:text-sm font-extrabold text-[#3D352E] truncate">
-                    {meta.title}
-                  </p>
-                  <p className="text-[10px] font-bold text-[#7A6E65] truncate">
-                    {unlocked ? "Klik untuk pasang gelar" : "Buka lencana dulu"}
-                  </p>
-                </div>
-                <CozyIcon
-                  name={
-                    isSelected
-                      ? "check_badge"
-                      : unlocked
-                      ? "xp_star"
-                      : "lock_cozy"
-                  }
-                  size={20}
-                />
-              </button>
-            );
-          })}
-        </div>
-      </CozyCard>
+      </div>
     </div>
+  );
+}
+
+export default function PetsAndBoutiquePage() {
+  return (
+    <Suspense
+      fallback={
+        <CozyCard tone="white" className="p-8 text-center">
+          <p className="font-display text-base font-extrabold text-[#3D352E]">
+            Memuat Dunia Pet & Butik...
+          </p>
+        </CozyCard>
+      }
+    >
+      <PetsAndBoutiqueContent />
+    </Suspense>
   );
 }

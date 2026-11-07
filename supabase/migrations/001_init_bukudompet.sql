@@ -1,6 +1,6 @@
 -- ============================================================
--- BUKUDOMPET DATABASE SCHEMA & REALISTIC SEED DATA (VERSI 3.0)
--- Multi-User RBAC, 8-Stage Caste Economy, Pet Boutique & Assignments
+-- BUKUDOMPET DATABASE SCHEMA & REALISTIC SEED DATA (VERSI 4.0)
+-- Multi-User RBAC, 8 Fase Pertumbuhan Hidup (Telur->Sepuh), Pet Boutique & Assignments
 -- Migration: 001_init_bukudompet.sql (Idempotent / Safe for Existing DBs)
 -- ============================================================
 
@@ -18,9 +18,10 @@ CREATE TABLE IF NOT EXISTS profiles (
   stage_xp INT NOT NULL DEFAULT 0,
   stage_recorded_days INT NOT NULL DEFAULT 0,
   pet_custom_name TEXT NOT NULL DEFAULT 'Mochi',
-  active_species TEXT NOT NULL DEFAULT 'cat' CHECK (active_species IN ('cat', 'capybara', 'fox', 'red_panda')),
-  unlocked_species TEXT[] NOT NULL DEFAULT ARRAY['cat'],
-  owned_accessories TEXT[] NOT NULL DEFAULT ARRAY['head_paper_hat'],
+  active_species TEXT NOT NULL DEFAULT 'chubby_cat',
+  unlocked_species TEXT[] NOT NULL DEFAULT ARRAY['chubby_cat'],
+  owned_pets JSONB NOT NULL DEFAULT '{}'::jsonb,
+  owned_accessories TEXT[] NOT NULL DEFAULT ARRAY['head_straw_hat'],
   equipped_accessories JSONB NOT NULL DEFAULT '{}'::jsonb,
   points_balance INT NOT NULL DEFAULT 0, -- 1 Point = Rp 1 (Hardcore Cozy Pacing)
   lifetime_points INT NOT NULL DEFAULT 0,
@@ -33,15 +34,17 @@ CREATE TABLE IF NOT EXISTS profiles (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Safe Schema Upgrade for Existing Databases (Versi 1.0 / 2.0 -> Versi 3.0)
+-- Safe Schema Upgrade for Existing Databases (Versi 1.0 / 2.0 / 3.0 -> Versi 4.0)
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_active_species_check;
 ALTER TABLE profiles
   ADD COLUMN IF NOT EXISTS current_stage INT NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS stage_xp INT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS stage_recorded_days INT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS pet_custom_name TEXT NOT NULL DEFAULT 'Mochi',
-  ADD COLUMN IF NOT EXISTS active_species TEXT NOT NULL DEFAULT 'cat',
-  ADD COLUMN IF NOT EXISTS unlocked_species TEXT[] NOT NULL DEFAULT ARRAY['cat'],
-  ADD COLUMN IF NOT EXISTS owned_accessories TEXT[] NOT NULL DEFAULT ARRAY['head_paper_hat'],
+  ADD COLUMN IF NOT EXISTS active_species TEXT NOT NULL DEFAULT 'chubby_cat',
+  ADD COLUMN IF NOT EXISTS unlocked_species TEXT[] NOT NULL DEFAULT ARRAY['chubby_cat'],
+  ADD COLUMN IF NOT EXISTS owned_pets JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS owned_accessories TEXT[] NOT NULL DEFAULT ARRAY['head_straw_hat'],
   ADD COLUMN IF NOT EXISTS equipped_accessories JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- 2. Supervisor Assignments (Many-to-Many RBAC Mapping between Supervisor and User)
@@ -126,12 +129,12 @@ CREATE TABLE IF NOT EXISTS point_redemptions (
 INSERT INTO profiles (
   id, username, display_name, role, pin_code, avatar_theme,
   xp, level, current_stage, stage_xp, stage_recorded_days,
-  pet_custom_name, active_species, unlocked_species, owned_accessories, equipped_accessories,
+  pet_custom_name, active_species, unlocked_species, owned_pets, owned_accessories, equipped_accessories,
   points_balance, lifetime_points,
   current_streak, longest_streak, streak_freeze_count,
   last_recorded_date, monthly_budget_target, monthly_saving_target
 ) VALUES
-  -- USER 1: Adik Rara (Stage 2: Penabung Selimut)
+  -- USER 1: Adik Rara (Stage 3: Balita Gembul)
   (
     '11111111-1111-4111-8111-111111111111',
     'adik',
@@ -141,24 +144,25 @@ INSERT INTO profiles (
     'mochi-cat',
     630,
     6,
-    2,
-    280,
-    6,
+    3,
+    540,
+    8,
     'Mochi',
-    'cat',
-    ARRAY['cat'],
-    ARRAY['head_paper_hat', 'neck_bandana', 'hand_tin_can', 'decor_potted_plant'],
-    '{"head":"head_paper_hat","neck":"neck_bandana","decor":"decor_potted_plant"}'::jsonb,
-    1850,
-    3850,
-    6,
+    'chubby_cat',
+    ARRAY['chubby_cat'],
+    '{"chubby_cat":{"species":"chubby_cat","customName":"Mochi","currentStage":3,"stageXp":540,"stageRecordedDays":8,"unlockedAt":"2026-11-01"}}'::jsonb,
+    ARRAY['head_straw_hat', 'outfit_tee', 'prop_patched_cardboard', 'bg_warm_room', 'head_pastel_ribbon', 'outfit_knit_sweater', 'neck_knit_scarf', 'face_round_glasses'],
+    '{"head":"head_pastel_ribbon","outfit":"outfit_knit_sweater","neck":"neck_knit_scarf","background":"bg_warm_room"}'::jsonb,
+    3260,
+    5260,
+    8,
     9,
     2,
     CURRENT_DATE,
     1800000,
     350000
   ),
-  -- USER 2: Adik Bima (Stage 3: Pelajar Teliti)
+  -- USER 2: Adik Bima (Stage 4: Anak Ceria)
   (
     '11111111-1111-4111-8111-222222222222',
     'bima',
@@ -168,14 +172,15 @@ INSERT INTO profiles (
     'mochi-capybara',
     1450,
     12,
-    3,
-    420,
-    8,
-    'Kapi',
-    'capybara',
-    ARRAY['cat', 'capybara'],
-    ARRAY['head_paper_hat', 'head_graduation_cap', 'eyes_round_glasses', 'vehicle_skateboard'],
-    '{"head":"head_graduation_cap","eyes":"eyes_round_glasses","vehicle":"vehicle_skateboard"}'::jsonb,
+    4,
+    620,
+    10,
+    'Yuzu',
+    'capybara_chill',
+    ARRAY['chubby_cat', 'capybara_chill'],
+    '{"chubby_cat":{"species":"chubby_cat","customName":"Mochi","currentStage":2,"stageXp":180,"stageRecordedDays":4,"unlockedAt":"2026-10-20"},"capybara_chill":{"species":"capybara_chill","customName":"Yuzu","currentStage":4,"stageXp":620,"stageRecordedDays":10,"unlockedAt":"2026-10-28"}}'::jsonb,
+    ARRAY['head_straw_hat', 'head_grad_cap', 'outfit_cozy_hoodie', 'prop_matcha_boba', 'face_round_glasses', 'bg_warm_room'],
+    '{"head":"head_grad_cap","outfit":"outfit_cozy_hoodie","prop":"prop_matcha_boba","face":"face_round_glasses"}'::jsonb,
     2400,
     5400,
     10,
@@ -185,7 +190,7 @@ INSERT INTO profiles (
     1200000,
     250000
   ),
-  -- USER 3: Sepupu Citra (Stage 1: Perantau Kardus)
+  -- USER 3: Sepupu Citra (Stage 1: Telur Ajaib)
   (
     '11111111-1111-4111-8111-333333333333',
     'citra',
@@ -198,11 +203,12 @@ INSERT INTO profiles (
     1,
     140,
     3,
-    'Rubi',
-    'cat',
-    ARRAY['cat'],
-    ARRAY['head_paper_hat', 'hand_tin_can'],
-    '{"head":"head_paper_hat","hand":"hand_tin_can"}'::jsonb,
+    'Stroberi',
+    'lop_bunny',
+    ARRAY['chubby_cat', 'lop_bunny'],
+    '{"chubby_cat":{"species":"chubby_cat","customName":"Mochi","currentStage":2,"stageXp":90,"stageRecordedDays":2,"unlockedAt":"2026-11-01"},"lop_bunny":{"species":"lop_bunny","customName":"Stroberi","currentStage":1,"stageXp":140,"stageRecordedDays":3,"unlockedAt":"2026-11-04"}}'::jsonb,
+    ARRAY['head_straw_hat', 'prop_patched_cardboard'],
+    '{"head":"head_straw_hat","prop":"prop_patched_cardboard"}'::jsonb,
     620,
     620,
     3,
@@ -221,7 +227,7 @@ INSERT INTO profiles (
     '2222',
     'mochi-parent',
     0, 1, 1, 0, 0,
-    'Mochi', 'cat', ARRAY['cat'], ARRAY[]::TEXT[], '{}'::jsonb,
+    'Mochi', 'chubby_cat', ARRAY['chubby_cat'], '{}'::jsonb, ARRAY[]::TEXT[], '{}'::jsonb,
     0, 0, 0, 0, 0,
     CURRENT_DATE, 1800000, 350000
   ),
@@ -234,7 +240,7 @@ INSERT INTO profiles (
     '3333',
     'mochi-guardian',
     0, 1, 1, 0, 0,
-    'Mochi', 'cat', ARRAY['cat'], ARRAY[]::TEXT[], '{}'::jsonb,
+    'Mochi', 'chubby_cat', ARRAY['chubby_cat'], '{}'::jsonb, ARRAY[]::TEXT[], '{}'::jsonb,
     0, 0, 0, 0, 0,
     CURRENT_DATE, 1500000, 300000
   ),
@@ -247,9 +253,10 @@ INSERT INTO profiles (
     '9999',
     'mochi-boss',
     3500, 18, 6, 1200, 22,
-    'Sultan Mochi', 'red_panda', ARRAY['cat', 'capybara', 'fox', 'red_panda'],
-    ARRAY['head_top_hat', 'eyes_monocle', 'vehicle_scooter'],
-    '{"head":"head_top_hat","eyes":"eyes_monocle"}'::jsonb,
+    'Sultan Rusty', 'red_panda', ARRAY['chubby_cat', 'hamster_cheek', 'lop_bunny', 'capybara_chill', 'red_panda'],
+    '{}'::jsonb,
+    ARRAY['head_top_hat', 'outfit_boss_suit', 'prop_pastel_scooter'],
+    '{"head":"head_top_hat","outfit":"outfit_boss_suit","prop":"prop_pastel_scooter"}'::jsonb,
     50000, 50000, 14, 14, 5,
     CURRENT_DATE, 1800000, 350000
   )
@@ -267,6 +274,7 @@ ON CONFLICT (id) DO UPDATE SET
   pet_custom_name = EXCLUDED.pet_custom_name,
   active_species = EXCLUDED.active_species,
   unlocked_species = EXCLUDED.unlocked_species,
+  owned_pets = EXCLUDED.owned_pets,
   owned_accessories = EXCLUDED.owned_accessories,
   equipped_accessories = EXCLUDED.equipped_accessories,
   points_balance = EXCLUDED.points_balance,

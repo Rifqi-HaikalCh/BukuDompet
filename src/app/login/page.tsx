@@ -9,7 +9,7 @@ import {
 } from "@/store/useBukuDompetStore";
 import {
   CustomizablePetAvatar,
-  CASTE_META,
+  GROWTH_STAGE_META,
 } from "@/components/illustrations/PetAvatarSystem";
 import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
@@ -98,14 +98,14 @@ export default function LoginPage() {
 
             <div className="w-44 h-44 bg-white rounded-3xl border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex items-center justify-center p-2">
               <CustomizablePetAvatar
-                species="cat"
+                species="chubby_cat"
                 stage={3}
                 mood="happy"
                 customName="Mochi"
                 equippedAccessories={{
-                  head: "head_graduation_cap",
-                  eyes: "eyes_round_glasses",
-                  neck: "neck_bowtie",
+                  head: "head_sprout_leaf",
+                  face: "face_blush_hearts",
+                  neck: "neck_pastel_bib",
                 }}
                 className="w-40 h-40"
               />
@@ -114,14 +114,14 @@ export default function LoginPage() {
             <div className="space-y-1">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00]">
                 <CozyIcon name="coin_rupiah" size={16} />
-                Versi 3.0 • Multi-User & 8 Kasta
+                Versi 4.0 • 8 Fase Pertumbuhan Hidup
               </span>
               <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E]">
                 Jurnal Kas & Petualangan Finansial
               </h2>
               <p className="text-xs font-bold text-[#3D352E]/85 leading-relaxed">
                 Catat kas harian dengan disiplin, rawat pet kesayanganmu melewati
-                8 Kasta Kemakmuran, dan pantau transparan bersama keluarga!
+                8 Fase Pertumbuhan Hidup, dan pantau transparan bersama keluarga!
               </p>
             </div>
           </div>
@@ -298,9 +298,9 @@ export default function LoginPage() {
                         </p>
 
                         {acc.role === "user" && (
-                          <p className="text-[10px] font-bold text-[#2E6F00] truncate">
-                            Pet: {acc.petCustomName} • Stage {acc.currentStage} (
-                            {CASTE_META[acc.currentStage]?.name})
+                          <p className="text-[10px] font-bold text-[#2E6F00] break-words">
+                            Pet: {acc.petCustomName} • Fase {acc.currentStage} (
+                            {GROWTH_STAGE_META[acc.currentStage]?.name})
                           </p>
                         )}
 

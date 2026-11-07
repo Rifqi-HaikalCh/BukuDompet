@@ -4,8 +4,8 @@ import React, { useMemo } from "react";
 import Link from "next/link";
 import { ShoppingBag, ShieldCheck, Sparkles, CheckCircle2 } from "lucide-react";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
-import { CASTE_STAGE_TARGETS } from "@/lib/spending-detective";
-import { CASTE_META } from "@/components/illustrations/PetAvatarSystem";
+import { GROWTH_STAGE_TARGETS } from "@/lib/spending-detective";
+import { GROWTH_STAGE_META } from "@/components/illustrations/PetAvatarSystem";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import {
   TactileButton,
@@ -28,7 +28,7 @@ export default function MissionsPage() {
     profiles[0];
 
   const currentStage = userProfile.currentStage || 1;
-  const stageReq = CASTE_STAGE_TARGETS[currentStage];
+  const stageReq = GROWTH_STAGE_TARGETS[currentStage];
 
   const userMissions = useMemo(
     () => missions.filter((m) => m.user_id === userProfile.id),
@@ -73,12 +73,12 @@ export default function MissionsPage() {
           </div>
 
           <Link
-            href="/app/shop"
+            href="/app/pets?tab=shop"
             onClick={() => soundEffects.tactileClick()}
             className="shrink-0"
           >
             <TactileButton variant="matcha" size="sm">
-              <ShoppingBag className="w-4 h-4" /> Buka Butik & Shop
+              <ShoppingBag className="w-4 h-4" /> Buka Dunia Pet & Butik
             </TactileButton>
           </Link>
         </div>
@@ -160,20 +160,20 @@ export default function MissionsPage() {
             </div>
           </div>
 
-          {/* Current Caste Progress Bar Summary */}
+          {/* Current Growth Stage Progress Bar Summary */}
           <div className="pt-2 border-t border-[#E6DFD2] grid grid-cols-1 sm:grid-cols-2 gap-3">
             <ChunkyProgressBar
               value={userProfile.stageXp}
               max={stageReq.nextStageXpTarget}
               variant="sky"
-              label={`Progres Kasta #${currentStage} (${CASTE_META[currentStage].name}) — Stage XP`}
+              label={`Progres Fase #${currentStage} (${GROWTH_STAGE_META[currentStage].name}) — Stage XP`}
               showFraction
             />
             <ChunkyProgressBar
               value={userProfile.stageRecordedDays}
               max={stageReq.nextStageDaysTarget}
               variant="matcha"
-              label="Syarat Hari Mencatat di Kasta Ini"
+              label="Syarat Hari Mencatat di Fase Ini"
               showFraction
             />
           </div>

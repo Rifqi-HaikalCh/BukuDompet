@@ -1,10 +1,14 @@
 import type { MochiMood, MochiStage } from "@/components/illustrations/MochiCompanion";
 import type {
   CasteStage,
+  GrowthStage,
   PetMood,
   PetSpecies,
 } from "@/components/illustrations/PetAvatarSystem";
-import { CASTE_META } from "@/components/illustrations/PetAvatarSystem";
+import {
+  GROWTH_STAGE_META,
+  PET_SPECIES_CATALOG,
+} from "@/components/illustrations/PetAvatarSystem";
 
 export type TransactionType = "income" | "expense";
 export type NeedOrWant = "need" | "want" | "income";
@@ -62,23 +66,21 @@ export const INCOME_CATEGORIES: {
 ];
 
 /**
- * Harga Spesies Pet di Butik & Shop (Long-Term Economy)
+ * Harga Spesies Pet di Butik & Shop (Long-Term Economy — 8 Spesies Kawaii)
  */
-export const PET_SPECIES_SHOP_PRICES: Record<PetSpecies, number> = {
-  cat: 0, // Starter gratis
-  capybara: 15000,
-  fox: 30000,
-  red_panda: 50000,
-};
+export const PET_SPECIES_SHOP_PRICES: Record<PetSpecies, number> = Object.fromEntries(
+  PET_SPECIES_CATALOG.map((sp) => [sp.id, sp.pricePoints])
+) as Record<PetSpecies, number>;
 
 /**
- * Syarat Buka 8 Kasta Karakter (Dengan Mekanisme Reset di Setiap Stage Baru)
- * Nilai pada `CASTE_STAGE_TARGETS[stage]` adalah syarat untuk NAIK DARI `stage` menuju `stage + 1`.
+ * Syarat Buka 8 Fase Pertumbuhan Hidup (Telur Ajaib s/d Sepuh Bijaksana)
+ * Nilai pada `GROWTH_STAGE_TARGETS[stage]` adalah syarat untuk NAIK DARI `stage` menuju `stage + 1`.
+ * Setiap kali naik fase, `stageXp` dan `stageRecordedDays` direset kembali ke 0!
  */
-export const CASTE_STAGE_TARGETS: Record<
-  CasteStage,
+export const GROWTH_STAGE_TARGETS: Record<
+  GrowthStage,
   {
-    stage: CasteStage;
+    stage: GrowthStage;
     name: string;
     unlockFromPrevStageXp: number;
     unlockFromPrevStageDays: number;
@@ -88,7 +90,7 @@ export const CASTE_STAGE_TARGETS: Record<
 > = {
   1: {
     stage: 1,
-    name: CASTE_META[1].name, // Perantau Kardus
+    name: GROWTH_STAGE_META[1].name, // Telur Ajaib
     unlockFromPrevStageXp: 0,
     unlockFromPrevStageDays: 0,
     nextStageXpTarget: 350,
@@ -96,7 +98,7 @@ export const CASTE_STAGE_TARGETS: Record<
   },
   2: {
     stage: 2,
-    name: CASTE_META[2].name, // Penabung Selimut
+    name: GROWTH_STAGE_META[2].name, // Bayi Menetas
     unlockFromPrevStageXp: 350,
     unlockFromPrevStageDays: 7,
     nextStageXpTarget: 900,
@@ -104,7 +106,7 @@ export const CASTE_STAGE_TARGETS: Record<
   },
   3: {
     stage: 3,
-    name: CASTE_META[3].name, // Pelajar Teliti
+    name: GROWTH_STAGE_META[3].name, // Balita Gembul
     unlockFromPrevStageXp: 900,
     unlockFromPrevStageDays: 14,
     nextStageXpTarget: 1800,
@@ -112,7 +114,7 @@ export const CASTE_STAGE_TARGETS: Record<
   },
   4: {
     stage: 4,
-    name: CASTE_META[4].name, // Barista Perintis
+    name: GROWTH_STAGE_META[4].name, // Anak Ceria
     unlockFromPrevStageXp: 1800,
     unlockFromPrevStageDays: 25,
     nextStageXpTarget: 3200,
@@ -120,7 +122,7 @@ export const CASTE_STAGE_TARGETS: Record<
   },
   5: {
     stage: 5,
-    name: CASTE_META[5].name, // Manajer Muda
+    name: GROWTH_STAGE_META[5].name, // Remaja Lincah
     unlockFromPrevStageXp: 3200,
     unlockFromPrevStageDays: 40,
     nextStageXpTarget: 5500,
@@ -128,7 +130,7 @@ export const CASTE_STAGE_TARGETS: Record<
   },
   6: {
     stage: 6,
-    name: CASTE_META[6].name, // Juragan Kota
+    name: GROWTH_STAGE_META[6].name, // Dewasa Prima
     unlockFromPrevStageXp: 5500,
     unlockFromPrevStageDays: 60,
     nextStageXpTarget: 9000,
@@ -136,7 +138,7 @@ export const CASTE_STAGE_TARGETS: Record<
   },
   7: {
     stage: 7,
-    name: CASTE_META[7].name, // Konglomerat Elit
+    name: GROWTH_STAGE_META[7].name, // Master Anggun
     unlockFromPrevStageXp: 9000,
     unlockFromPrevStageDays: 90,
     nextStageXpTarget: 15000,
@@ -144,13 +146,15 @@ export const CASTE_STAGE_TARGETS: Record<
   },
   8: {
     stage: 8,
-    name: CASTE_META[8].name, // Maharaja Berlian
+    name: GROWTH_STAGE_META[8].name, // Sepuh Bijaksana
     unlockFromPrevStageXp: 15000,
     unlockFromPrevStageDays: 120,
     nextStageXpTarget: 15000,
     nextStageDaysTarget: 120,
   },
 };
+
+export const CASTE_STAGE_TARGETS = GROWTH_STAGE_TARGETS;
 
 const GENERIC_WORDS = new Set([
   "makan",

@@ -776,3 +776,56 @@ export function BiomeMapSection({
     </MotionConfig>
   );
 }
+
+export interface BiomeTransitionDividerProps {
+  previousMonthIndex?: number;
+  currentMonthIndex: number;
+  dayNumber: number;
+  isStartGate?: boolean;
+}
+
+/**
+ * Gerbang Perbatasan Bioma (Biome Transition Divider Banner)
+ * Muncul otomatis saat perjalanan melewati kelipatan 30 hari atau pergantian bulan kalender.
+ */
+export function BiomeTransitionDivider({
+  previousMonthIndex,
+  currentMonthIndex,
+  dayNumber,
+  isStartGate = false,
+}: BiomeTransitionDividerProps) {
+  const currBiome = BIOME_MONTHS[((currentMonthIndex % 12) + 12) % 12];
+  const prevBiome =
+    previousMonthIndex !== undefined
+      ? BIOME_MONTHS[((previousMonthIndex % 12) + 12) % 12]
+      : null;
+
+  return (
+    <div className="w-full max-w-md mx-auto my-3 px-2">
+      <div
+        className="relative rounded-2xl border-2 p-3.5 text-center shadow-sm overflow-hidden"
+        style={{
+          backgroundColor: "#FFFDF7",
+          borderColor: currBiome.borderColor,
+          borderBottomWidth: "4px",
+          borderBottomColor: currBiome.lipColor,
+        }}
+      >
+        <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#F7F3EB] border border-[#E6DFD2] text-[10px] font-display font-extrabold text-[#7A6E65] uppercase tracking-wider mb-1">
+          <span>⛩️ {isStartGate ? `Gerbang Awal Perjalanan • Hari ke-${dayNumber}` : `Gerbang Transisi Bioma • Hari ke-${dayNumber}`}</span>
+        </div>
+
+        <p className="font-display text-sm sm:text-base font-extrabold text-[#3D352E] leading-snug break-words">
+          {prevBiome && prevBiome.monthIndex !== currBiome.monthIndex
+            ? `${prevBiome.biomeTitle} ➔ ${currBiome.biomeTitle}`
+            : `Memasuki Wilayah: ${currBiome.biomeTitle} (${currBiome.monthName})`}
+        </p>
+
+        <p className="text-[11px] font-bold text-[#7A6E65] mt-0.5 leading-snug break-words">
+          Cuaca Aktif: {currBiome.weatherLabel} • Ekosistem: {currBiome.resourceName}
+        </p>
+      </div>
+    </div>
+  );
+}
+

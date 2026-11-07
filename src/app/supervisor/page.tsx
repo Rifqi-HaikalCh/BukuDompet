@@ -10,6 +10,8 @@ import {
   ChevronRight,
   Users,
   Heart,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import {
@@ -18,7 +20,7 @@ import {
 } from "@/lib/spending-detective";
 import {
   CustomizablePetAvatar,
-  CASTE_META,
+  GROWTH_STAGE_META,
 } from "@/components/illustrations/PetAvatarSystem";
 import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
 import { CozyIcon, CategoryIcon } from "@/components/illustrations/CozyIcons";
@@ -34,6 +36,7 @@ import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { GamificationFX } from "@/components/ui/GamificationFX";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
+import { useCozyBgm } from "@/lib/cozy-bgm";
 import { cn, formatCompactRupiah } from "@/lib/utils";
 
 type SupervisorTab = "today" | "week" | "month" | "calendar";
@@ -47,6 +50,7 @@ function getRelativeDateStr(daysOffset: number): string {
 
 export default function SupervisorDashboardPage() {
   const router = useRouter();
+  const { isPlaying: isBgmPlaying, toggleBgm } = useCozyBgm();
   const {
     activeProfileId,
     monitoredUserId,
@@ -483,6 +487,30 @@ export default function SupervisorDashboardPage() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.tactileClick();
+                toggleBgm();
+              }}
+              className={cn(
+                "px-2.5 py-1.5 rounded-xl border-2 border-b-[3px] text-xs font-display font-extrabold flex items-center gap-1.5 cursor-pointer transition-all",
+                isBgmPlaying
+                  ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[#9EE070] text-[#2E6F00]"
+                  : "bg-[#F7F3EB] border-[#E6DFD2] border-b-[#D4C9B4] text-[#7A6E65]"
+              )}
+              title="Nyalakan / Matikan Musik Latar Cozy"
+            >
+              {isBgmPlaying ? (
+                <Volume2 className="w-4 h-4 text-[#2E6F00]" />
+              ) : (
+                <VolumeX className="w-4 h-4 text-[#7A6E65]" />
+              )}
+              <span className="hidden sm:inline">
+                Musik: {isBgmPlaying ? "Nyala" : "Senyap"}
+              </span>
+            </button>
+
             <Link
               href="/app"
               onClick={() => {
@@ -517,18 +545,18 @@ export default function SupervisorDashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 space-y-6 min-w-0">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 space-y-6 min-w-0 max-w-full overflow-hidden">
         {/* ============================================================
             ZONA 1 — KARTU KESIMPULAN CEPAT ORANG TUA (EXECUTIVE SUMMARY)
            ============================================================ */}
-        <section className="space-y-4 min-w-0">
-          {/* Single Hero Card (Matcha Soft) */}
-          <CozyCard tone="matcha" className="p-5 space-y-4">
-            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 min-w-0">
-              <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+        <section className="space-y-4 min-w-0 max-w-full">
+          {/* Single Hero Card (Matcha Soft) - Fixed Anti-Jebol Layout (Tugas 1.2) */}
+          <CozyCard tone="matcha" className="p-4 sm:p-5 space-y-4 w-full max-w-full overflow-hidden">
+            <div className="flex flex-col xl:flex-row items-start justify-between gap-4 w-full max-w-full min-w-0">
+              <div className="flex flex-col sm:flex-row items-start gap-3.5 w-full max-w-full min-w-0 flex-1">
                 <div className="w-20 h-22 rounded-2xl bg-white border-2 border-[#C3EFA4] flex items-center justify-center shrink-0 p-1">
                   <CustomizablePetAvatar
-                    species={inspectedUser.activeSpecies || "cat"}
+                    species={inspectedUser.activeSpecies || "chubby_cat"}
                     stage={currentStage}
                     mood={report.petMood}
                     customName={petName}
@@ -536,12 +564,12 @@ export default function SupervisorDashboardPage() {
                     className="w-18 h-20"
                   />
                 </div>
-                <div className="space-y-1.5 min-w-0">
-                  {/* Strict RBAC Monitored User Selector (Tugas 1.4) */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2.5 py-0.5 rounded-full bg-white border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00] inline-flex items-center gap-1">
-                      <Users className="w-3.5 h-3.5" />
-                      User Ditugaskan Admin ({assignedUsers.length}):
+                <div className="space-y-2 w-full max-w-full min-w-0 flex-1">
+                  {/* Strict RBAC Monitored User Selector (Tugas 1.2: flex-wrap w-full max-w-full) */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap w-full max-w-full">
+                    <span className="px-2.5 py-1 rounded-full bg-white border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00] inline-flex items-center gap-1.5 w-fit max-w-full break-words">
+                      <Users className="w-3.5 h-3.5 shrink-0" />
+                      <span>User Ditugaskan Admin ({assignedUsers.length}):</span>
                     </span>
                     <select
                       value={inspectedUser.id}
@@ -549,34 +577,36 @@ export default function SupervisorDashboardPage() {
                         soundEffects.tactileClick();
                         setMonitoredUserId(e.target.value);
                       }}
-                      className="px-3 py-1 rounded-xl bg-white border-2 border-[#C3EFA4] font-display text-xs font-extrabold text-[#3D352E] focus:outline-none cursor-pointer"
+                      className="w-full sm:w-auto max-w-full px-3 py-1.5 rounded-xl bg-white border-2 border-[#C3EFA4] font-display text-xs font-extrabold text-[#3D352E] focus:outline-none cursor-pointer"
                     >
                       {assignedUsers.map((u) => (
                         <option key={u.id} value={u.id}>
                           {u.display_name} — Pet: {u.petCustomName || "Mochi"} (
-                          {CASTE_META[u.currentStage || 1].name})
+                          {GROWTH_STAGE_META[u.currentStage || 1].name})
                         </option>
                       ))}
                     </select>
                   </div>
 
-                  <h1 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug">
-                    Sisa Uang Saku {inspectedUser.display_name}:{" "}
-                    <span className="text-[#2E6F00] tabular-nums">
-                      {formatRupiah(report.remainingTotalBalanceThisMonth)}
-                    </span>{" "}
-                    <span className="text-xs sm:text-sm font-bold text-[#7A6E65]">
-                      (Batas Aman Harian: {formatRupiah(report.dssl)}/hari)
-                    </span>
-                  </h1>
+                  <div className="space-y-1 w-full max-w-full break-words">
+                    <h1 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
+                      Sisa Uang Saku {inspectedUser.display_name}:{" "}
+                      <span className="text-[#2E6F00] tabular-nums">
+                        {formatRupiah(report.remainingTotalBalanceThisMonth)}
+                      </span>
+                    </h1>
+                    <p className="text-xs sm:text-sm font-bold text-[#7A6E65] break-words">
+                      Batas Aman Harian: {formatRupiah(report.dssl)}/hari
+                    </p>
+                  </div>
 
-                  <p className="text-xs font-bold text-[#3D352E]/85">
+                  <p className="text-xs font-bold text-[#3D352E]/85 leading-relaxed break-words">
                     {inspectedUser.display_name} bersama pet{" "}
                     <strong>{petName}</strong> konsisten mencatat kas{" "}
                     <strong>
                       {inspectedUser.current_streak} hari berturut-turut
                     </strong>{" "}
-                    (Kasta #{currentStage}: {CASTE_META[currentStage].name}) dan
+                    (Fase #{currentStage}: {GROWTH_STAGE_META[currentStage].name}) dan
                     mengunci tabungan{" "}
                     <strong className="tabular-nums">
                       {formatRupiah(report.monthlySavingTarget)}
@@ -584,21 +614,23 @@ export default function SupervisorDashboardPage() {
                     .
                   </p>
                   {cheerMessage && (
-                    <p className="text-xs font-extrabold text-[#2E6F00] bg-white px-2.5 py-1 rounded-lg border border-[#C3EFA4] inline-block">
-                      {cheerMessage}
-                    </p>
+                    <div className="w-full max-w-full">
+                      <p className="text-xs font-extrabold text-[#2E6F00] bg-white px-3 py-1.5 rounded-xl border border-[#C3EFA4] break-words leading-snug">
+                        {cheerMessage}
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>
 
               {/* Right Corner CTA: Kirim Stiker Apresiasi Visual (0 Poin) */}
-              <div className="w-full lg:w-auto shrink-0 space-y-1.5">
+              <div className="w-full xl:w-72 max-w-full shrink-0 space-y-2 pt-2 xl:pt-0 border-t xl:border-t-0 border-[#C3EFA4]/60">
                 <input
                   type="text"
                   value={customCheerNote}
                   onChange={(e) => setCustomCheerNote(e.target.value)}
                   placeholder="Pesan semangat singkat..."
-                  className="w-full lg:w-64 px-3 py-1.5 rounded-xl bg-white border border-[#C3EFA4] text-xs font-bold text-[#3D352E] focus:outline-none"
+                  className="w-full max-w-full px-3 py-2 rounded-xl bg-white border border-[#C3EFA4] text-xs font-bold text-[#3D352E] focus:outline-none"
                 />
                 <TactileButton
                   variant={alreadyCheeredToday ? "white" : "honey"}
@@ -606,8 +638,8 @@ export default function SupervisorDashboardPage() {
                   fullWidth
                   onClick={() => setConfirmCheerOpen(true)}
                 >
-                  <Heart className="w-4 h-4 fill-current" />
-                  <span>
+                  <Heart className="w-4 h-4 fill-current shrink-0" />
+                  <span className="break-words">
                     {alreadyCheeredToday
                       ? `Kirim Lagi Stiker Apresiasi (${supervisorCheersCount}x)`
                       : "Kirim Stiker Apresiasi (0 Poin)"}
@@ -617,23 +649,23 @@ export default function SupervisorDashboardPage() {
             </div>
           </CozyCard>
 
-          {/* 3 Clean White Metric Cards below Executive Summary */}
+          {/* 3 Clean White Metric Cards below Executive Summary (No truncate on Rupiah!) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-0">
             {/* Card 1: Pengeluaran Hari Ini */}
             <CozyCard tone="white" className="p-4 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-display font-extrabold text-[#7A6E65] truncate">
+                <span className="text-xs font-display font-extrabold text-[#7A6E65]">
                   1. Pengeluaran Hari Ini
                 </span>
                 <CozyIcon name="cat_food" size={24} />
               </div>
-              <div className="font-display text-2xl font-extrabold text-[#C83E2B] tabular-nums truncate">
+              <div className="font-display text-xl sm:text-2xl font-extrabold text-[#C83E2B] tabular-nums break-words">
                 <RollingNumber value={report.todayTotalSpend} prefix="-Rp" />
               </div>
-              <div className="flex items-center justify-between text-xs font-bold text-[#7A6E65] pt-1 border-t border-[#E6DFD2]">
+              <div className="flex flex-wrap items-center justify-between gap-1 text-xs font-bold text-[#7A6E65] pt-1 border-t border-[#E6DFD2]">
                 <span>Batas Aman Harian:</span>
                 <span className="font-display font-extrabold tabular-nums text-[#2E6F00]">
-                  {formatCompactRupiah(report.dssl)}
+                  {formatRupiah(report.dssl)}
                 </span>
               </div>
             </CozyCard>
@@ -641,15 +673,15 @@ export default function SupervisorDashboardPage() {
             {/* Card 2: Pengeluaran Minggu Ini */}
             <CozyCard tone="white" className="p-4 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-display font-extrabold text-[#7A6E65] truncate">
+                <span className="text-xs font-display font-extrabold text-[#7A6E65]">
                   2. Pengeluaran Minggu Ini (7 Hari)
                 </span>
                 <CozyIcon name="calendar_streak" size={24} />
               </div>
-              <div className="font-display text-2xl font-extrabold text-[#C83E2B] tabular-nums truncate">
+              <div className="font-display text-xl sm:text-2xl font-extrabold text-[#C83E2B] tabular-nums break-words">
                 <RollingNumber value={report.totalSpentThisWeek} prefix="-Rp" />
               </div>
-              <div className="flex items-center justify-between text-xs font-bold text-[#7A6E65] pt-1 border-t border-[#E6DFD2]">
+              <div className="flex flex-wrap items-center justify-between gap-1 text-xs font-bold text-[#7A6E65] pt-1 border-t border-[#E6DFD2]">
                 <span>
                   Masuk 7 Hari: +{formatCompactRupiah(weeklyIncomeTotal)}
                 </span>
@@ -662,22 +694,22 @@ export default function SupervisorDashboardPage() {
             {/* Card 3: Rekap Bulan Ini */}
             <CozyCard tone="white" className="p-4 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-display font-extrabold text-[#7A6E65] truncate">
+                <span className="text-xs font-display font-extrabold text-[#7A6E65]">
                   3. Rekap Bulan Ini
                 </span>
                 <CozyIcon name="cat_saving" size={24} />
               </div>
-              <div className="font-display text-2xl font-extrabold text-[#2E6F00] tabular-nums truncate">
+              <div className="font-display text-xl sm:text-2xl font-extrabold text-[#2E6F00] tabular-nums break-words">
                 <RollingNumber
                   value={report.remainingTotalBalanceThisMonth}
                   prefix="Rp"
                 />
               </div>
-              <div className="flex items-center justify-between text-xs font-bold text-[#7A6E65] pt-1 border-t border-[#E6DFD2] gap-2">
-                <span className="text-[#2E6F00] truncate">
+              <div className="flex flex-wrap items-center justify-between text-xs font-bold text-[#7A6E65] pt-1 border-t border-[#E6DFD2] gap-2">
+                <span className="text-[#2E6F00]">
                   +{formatCompactRupiah(report.monthlyAllowance)}
                 </span>
-                <span className="text-[#C83E2B] truncate">
+                <span className="text-[#C83E2B]">
                   -{formatCompactRupiah(report.totalSpentThisMonth)}
                 </span>
               </div>

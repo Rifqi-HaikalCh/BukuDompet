@@ -10,13 +10,11 @@ import {
   INCOME_CATEGORIES,
   parseSmartQuickSplit,
   validateItemizedCombo,
-  getLevelFromXp,
-  getMochiStageFromLevel,
 } from "@/lib/spending-detective";
 import { CozyIcon, CategoryIcon } from "@/components/illustrations/CozyIcons";
 import {
   CustomizablePetAvatar,
-  CASTE_META,
+  GROWTH_STAGE_META,
   type PetMood,
 } from "@/components/illustrations/PetAvatarSystem";
 import {
@@ -24,7 +22,6 @@ import {
   ChunkyProgressBar,
   formatRupiah,
 } from "@/components/ui/CozyPrimitives";
-import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 import { cn, formatCompactRupiah } from "@/lib/utils";
 
@@ -36,9 +33,7 @@ export function TransactionDrawer() {
     setTransactionDrawerOpen,
     activeProfileId,
     profiles,
-    equippedMochiStage,
     addTransaction,
-    recordZeroSpendDay,
   } = useBukuDompetStore();
 
   const userProfile =
@@ -46,9 +41,6 @@ export function TransactionDrawer() {
     profiles.find((p) => p.role === "user") ||
     profiles[0];
 
-  const levelInfo = getLevelFromXp(userProfile.xp);
-  const displayStage =
-    equippedMochiStage || getMochiStageFromLevel(levelInfo.level);
   const currentStage = userProfile.currentStage || 1;
   const petName = userProfile.petCustomName || "Mochi";
 
@@ -58,8 +50,6 @@ export function TransactionDrawer() {
   const [customTitle, setCustomTitle] = useState<string>("");
   const [quickAmount, setQuickAmount] = useState<string>("");
   const [activeRowIdx, setActiveRowIdx] = useState<number>(0);
-  const [confirmZeroSpendOpen, setConfirmZeroSpendOpen] =
-    useState<boolean>(false);
 
   // Smart Quick-Split Bar
   const [smartSplitInput, setSmartSplitInput] = useState<string>("");
@@ -212,13 +202,6 @@ export function TransactionDrawer() {
     setTransactionDrawerOpen(false);
   };
 
-  const executeZeroSpend = () => {
-    recordZeroSpendDay();
-    soundEffects.comboFanfare();
-    fireCozyConfetti("combo");
-    setTransactionDrawerOpen(false);
-  };
-
   const comboTierLabel =
     comboStatus.validItemsCount >= 2
       ? `✨ JURNAL RINCI AKTIF! +${comboStatus.pointsPreview} Poin & +${comboStatus.xpPreview} XP`
@@ -233,19 +216,6 @@ export function TransactionDrawer() {
 
   return (
     <>
-      <CozyConfirmModal
-        open={confirmZeroSpendOpen}
-        onClose={() => setConfirmZeroSpendOpen(false)}
-        onConfirm={executeZeroSpend}
-        title="Hari Ini Rp0 Jajan (Klaim Streak)?"
-        description={`${petName} akan mencatat bahwa hari ini kamu berhasil puasa jajan! Api Streak harianmu tetap menyala + kamu mendapat +10 Poin & +15 Stage XP!`}
-        confirmLabel="Ya, Klaim Rp0 Hari Ini!"
-        confirmVariant="matcha"
-        mochiMood="proud_combo"
-        mochiStage={displayStage}
-        badgeText="Master Puasa Jajan"
-      />
-
       <Drawer.Root
         open={isTransactionDrawerOpen}
         onOpenChange={setTransactionDrawerOpen}
@@ -264,31 +234,21 @@ export function TransactionDrawer() {
             {/* Mobile Drag Handle */}
             <div className="md:hidden mx-auto w-14 h-2 rounded-full bg-[#D4C9B4] my-2.5 shrink-0" />
 
-            {/* Top Modal Header + Practical "Hari Ini Rp0 Jajan (Klaim Streak)" CTA */}
+            {/* Top Modal Header */}
             <div className="px-4 sm:px-6 py-3.5 border-b-2 border-[#E6DFD2] flex flex-wrap items-center justify-between gap-2 shrink-0 bg-white md:rounded-t-3xl">
               <div className="flex items-center gap-2.5 min-w-0">
-                <CozyIcon name="plus_record" size={30} />
+                <CozyIcon name="plus_record" size={30} className="shrink-0" />
                 <div className="min-w-0">
-                  <Drawer.Title className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] truncate">
+                  <Drawer.Title className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
                     Catat Jurnal Kas ({userProfile.display_name})
                   </Drawer.Title>
-                  <Drawer.Description className="text-xs font-bold text-[#7A6E65] truncate">
+                  <Drawer.Description className="text-xs font-bold text-[#7A6E65] leading-snug break-words">
                     Total otomatis dihitung • Maks. 3 transaksi berpoin per hari
                   </Drawer.Description>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <TactileButton
-                  variant="cream"
-                  size="sm"
-                  onClick={() => setConfirmZeroSpendOpen(true)}
-                  className="text-xs"
-                >
-                  <CozyIcon name="zero_spend" size={16} />
-                  <span>Hari Ini Rp0 Jajan (+10 Poin)</span>
-                </TactileButton>
-
                 <button
                   type="button"
                   onClick={() => setTransactionDrawerOpen(false)}
@@ -628,7 +588,7 @@ export function TransactionDrawer() {
                     <div className="flex items-center gap-3 bg-[#F7F3EB] rounded-2xl p-2.5 border border-[#E6DFD2]">
                       <div className="w-14 h-16 rounded-2xl bg-white border border-[#E6DFD2] flex items-center justify-center shrink-0">
                         <CustomizablePetAvatar
-                          species={userProfile.activeSpecies || "cat"}
+                          species={userProfile.activeSpecies || "chubby_cat"}
                           stage={currentStage}
                           mood={livePetMood}
                           customName={petName}
@@ -637,10 +597,10 @@ export function TransactionDrawer() {
                         />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[11px] font-display font-extrabold uppercase text-[#7A6E65]">
-                          {petName} • {CASTE_META[currentStage].name}
+                        <p className="text-[11px] font-display font-extrabold uppercase text-[#7A6E65] leading-snug break-words">
+                          {petName} • {GROWTH_STAGE_META[currentStage].name}
                         </p>
-                        <p className="text-xs font-bold text-[#3D352E] leading-snug">
+                        <p className="text-xs font-bold text-[#3D352E] leading-snug break-words">
                           {comboStatus.isValidCombo
                             ? "Wah rincianmu jujur & lengkap! +10 Poin & +20 Stage XP siap masuk!"
                             : "Ketik rincian minimal 2 barang buat dapat +10 Poin & +20 Stage XP!"}
@@ -714,13 +674,13 @@ export function TransactionDrawer() {
                         </div>
                       )}
 
-                      <div className="pt-2 border-t border-[#E6DFD2] flex items-center justify-between">
+                      <div className="pt-2 border-t border-[#E6DFD2] flex items-center justify-between gap-2 flex-wrap">
                         <span className="text-xs font-display font-extrabold text-[#7A6E65]">
                           Total Otomatis:
                         </span>
                         <span
                           className={cn(
-                            "font-display text-lg font-extrabold tabular-nums truncate",
+                            "font-display text-lg font-extrabold tabular-nums break-words",
                             txType === "income"
                               ? "text-[#46A302]"
                               : "text-[#E06353]"
@@ -742,8 +702,8 @@ export function TransactionDrawer() {
                     disabled={finalTotalPreview <= 0}
                   >
                     <CozyIcon name="check_badge" size={22} />
-                    <span className="truncate">
-                      Simpan Catatan ({formatCompactRupiah(finalTotalPreview)})
+                    <span>
+                      Simpan Catatan ({formatRupiah(finalTotalPreview)})
                     </span>
                     <span className="px-2 py-0.5 rounded-xl bg-[#FFC800] text-[#4A3500] text-xs font-display font-extrabold shrink-0">
                       +{comboStatus.pointsPreview} Poin

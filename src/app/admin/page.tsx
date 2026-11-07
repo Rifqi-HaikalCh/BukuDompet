@@ -9,6 +9,8 @@ import {
   ShieldCheck,
   CheckSquare,
   Square,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
   useBukuDompetStore,
@@ -20,7 +22,7 @@ import {
 } from "@/lib/spending-detective";
 import {
   CustomizablePetAvatar,
-  CASTE_META,
+  GROWTH_STAGE_META,
 } from "@/components/illustrations/PetAvatarSystem";
 import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
@@ -35,10 +37,12 @@ import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { GamificationFX } from "@/components/ui/GamificationFX";
 import { TransactionDrawer } from "@/components/user/TransactionDrawer";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
+import { useCozyBgm } from "@/lib/cozy-bgm";
 import { cn, formatCompactRupiah } from "@/lib/utils";
 
 export default function AdminCommandCenterPage() {
   const router = useRouter();
+  const { isPlaying: isBgmPlaying, toggleBgm } = useCozyBgm();
   const {
     profiles,
     supervisorAssignments,
@@ -298,8 +302,31 @@ export default function AdminCommandCenterPage() {
             </span>
           </div>
 
-          {/* Instant Role View Switcher */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Instant Role View Switcher + BGM Toggle */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                soundEffects.tactileClick();
+                toggleBgm();
+              }}
+              className={cn(
+                "px-2.5 py-1.5 rounded-xl border-2 border-b-[4px] text-xs font-display font-extrabold flex items-center gap-1.5 cursor-pointer transition-all",
+                isBgmPlaying
+                  ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[#9EE070] text-[#2E6F00]"
+                  : "bg-[#F7F3EB] border-[#E6DFD2] border-b-[#D4C9B4] text-[#7A6E65]"
+              )}
+              title="Nyalakan / Matikan Musik Latar Cozy"
+            >
+              {isBgmPlaying ? (
+                <Volume2 className="w-4 h-4 text-[#2E6F00]" />
+              ) : (
+                <VolumeX className="w-4 h-4 text-[#7A6E65]" />
+              )}
+              <span className="hidden sm:inline">
+                Musik: {isBgmPlaying ? "Nyala" : "Senyap"}
+              </span>
+            </button>
             <Link
               href="/app"
               onClick={() => {
@@ -347,7 +374,7 @@ export default function AdminCommandCenterPage() {
           <div className="flex items-center gap-4 min-w-0">
             <div className="w-18 h-20 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex items-center justify-center shrink-0 p-1">
               <CustomizablePetAvatar
-                species={targetUserProfile.activeSpecies || "cat"}
+                species={targetUserProfile.activeSpecies || "chubby_cat"}
                 stage={targetUserProfile.currentStage || 1}
                 mood="happy"
                 customName={targetUserProfile.petCustomName || "Mochi"}
@@ -640,10 +667,10 @@ export default function AdminCommandCenterPage() {
                                     (@{usr.username})
                                   </span>
                                 </p>
-                                <p className="text-[11px] font-bold text-[#7A6E65] truncate">
-                                  Pet: {usr.petCustomName || "Mochi"} • Kasta #
+                                <p className="text-[11px] font-bold text-[#7A6E65] break-words">
+                                  Pet: {usr.petCustomName || "Mochi"} • Fase #
                                   {usr.currentStage || 1} (
-                                  {CASTE_META[usr.currentStage || 1].name})
+                                  {GROWTH_STAGE_META[usr.currentStage || 1].name})
                                 </p>
                               </div>
                             </div>
@@ -720,11 +747,9 @@ export default function AdminCommandCenterPage() {
                             Pemohon:{" "}
                             {requester ? requester.display_name : "User"}
                           </span>
-                          <p className="font-display text-xl font-extrabold tabular-nums text-[#4A3500] mt-1 flex items-center gap-1.5 truncate">
+                          <p className="font-display text-xl font-extrabold tabular-nums text-[#4A3500] mt-1 flex flex-wrap items-center gap-1.5 break-words">
                             <CozyIcon name="coin_rupiah" size={24} />
-                            <span className="truncate">
-                              {formatRupiah(req.rupiah_value)}
-                            </span>{" "}
+                            <span>{formatRupiah(req.rupiah_value)}</span>{" "}
                             <span className="text-xs text-[#7A6E65] shrink-0">
                               ({req.points_redeemed.toLocaleString("id-ID")}{" "}
                               Poin)

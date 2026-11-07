@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/CozyPrimitives";
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
-import { formatCompactRupiah } from "@/lib/utils";
 
 const PRAISE_QUOTES_BY_ID: Record<BadgeId, string> = {
   streak_7:
@@ -114,38 +113,39 @@ export default function RewardsAndBadgesPage() {
               <CozyIcon name="rewards_ticket" size={16} />
               Kurs Tetap: 1 Poin = Rp 1
             </span>
-            <h1 className="font-display text-xl sm:text-2xl font-extrabold text-[#3D352E] mt-1 truncate">
+            <h1 className="font-display text-xl sm:text-2xl font-extrabold text-[#3D352E] mt-1 leading-snug break-words">
               Tukar Poin Jadi Saldo Uang Asli
             </h1>
-            <p className="text-xs font-bold text-[#7A6E65]">
+            <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
               Cetak Tiket Emas untuk dicairkan oleh Abang (Admin) atau digunakan
               belanja di Butik Shop!
             </p>
           </div>
-          <CozyIcon name="rewards_ticket" size={38} />
+          <CozyIcon name="rewards_ticket" size={38} className="shrink-0" />
         </div>
 
-        <div className="bg-white rounded-3xl border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 min-w-0 overflow-hidden">
-          <div className="min-w-0">
-            <p className="text-xs font-display font-extrabold uppercase text-[#7A6E65]">
+        {/* TUGAS 1.1: Pisahkan angka besar dan pill status menjadi flex-col items-start gap-2 agar "3.260 Poin" tidak pernah terpotong! */}
+        <div className="bg-white rounded-3xl border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] p-4 flex flex-col items-start gap-2.5 min-w-0">
+          <div className="min-w-0 w-full">
+            <p className="text-xs font-display font-extrabold uppercase text-[#7A6E65] leading-snug break-words">
               Saldo Dompet Poin Aktif ({userProfile.display_name})
             </p>
-            <div className="font-display text-2xl sm:text-3xl font-extrabold text-[#4A3500] flex items-center gap-2 mt-0.5 min-w-0">
-              <CozyIcon name="coin_rupiah" size={30} />
+            <div className="font-display text-2xl sm:text-3xl font-extrabold text-[#4A3500] flex items-center gap-2 flex-wrap mt-1">
+              <CozyIcon name="coin_rupiah" size={30} className="shrink-0" />
               <RollingNumber
                 value={userProfile.points_balance}
                 suffix=" Poin"
-                className="truncate"
+                className="break-words"
               />
             </div>
-            <p className="text-xs font-display font-extrabold tabular-nums text-[#2E6F00] truncate">
-              Nilai Tunai: {formatCompactRupiah(userProfile.points_balance)} •
-              Total Seumur Hidup:{" "}
+            <p className="text-xs font-display font-extrabold tabular-nums text-[#2E6F00] leading-snug break-words mt-1">
+              Nilai Tunai: {formatRupiah(userProfile.points_balance)} • Total
+              Seumur Hidup:{" "}
               {userProfile.lifetime_points.toLocaleString("id-ID")} Poin
             </p>
           </div>
-          <div className="px-3.5 py-2 rounded-2xl bg-[#EFFBE6] border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00] flex items-center gap-1.5 shrink-0">
-            <CozyIcon name="check_badge" size={18} />
+          <div className="px-3.5 py-2 rounded-2xl bg-[#EFFBE6] border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00] flex items-center gap-1.5 flex-wrap">
+            <CozyIcon name="check_badge" size={18} className="shrink-0" />
             <span>Disetujui Admin &rarr; Otomatis Masuk Kas!</span>
           </div>
         </div>
@@ -209,22 +209,22 @@ export default function RewardsAndBadgesPage() {
           {visibleTickets.map((ticket) => (
             <div
               key={ticket.id}
-              className="p-3.5 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex items-center justify-between gap-3 min-w-0 overflow-hidden"
+              className="p-3.5 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 min-w-0"
             >
               <div className="min-w-0">
-                <p className="font-display font-extrabold tabular-nums text-sm text-[#3D352E] flex items-center gap-1.5 truncate">
-                  <CozyIcon name="rewards_ticket" size={18} />
-                  <span className="truncate">
+                <p className="font-display font-extrabold tabular-nums text-sm text-[#3D352E] flex items-center gap-1.5 flex-wrap leading-snug break-words">
+                  <CozyIcon name="rewards_ticket" size={18} className="shrink-0" />
+                  <span>
                     {formatRupiah(ticket.rupiah_value)} (
                     {ticket.points_redeemed.toLocaleString("id-ID")} Poin)
                   </span>
                 </p>
-                <p className="text-xs font-bold text-[#7A6E65] truncate">
+                <p className="text-xs font-bold text-[#7A6E65] leading-snug break-words mt-0.5">
                   {ticket.note}
                 </p>
               </div>
               <span
-                className={`px-3 py-1 rounded-xl border text-xs font-display font-extrabold inline-flex items-center gap-1 shrink-0 ${
+                className={`px-3 py-1 rounded-xl border text-xs font-display font-extrabold inline-flex items-center gap-1 shrink-0 self-start sm:self-center ${
                   ticket.status === "approved"
                     ? "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]"
                     : ticket.status === "pending"
@@ -269,9 +269,9 @@ export default function RewardsAndBadgesPage() {
       <CozyCard tone="white" className="space-y-4">
         <div className="flex items-center justify-between gap-2 min-w-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <CozyIcon name="crown_sultan" size={30} />
+            <CozyIcon name="crown_sultan" size={30} className="shrink-0" />
             <div className="min-w-0">
-              <h2 className="font-display text-xl font-extrabold text-[#3D352E] truncate">
+              <h2 className="font-display text-xl font-extrabold text-[#3D352E] leading-snug break-words">
                 Lemari Pujian & Medali Penabung
               </h2>
               <p className="text-xs font-bold text-[#7A6E65]">
@@ -295,7 +295,7 @@ export default function RewardsAndBadgesPage() {
             return (
               <div
                 key={badgeId}
-                className={`p-4 rounded-3xl border-2 flex flex-col items-center text-center space-y-2.5 transition-all min-w-0 overflow-hidden ${
+                className={`p-4 rounded-3xl border-2 flex flex-col items-center text-center space-y-2.5 transition-all min-w-0 ${
                   isEarned
                     ? "bg-white border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4]"
                     : "bg-[#F7F3EB] border-[#E6DFD2] opacity-80"
@@ -308,12 +308,12 @@ export default function RewardsAndBadgesPage() {
                 />
 
                 <div className="space-y-1 min-w-0 w-full">
-                  <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                    <h3 className="font-display text-base font-extrabold text-[#3D352E]">
+                  <div className="flex flex-col items-center justify-center gap-1">
+                    <h3 className="font-display text-base font-extrabold text-[#3D352E] leading-snug break-words">
                       {meta.title}
                     </h3>
                     <span
-                      className={`text-[10px] font-display font-extrabold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${
+                      className={`text-[10px] font-display font-extrabold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1 ${
                         isEarned
                           ? "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]"
                           : "bg-white border-[#E6DFD2] text-[#7A6E65]"
@@ -326,12 +326,12 @@ export default function RewardsAndBadgesPage() {
                       {isEarned ? "Terbuka" : "Terkunci"}
                     </span>
                   </div>
-                  <p className="text-xs font-bold text-[#7A6E65]">
+                  <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
                     {meta.description}
                   </p>
                 </div>
 
-                <div className="w-full p-2.5 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] text-[11px] font-bold italic text-[#3D352E]">
+                <div className="w-full p-2.5 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] text-[11px] font-bold italic text-[#3D352E] leading-relaxed break-words">
                   &ldquo;{praiseQuote}&rdquo;
                 </div>
               </div>

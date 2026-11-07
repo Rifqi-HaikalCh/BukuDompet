@@ -7,19 +7,20 @@ import { BADGE_META } from "@/components/illustrations/PraiseBadges";
 import type { MochiStage } from "@/components/illustrations/MochiCompanion";
 import {
   type PetSpecies,
-  type CasteStage,
+  type GrowthStage,
   type AccessorySlot,
-  CASTE_META,
+  type AccessoryItem,
+  GROWTH_STAGE_META,
   ACCESSORY_BY_ID,
   ACCESSORY_CATALOG,
-  PET_SPECIES_META,
+  getSpeciesInfo,
 } from "@/components/illustrations/PetAvatarSystem";
 import {
   type TransactionRecord,
   type TransactionItem,
   validateItemizedCombo,
   getLevelFromXp,
-  CASTE_STAGE_TARGETS,
+  GROWTH_STAGE_TARGETS,
   PET_SPECIES_SHOP_PRICES,
 } from "@/lib/spending-detective";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -34,6 +35,15 @@ export interface SupervisorCheerSticker {
   sentAt: string;
 }
 
+export interface OwnedPetInstance {
+  species: PetSpecies;
+  customName: string;
+  currentStage: GrowthStage;
+  stageXp: number;
+  stageRecordedDays: number;
+  unlockedAt: string;
+}
+
 export interface ProfileData {
   id: string;
   username: string;
@@ -43,16 +53,17 @@ export interface ProfileData {
   avatar_theme: string;
   xp: number;
   level: number;
-  // Versi 3.0: 8-Stage Caste & Pet Customization
-  currentStage: CasteStage;
+  // Versi 4.0: 8 Fase Pertumbuhan Hidup (Telur Ajaib s/d Sepuh Bijaksana) & Multi-Pet Kandang
+  currentStage: GrowthStage;
   stageXp: number;
   stageRecordedDays: number;
   petCustomName: string;
   activeSpecies: PetSpecies;
   unlockedSpecies: PetSpecies[];
+  ownedPets: Partial<Record<PetSpecies, OwnedPetInstance>>;
   ownedAccessories: string[];
   equippedAccessories: Partial<Record<AccessorySlot, string>>;
-  claimedPathMilestones: number[]; // [7, 14, 21, 28]
+  claimedPathMilestones: number[]; // [7, 14, 21, 28, 35, ...]
   supervisorCheers: SupervisorCheerSticker[];
   // Economy & Streak
   points_balance: number; // 1 Poin = Rp 1
@@ -124,6 +135,13 @@ export interface CelebrationModalState {
   rewardPoints?: number;
 }
 
+export interface UnboxedAccessoryDropState {
+  item: AccessoryItem;
+  milestoneDay: number;
+  points: number;
+  xp: number;
+}
+
 function getRelativeDateStr(daysOffset: number): string {
   const d = new Date();
   d.setDate(d.getDate() + daysOffset);
@@ -156,22 +174,37 @@ export const INITIAL_PROFILES: ProfileData[] = [
     avatar_theme: "mochi-cat",
     xp: 630,
     level: 6,
-    currentStage: 2, // Penabung Selimut (Menuju Stage 3: butuh 900 Stage XP & 14 Hari)
-    stageXp: 280,
-    stageRecordedDays: 6,
+    currentStage: 3, // Balita Gembul (Menuju Stage 4: butuh 1800 Stage XP & 25 Hari)
+    stageXp: 540,
+    stageRecordedDays: 8,
     petCustomName: "Mochi",
-    activeSpecies: "cat",
-    unlockedSpecies: ["cat"],
+    activeSpecies: "chubby_cat",
+    unlockedSpecies: ["chubby_cat"],
+    ownedPets: {
+      chubby_cat: {
+        species: "chubby_cat",
+        customName: "Mochi",
+        currentStage: 3,
+        stageXp: 540,
+        stageRecordedDays: 8,
+        unlockedAt: getRelativeDateStr(-8),
+      },
+    },
     ownedAccessories: [
-      "head_paper_hat",
-      "neck_bandana",
-      "hand_tin_can",
-      "decor_potted_plant",
+      "head_straw_hat",
+      "outfit_tee",
+      "prop_patched_cardboard",
+      "bg_warm_room",
+      "head_pastel_ribbon",
+      "outfit_knit_sweater",
+      "neck_knit_scarf",
+      "face_round_glasses",
     ],
     equippedAccessories: {
-      head: "head_paper_hat",
-      neck: "neck_bandana",
-      decor: "decor_potted_plant",
+      head: "head_pastel_ribbon",
+      outfit: "outfit_knit_sweater",
+      neck: "neck_knit_scarf",
+      background: "bg_warm_room",
     },
     claimedPathMilestones: [],
     supervisorCheers: [
@@ -183,9 +216,9 @@ export const INITIAL_PROFILES: ProfileData[] = [
         sentAt: getRelativeDateStr(-1),
       },
     ],
-    points_balance: 1850,
-    lifetime_points: 3850,
-    current_streak: 6,
+    points_balance: 3260,
+    lifetime_points: 5260,
+    current_streak: 8,
     longest_streak: 9,
     streak_freeze_count: 2,
     last_recorded_date: getRelativeDateStr(0),
@@ -202,22 +235,43 @@ export const INITIAL_PROFILES: ProfileData[] = [
     avatar_theme: "mochi-capybara",
     xp: 1450,
     level: 12,
-    currentStage: 3, // Pelajar Teliti (Menuju Stage 4: butuh 1800 Stage XP & 25 Hari)
-    stageXp: 420,
-    stageRecordedDays: 8,
-    petCustomName: "Kapi",
-    activeSpecies: "capybara",
-    unlockedSpecies: ["cat", "capybara"],
+    currentStage: 4, // Anak Ceria
+    stageXp: 620,
+    stageRecordedDays: 10,
+    petCustomName: "Yuzu",
+    activeSpecies: "capybara_chill",
+    unlockedSpecies: ["chubby_cat", "capybara_chill"],
+    ownedPets: {
+      chubby_cat: {
+        species: "chubby_cat",
+        customName: "Mochi",
+        currentStage: 2,
+        stageXp: 180,
+        stageRecordedDays: 4,
+        unlockedAt: getRelativeDateStr(-15),
+      },
+      capybara_chill: {
+        species: "capybara_chill",
+        customName: "Yuzu",
+        currentStage: 4,
+        stageXp: 620,
+        stageRecordedDays: 10,
+        unlockedAt: getRelativeDateStr(-10),
+      },
+    },
     ownedAccessories: [
-      "head_paper_hat",
-      "head_graduation_cap",
-      "eyes_round_glasses",
-      "vehicle_skateboard",
+      "head_straw_hat",
+      "head_grad_cap",
+      "outfit_cozy_hoodie",
+      "prop_matcha_boba",
+      "face_round_glasses",
+      "bg_warm_room",
     ],
     equippedAccessories: {
-      head: "head_graduation_cap",
-      eyes: "eyes_round_glasses",
-      vehicle: "vehicle_skateboard",
+      head: "head_grad_cap",
+      outfit: "outfit_cozy_hoodie",
+      prop: "prop_matcha_boba",
+      face: "face_round_glasses",
     },
     claimedPathMilestones: [7],
     supervisorCheers: [],
@@ -240,16 +294,34 @@ export const INITIAL_PROFILES: ProfileData[] = [
     avatar_theme: "mochi-fox",
     xp: 140,
     level: 2,
-    currentStage: 1, // Perantau Kardus (Menuju Stage 2: butuh 350 Stage XP & 7 Hari)
+    currentStage: 1, // Telur Ajaib (Menuju Stage 2: butuh 350 Stage XP & 7 Hari)
     stageXp: 140,
     stageRecordedDays: 3,
-    petCustomName: "Rubi",
-    activeSpecies: "cat",
-    unlockedSpecies: ["cat"],
-    ownedAccessories: ["head_paper_hat", "hand_tin_can"],
+    petCustomName: "Stroberi",
+    activeSpecies: "lop_bunny",
+    unlockedSpecies: ["chubby_cat", "lop_bunny"],
+    ownedPets: {
+      chubby_cat: {
+        species: "chubby_cat",
+        customName: "Mochi",
+        currentStage: 2,
+        stageXp: 90,
+        stageRecordedDays: 2,
+        unlockedAt: getRelativeDateStr(-7),
+      },
+      lop_bunny: {
+        species: "lop_bunny",
+        customName: "Stroberi",
+        currentStage: 1,
+        stageXp: 140,
+        stageRecordedDays: 3,
+        unlockedAt: getRelativeDateStr(-3),
+      },
+    },
+    ownedAccessories: ["head_straw_hat", "prop_patched_cardboard"],
     equippedAccessories: {
-      head: "head_paper_hat",
-      hand: "hand_tin_can",
+      head: "head_straw_hat",
+      prop: "prop_patched_cardboard",
     },
     claimedPathMilestones: [],
     supervisorCheers: [],
@@ -276,8 +348,18 @@ export const INITIAL_PROFILES: ProfileData[] = [
     stageXp: 0,
     stageRecordedDays: 0,
     petCustomName: "Mochi",
-    activeSpecies: "cat",
-    unlockedSpecies: ["cat"],
+    activeSpecies: "chubby_cat",
+    unlockedSpecies: ["chubby_cat"],
+    ownedPets: {
+      chubby_cat: {
+        species: "chubby_cat",
+        customName: "Mochi",
+        currentStage: 1,
+        stageXp: 0,
+        stageRecordedDays: 0,
+        unlockedAt: getRelativeDateStr(0),
+      },
+    },
     ownedAccessories: [],
     equippedAccessories: {},
     claimedPathMilestones: [],
@@ -304,8 +386,18 @@ export const INITIAL_PROFILES: ProfileData[] = [
     stageXp: 0,
     stageRecordedDays: 0,
     petCustomName: "Mochi",
-    activeSpecies: "cat",
-    unlockedSpecies: ["cat"],
+    activeSpecies: "chubby_cat",
+    unlockedSpecies: ["chubby_cat"],
+    ownedPets: {
+      chubby_cat: {
+        species: "chubby_cat",
+        customName: "Mochi",
+        currentStage: 1,
+        stageXp: 0,
+        stageRecordedDays: 0,
+        unlockedAt: getRelativeDateStr(0),
+      },
+    },
     ownedAccessories: [],
     equippedAccessories: {},
     claimedPathMilestones: [],
@@ -331,13 +423,44 @@ export const INITIAL_PROFILES: ProfileData[] = [
     currentStage: 6,
     stageXp: 1200,
     stageRecordedDays: 22,
-    petCustomName: "Sultan Mochi",
+    petCustomName: "Sultan Rusty",
     activeSpecies: "red_panda",
-    unlockedSpecies: ["cat", "capybara", "fox", "red_panda"],
-    ownedAccessories: ["head_top_hat", "eyes_monocle", "vehicle_scooter"],
+    unlockedSpecies: [
+      "chubby_cat",
+      "hamster_cheek",
+      "lop_bunny",
+      "capybara_chill",
+      "red_panda",
+    ],
+    ownedPets: {
+      chubby_cat: {
+        species: "chubby_cat",
+        customName: "Mochi",
+        currentStage: 4,
+        stageXp: 400,
+        stageRecordedDays: 10,
+        unlockedAt: getRelativeDateStr(-30),
+      },
+      red_panda: {
+        species: "red_panda",
+        customName: "Sultan Rusty",
+        currentStage: 6,
+        stageXp: 1200,
+        stageRecordedDays: 22,
+        unlockedAt: getRelativeDateStr(-20),
+      },
+    },
+    ownedAccessories: [
+      "head_top_hat",
+      "outfit_boss_suit",
+      "prop_pastel_scooter",
+      "aura_sparkle_stars",
+      "bg_gold_vault",
+    ],
     equippedAccessories: {
       head: "head_top_hat",
-      eyes: "eyes_monocle",
+      outfit: "outfit_boss_suit",
+      prop: "prop_pastel_scooter",
     },
     claimedPathMilestones: [7, 14],
     supervisorCheers: [],
@@ -353,9 +476,9 @@ export const INITIAL_PROFILES: ProfileData[] = [
 ];
 
 export const INITIAL_TRANSACTIONS: TransactionRecord[] = [
-  // === TRANSAKSI ADIK RARA (USER_1_ID) ===
+  // === TRANSAKSI ADIK RARA (USER_1_ID — Perjalanan sejak Hari ke-1 = H-7 s/d Hari ke-8 = Hari Ini) ===
   {
-    id: "tx-seed-1",
+    id: "tx-seed-0a",
     user_id: USER_1_ID,
     type: "income",
     category: "Uang Saku Bulanan",
@@ -365,8 +488,55 @@ export const INITIAL_TRANSACTIONS: TransactionRecord[] = [
     is_itemized: false,
     points_earned: 5,
     xp_earned: 10,
-    transaction_date: getRelativeDateStr(-5),
-    created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+    transaction_date: getRelativeDateStr(-7),
+    created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
+    items: [],
+  },
+  {
+    id: "tx-seed-0b",
+    user_id: USER_1_ID,
+    type: "expense",
+    category: "Makan Pokok",
+    need_or_want: "need",
+    title: "Sarapan Bubur Ayam & Teh Hangat",
+    total_amount: 17000,
+    is_itemized: true,
+    points_earned: 10,
+    xp_earned: 20,
+    transaction_date: getRelativeDateStr(-7),
+    created_at: new Date(Date.now() - 7 * 86400000 + 3600000).toISOString(),
+    items: [
+      {
+        id: "it-001",
+        transaction_id: "tx-seed-0b",
+        item_name: "Bubur Ayam Komplit",
+        quantity: 1,
+        unit_price: 13000,
+        subtotal: 13000,
+      },
+      {
+        id: "it-002",
+        transaction_id: "tx-seed-0b",
+        item_name: "Teh Manis Hangat",
+        quantity: 1,
+        unit_price: 4000,
+        subtotal: 4000,
+      },
+    ],
+  },
+  {
+    id: "tx-seed-0c",
+    user_id: USER_1_ID,
+    type: "expense",
+    category: "Transportasi",
+    need_or_want: "need",
+    title: "Isi Saldo Kartu KRL & Busway",
+    total_amount: 25000,
+    is_itemized: false,
+    points_earned: 5,
+    xp_earned: 10,
+    transaction_date: getRelativeDateStr(-6),
+    created_at: new Date(Date.now() - 6 * 86400000).toISOString(),
     items: [],
   },
   {
@@ -801,7 +971,6 @@ export const INITIAL_TRANSACTIONS: TransactionRecord[] = [
 ];
 
 export const INITIAL_MISSIONS: MissionRecord[] = [
-  // Daily Missions (+15 Poin & +25 Stage XP per Tugas 2)
   {
     id: "mis-1",
     user_id: USER_1_ID,
@@ -843,7 +1012,6 @@ export const INITIAL_MISSIONS: MissionRecord[] = [
     is_claimed: false,
     valid_until: getRelativeDateStr(0),
   },
-  // Weekly & Evaluation Missions (+150 Poin & +120 Stage XP per Tugas 2)
   {
     id: "mis-4",
     user_id: USER_1_ID,
@@ -942,38 +1110,62 @@ export const INITIAL_REDEMPTIONS: PointRedemptionRecord[] = [
 ];
 
 /**
- * Helper: Evaluasi kenaikan Kasta (Stage 1..8) dengan mekanisme RESET Stage XP & Hari Mencatat
+ * Helper: Evaluasi kenaikan Fase Pertumbuhan (Stage 1..8) untuk Pet Aktif
+ * dengan mekanisme RESET Stage XP & Hari Mencatat di setiap Fase baru!
  */
-function evaluateCasteProgression(
+function evaluateGrowthProgression(
   profile: ProfileData,
   addedStageXp: number,
   addedRecordedDays: number
 ): {
-  nextStage: CasteStage;
+  nextStage: GrowthStage;
   nextStageXp: number;
   nextStageDays: number;
+  nextOwnedPets: Partial<Record<PetSpecies, OwnedPetInstance>>;
   promoted: boolean;
 } {
-  let stage = profile.currentStage || 1;
-  let sXp = (profile.stageXp || 0) + addedStageXp;
-  let sDays = (profile.stageRecordedDays || 0) + addedRecordedDays;
+  const activeSp = profile.activeSpecies || "chubby_cat";
+  const existingInstance = profile.ownedPets?.[activeSp];
+
+  let stage: GrowthStage =
+    existingInstance?.currentStage || profile.currentStage || 1;
+  let sXp = (existingInstance?.stageXp ?? profile.stageXp ?? 0) + addedStageXp;
+  let sDays =
+    (existingInstance?.stageRecordedDays ?? profile.stageRecordedDays ?? 0) +
+    addedRecordedDays;
   let promoted = false;
 
   if (stage < 8) {
-    const req = CASTE_STAGE_TARGETS[stage];
+    const req = GROWTH_STAGE_TARGETS[stage];
     if (sXp >= req.nextStageXpTarget && sDays >= req.nextStageDaysTarget) {
-      stage = (stage + 1) as CasteStage;
-      // RESET Stage XP & Stage Recorded Days kembali ke 0 di setiap Kasta baru!
+      stage = (stage + 1) as GrowthStage;
+      // RESET Stage XP & Stage Recorded Days kembali ke 0 di setiap Fase baru!
       sXp = 0;
       sDays = 0;
       promoted = true;
     }
   }
 
+  const updatedInstance: OwnedPetInstance = {
+    species: activeSp,
+    customName:
+      existingInstance?.customName ||
+      profile.petCustomName ||
+      getSpeciesInfo(activeSp).defaultName,
+    currentStage: stage,
+    stageXp: sXp,
+    stageRecordedDays: sDays,
+    unlockedAt: existingInstance?.unlockedAt || getRelativeDateStr(0),
+  };
+
   return {
     nextStage: stage,
     nextStageXp: sXp,
     nextStageDays: sDays,
+    nextOwnedPets: {
+      ...(profile.ownedPets || {}),
+      [activeSp]: updatedInstance,
+    },
     promoted,
   };
 }
@@ -982,7 +1174,7 @@ interface BukuDompetState {
   // Active Session Role & Multi-User Context
   currentRole: UserRole;
   activeProfileId: string;
-  monitoredUserId: string; // User ID currently viewed by Supervisor/Admin
+  monitoredUserId: string;
 
   // Data Entities
   profiles: ProfileData[];
@@ -1008,6 +1200,7 @@ interface BukuDompetState {
   isTransactionDrawerOpen: boolean;
   isCashoutModalOpen: boolean;
   isStreakCalendarOpen: boolean;
+  unboxedAccessoryDrop: UnboxedAccessoryDropState | null;
 
   // FX & Celebrations
   rewardToast: FloatingRewardToast | null;
@@ -1049,6 +1242,7 @@ interface BukuDompetState {
   setTransactionDrawerOpen: (open: boolean) => void;
   setCashoutModalOpen: (open: boolean) => void;
   setStreakCalendarOpen: (open: boolean) => void;
+  closeUnboxedAccessoryModal: () => void;
   clearRewardToast: () => void;
   closeCelebrationModal: () => void;
   triggerParticleBurst: (type?: "coin" | "xp" | "both") => void;
@@ -1066,8 +1260,10 @@ interface BukuDompetState {
     message: string;
   };
   toggleEquipAccessory: (accessoryId: string) => void;
-  claimPathMilestoneDrop: (milestoneDay: 7 | 14 | 21 | 28) => {
+  equipAccessoryDirect: (accessoryId: string) => void;
+  claimPathMilestoneDrop: (milestoneDay: number) => {
     success: boolean;
+    droppedItem?: AccessoryItem;
     droppedAccessoryName?: string;
     points: number;
     xp: number;
@@ -1214,6 +1410,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       isTransactionDrawerOpen: false,
       isCashoutModalOpen: false,
       isStreakCalendarOpen: false,
+      unboxedAccessoryDrop: null,
       rewardToast: null,
       particleBurstKey: 0,
       particleBurstType: "both",
@@ -1232,7 +1429,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         if (!profile) {
           return {
             success: false,
-            message: "Username tidak ditemukan. Gunakan akun terdaftar atau panel Demo di bawah.",
+            message:
+              "Username tidak ditemukan. Gunakan akun terdaftar atau panel Demo di bawah.",
           };
         }
 
@@ -1277,9 +1475,9 @@ export const useBukuDompetStore = create<BukuDompetState>()(
 
       loginWithPin: (role, pin) => {
         const state = get();
-        const profile = state.profiles.find(
-          (p) => p.role === role && p.pin_code === pin
-        ) || state.profiles.find((p) => p.role === role);
+        const profile =
+          state.profiles.find((p) => p.role === role && p.pin_code === pin) ||
+          state.profiles.find((p) => p.role === role);
 
         if (!profile) {
           return { success: false, message: "Profil tidak ditemukan." };
@@ -1368,6 +1566,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         const budget = Number(payload.monthlyBudgetTarget) || 1500000;
         const saving =
           Number(payload.monthlySavingTarget) || Math.round(budget * 0.2);
+        const petName = payload.petCustomName?.trim() || "Mochi";
 
         const newProfile: ProfileData = {
           id: newId,
@@ -1378,14 +1577,24 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           avatar_theme: "mochi-cat",
           xp: 0,
           level: 1,
-          currentStage: 1,
+          currentStage: 1, // Mulai dari Fase 1: Telur Ajaib Polos!
           stageXp: 0,
           stageRecordedDays: 0,
-          petCustomName: payload.petCustomName?.trim() || "Mochi",
-          activeSpecies: "cat",
-          unlockedSpecies: ["cat"],
-          ownedAccessories: ["head_paper_hat"],
-          equippedAccessories: { head: "head_paper_hat" },
+          petCustomName: petName,
+          activeSpecies: "chubby_cat",
+          unlockedSpecies: ["chubby_cat"],
+          ownedPets: {
+            chubby_cat: {
+              species: "chubby_cat",
+              customName: petName,
+              currentStage: 1,
+              stageXp: 0,
+              stageRecordedDays: 0,
+              unlockedAt: getRelativeDateStr(0),
+            },
+          },
+          ownedAccessories: ["head_straw_hat", "bg_warm_room"],
+          equippedAccessories: {},
           claimedPathMilestones: [],
           supervisorCheers: [],
           points_balance: 0,
@@ -1527,6 +1736,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
 
       setStreakCalendarOpen: (open) => set({ isStreakCalendarOpen: open }),
 
+      closeUnboxedAccessoryModal: () => set({ unboxedAccessoryDrop: null }),
+
       clearRewardToast: () => set({ rewardToast: null }),
 
       closeCelebrationModal: () => set({ celebrationModal: null }),
@@ -1547,10 +1758,28 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         }
         const state = get();
         const targetUser = getActiveUserProfile(state);
+        const activeSp = targetUser.activeSpecies || "chubby_cat";
+        const currentPetObj = targetUser.ownedPets?.[activeSp] || {
+          species: activeSp,
+          customName: clean,
+          currentStage: targetUser.currentStage || 1,
+          stageXp: targetUser.stageXp || 0,
+          stageRecordedDays: targetUser.stageRecordedDays || 0,
+          unlockedAt: getRelativeDateStr(0),
+        };
 
         set({
           profiles: state.profiles.map((p) =>
-            p.id === targetUser.id ? { ...p, petCustomName: clean } : p
+            p.id === targetUser.id
+              ? {
+                  ...p,
+                  petCustomName: clean,
+                  ownedPets: {
+                    ...(p.ownedPets || {}),
+                    [activeSp]: { ...currentPetObj, customName: clean },
+                  },
+                }
+              : p
           ),
           rewardToast: {
             id: `toast-${Date.now()}`,
@@ -1572,30 +1801,58 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         const targetUser = getActiveUserProfile(state);
         if (!targetUser.unlockedSpecies.includes(species)) return;
 
+        const spInfo = getSpeciesInfo(species);
+        const instance: OwnedPetInstance = targetUser.ownedPets?.[species] || {
+          species,
+          customName: spInfo.defaultName,
+          currentStage: 1,
+          stageXp: 0,
+          stageRecordedDays: 0,
+          unlockedAt: getRelativeDateStr(0),
+        };
+
         set({
           profiles: state.profiles.map((p) =>
-            p.id === targetUser.id ? { ...p, activeSpecies: species } : p
+            p.id === targetUser.id
+              ? {
+                  ...p,
+                  activeSpecies: species,
+                  petCustomName: instance.customName,
+                  currentStage: instance.currentStage,
+                  stageXp: instance.stageXp,
+                  stageRecordedDays: instance.stageRecordedDays,
+                  ownedPets: {
+                    ...(p.ownedPets || {}),
+                    [species]: instance,
+                  },
+                }
+              : p
           ),
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: `${PET_SPECIES_META[species].name} Dipilih!`,
-            subtitle:
-              "Wujud pet otomatis menyesuaikan Kasta & Aksesoris aktifmu!",
+            title: `${instance.customName} (${spInfo.name}) Dipilih!`,
+            subtitle: `Fase ${instance.currentStage}/8 (${
+              GROWTH_STAGE_META[instance.currentStage].name
+            }) aktif di panggung pet!`,
             points: 0,
             xp: 0,
           },
         });
       },
 
+      /**
+       * TUGAS 5: Mengadopsi Spesies Pet Baru dari Telur (Stage 1: Telur Ajaib, Stage XP 0, Hari Mencatat 0)
+       */
       buyPetSpecies: (species) => {
         const state = get();
         const targetUser = getActiveUserProfile(state);
-        const price = PET_SPECIES_SHOP_PRICES[species] ?? 15000;
+        const spInfo = getSpeciesInfo(species);
+        const price = PET_SPECIES_SHOP_PRICES[species] ?? spInfo.pricePoints;
 
         if (targetUser.unlockedSpecies.includes(species)) {
           return {
             success: false,
-            message: "Spesies hewan ini sudah kamu miliki!",
+            message: "Spesies hewan ini sudah ada di Kandang Pet kamu!",
           };
         }
 
@@ -1604,9 +1861,18 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             success: false,
             message: `Saldo Poin belum cukup. Butuh ${price.toLocaleString(
               "id-ID"
-            )} Poin untuk mengadopsi ${PET_SPECIES_META[species].name}.`,
+            )} Poin untuk mengadopsi Telur ${spInfo.name}.`,
           };
         }
+
+        const newEggInstance: OwnedPetInstance = {
+          species,
+          customName: spInfo.defaultName,
+          currentStage: 1, // Mulai dari Telur Ajaib (Stage 1)!
+          stageXp: 0,
+          stageRecordedDays: 0,
+          unlockedAt: getRelativeDateStr(0),
+        };
 
         set({
           particleBurstKey: state.particleBurstKey + 1,
@@ -1618,28 +1884,36 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                   points_balance: p.points_balance - price,
                   unlockedSpecies: [...p.unlockedSpecies, species],
                   activeSpecies: species,
+                  petCustomName: newEggInstance.customName,
+                  currentStage: 1,
+                  stageXp: 0,
+                  stageRecordedDays: 0,
+                  ownedPets: {
+                    ...(p.ownedPets || {}),
+                    [species]: newEggInstance,
+                  },
                 }
               : p
           ),
           celebrationModal: {
             type: "milestone",
-            title: `Spesies Baru Diadopsi: ${PET_SPECIES_META[species].name}!`,
-            subtitle: `${targetUser.petCustomName} kini tampil sebagai ${PET_SPECIES_META[species].name} dengan Kasta Stage ${targetUser.currentStage}!`,
+            title: `Telur Baru Diadopsi: ${spInfo.name}! 🥚✨`,
+            subtitle: `${newEggInstance.customName} lahir sebagai Fase 1 (${GROWTH_STAGE_META[1].name}). Yuk catat kas rutin agar telurnya menetas dan tumbuh besar!`,
             rewardPoints: 0,
           },
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: `${PET_SPECIES_META[species].name} Berhasil Diadopsi!`,
-            subtitle: "Langsung dipasang di kamar & mengikuti Kasta aktifmu!",
+            title: `Telur ${spInfo.name} Berhasil Diadopsi!`,
+            subtitle: `Mulai tumbuh dari Fase 1 (Telur Ajaib) di panggung pet!`,
             points: 0,
-            xp: 25,
+            xp: 0,
             isCombo: true,
           },
         });
 
         return {
           success: true,
-          message: `Berhasil mengadopsi ${PET_SPECIES_META[species].name}!`,
+          message: `Berhasil mengadopsi Telur ${spInfo.name}!`,
         };
       },
 
@@ -1659,11 +1933,11 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           };
         }
 
-        if (targetUser.currentStage < item.minStage) {
+        if (targetUser.currentStage < item.stageRequirement) {
           return {
             success: false,
-            message: `Terkunci! Butuh Kasta Stage ${item.minStage} (${
-              CASTE_META[item.minStage].name
+            message: `Terkunci! Butuh Fase Stage ${item.stageRequirement} (${
+              GROWTH_STAGE_META[item.stageRequirement].name
             }) untuk membeli item ini.`,
           };
         }
@@ -1672,7 +1946,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           return {
             success: false,
             message:
-              "Item eksklusif ini tidak dijual—dapatkan dari Checkpoint Peta Jalur Kas Harian!",
+              "Item eksklusif ini tidak dijual—dapatkan dari Peti Harta Peta Jalur Kas Harian!",
           };
         }
 
@@ -1704,9 +1978,9 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           rewardToast: {
             id: `toast-${Date.now()}`,
             title: `${item.name} Dibeli & Dipasang!`,
-            subtitle: `${targetUser.petCustomName} makin keren dengan properti Kasta Stage ${item.minStage}!`,
+            subtitle: `${targetUser.petCustomName} makin menggemaskan dengan kostum Fase ${item.stageRequirement}!`,
             points: 0,
-            xp: 10,
+            xp: 0,
             isCombo: true,
           },
         });
@@ -1751,6 +2025,43 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         });
       },
 
+      equipAccessoryDirect: (accessoryId) => {
+        const state = get();
+        const targetUser = getActiveUserProfile(state);
+        const item = ACCESSORY_BY_ID[accessoryId];
+        if (!item) return;
+
+        const nextOwned = targetUser.ownedAccessories.includes(accessoryId)
+          ? targetUser.ownedAccessories
+          : [...targetUser.ownedAccessories, accessoryId];
+
+        set({
+          profiles: state.profiles.map((p) =>
+            p.id === targetUser.id
+              ? {
+                  ...p,
+                  ownedAccessories: nextOwned,
+                  equippedAccessories: {
+                    ...p.equippedAccessories,
+                    [item.slot]: accessoryId,
+                  },
+                }
+              : p
+          ),
+          rewardToast: {
+            id: `toast-${Date.now()}`,
+            title: `${item.name} Langsung Dipasang! ✨`,
+            subtitle: `${targetUser.petCustomName} langsung mengenakan ${item.name}!`,
+            points: 0,
+            xp: 0,
+            isCombo: true,
+          },
+        });
+      },
+
+      /**
+       * TUGAS 3: Klaim Peti Harta Peta Jalur Kas -> Buka Modal Unboxing Eksklusif (`AccessoryDropModal`)
+       */
       claimPathMilestoneDrop: (milestoneDay) => {
         const state = get();
         const targetUser = getActiveUserProfile(state);
@@ -1760,31 +2071,33 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             success: false,
             points: 0,
             xp: 0,
-            message: `Hadiah Checkpoint Hari ke-${milestoneDay} sudah pernah diklaim.`,
+            message: `Peti Harta Hari ke-${milestoneDay} sudah pernah diklaim.`,
           };
         }
 
-        // Cari aksesoris drop jalur (atau item sesuai stage) yang belum dimiliki
-        const pathDropCandidates = ACCESSORY_CATALOG.filter(
+        // Prioritaskan item eksklusif `source === "path_drop"` yang belum dimiliki
+        const unownedPathDrops = ACCESSORY_CATALOG.filter(
           (it) =>
-            !targetUser.ownedAccessories.includes(it.id) &&
-            (it.source === "path_drop" || it.minStage <= targetUser.currentStage)
+            it.source === "path_drop" &&
+            !targetUser.ownedAccessories.includes(it.id)
+        );
+
+        const stageMatchedDrop = unownedPathDrops.find(
+          (it) => it.stageRequirement <= Math.max(targetUser.currentStage, 3)
         );
 
         const droppedItem =
-          pathDropCandidates.find(
-            (it) =>
-              it.source === "path_drop" &&
-              it.minStage <= Math.max(targetUser.currentStage, 6)
+          stageMatchedDrop ||
+          unownedPathDrops[0] ||
+          ACCESSORY_CATALOG.find(
+            (it) => !targetUser.ownedAccessories.includes(it.id)
           ) ||
-          pathDropCandidates[0] ||
-          ACCESSORY_BY_ID["decor_balloons"];
+          ACCESSORY_BY_ID["aura_floating_leaves"];
 
-        // Tarif klaim kehadiran/milestone harian ketat: +10 Poin & +15 Stage XP
         const rewardPoints = 10;
         const rewardStageXp = 15;
 
-        const casteEval = evaluateCasteProgression(
+        const growthEval = evaluateGrowthProgression(
           targetUser,
           rewardStageXp,
           0
@@ -1795,13 +2108,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
               new Set([...targetUser.ownedAccessories, droppedItem.id])
             )
           : targetUser.ownedAccessories;
-
-        const nextEquipped = droppedItem
-          ? {
-              ...targetUser.equippedAccessories,
-              [droppedItem.slot]: droppedItem.id,
-            }
-          : targetUser.equippedAccessories;
 
         set({
           openedCheckpointWeeks: Array.from(
@@ -1815,13 +2121,13 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                   ...p,
                   xp: p.xp + rewardStageXp,
                   level: getLevelFromXp(p.xp + rewardStageXp).level,
-                  currentStage: casteEval.nextStage,
-                  stageXp: casteEval.nextStageXp,
-                  stageRecordedDays: casteEval.nextStageDays,
+                  currentStage: growthEval.nextStage,
+                  stageXp: growthEval.nextStageXp,
+                  stageRecordedDays: growthEval.nextStageDays,
+                  ownedPets: growthEval.nextOwnedPets,
                   points_balance: p.points_balance + rewardPoints,
                   lifetime_points: p.lifetime_points + rewardPoints,
                   ownedAccessories: nextOwned,
-                  equippedAccessories: nextEquipped,
                   claimedPathMilestones: [
                     ...p.claimedPathMilestones,
                     milestoneDay,
@@ -1829,20 +2135,19 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                 }
               : p
           ),
-          celebrationModal: {
-            type: "milestone",
-            title: `Drop Eksklusif Hari Ke-${milestoneDay}: ${
-              droppedItem?.name || "Hadiah Konsistensi"
-            }!`,
-            subtitle: `Selamat! Kamu mendapatkan aksesoris "${
-              droppedItem?.name
-            }" + ${rewardPoints} Poin & +${rewardStageXp} Stage XP!`,
-            rewardPoints,
-          },
+          // Buka Modal Unboxing Khusus (TUGAS 3)
+          unboxedAccessoryDrop: droppedItem
+            ? {
+                item: droppedItem,
+                milestoneDay,
+                points: rewardPoints,
+                xp: rewardStageXp,
+              }
+            : null,
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: `Drop Aksesoris Jalur: ${droppedItem?.name}!`,
-            subtitle: `Otomatis masuk ke koleksi & dipasang pada ${targetUser.petCustomName}!`,
+            title: `🎁 Item Eksklusif Ditemukan: ${droppedItem?.name}!`,
+            subtitle: `Hadiah Peti Hari ke-${milestoneDay} (+${rewardPoints} Poin & +${rewardStageXp} Stage XP)`,
             points: rewardPoints,
             xp: rewardStageXp,
             isCombo: true,
@@ -1851,6 +2156,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
 
         return {
           success: true,
+          droppedItem,
           droppedAccessoryName: droppedItem?.name,
           points: rewardPoints,
           xp: rewardStageXp,
@@ -1864,8 +2170,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           rewardToast: {
             id: `toast-${Date.now()}`,
             title: stage
-              ? `Kasta Stage ${stage} Dipasang!`
-              : "Mode Kasta Aktif Otomatis!",
+              ? `Fase Stage ${stage} Dipasang!`
+              : "Mode Fase Aktif Otomatis!",
             subtitle: "Penampilan pet telah diperbarui.",
             points: 0,
             xp: 0,
@@ -1886,24 +2192,11 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         });
       },
 
+      /**
+       * TUGAS 4: Tidak ada lagi elus/lempar koin gratis yang memberi XP/Poin
+       */
       petMochiForAffection: () => {
-        const state = get();
-        const userProf = getActiveUserProfile(state);
-        const xpGain = 5;
-        const oldLevel = getLevelFromXp(userProf.xp).level;
-        const newXp = userProf.xp + xpGain;
-        const newLevel = getLevelFromXp(newXp).level;
-        const leveledUp = newLevel > oldLevel;
-
-        set({
-          particleBurstKey: state.particleBurstKey + 1,
-          particleBurstType: "xp",
-          profiles: state.profiles.map((p) =>
-            p.id === userProf.id ? { ...p, xp: newXp, level: newLevel } : p
-          ),
-        });
-
-        return { xpEarned: xpGain, leveledUp };
+        return { xpEarned: 0, leveledUp: false };
       },
 
       buyStreakFreezeShield: () => {
@@ -1931,7 +2224,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             title: "Perisai Es Streak Freeze Dibeli!",
             subtitle: "+1 Perisai Es siap melindungi api streak harianmu!",
             points: 0,
-            xp: 10,
+            xp: 0,
           },
         });
         return {
@@ -1940,12 +2233,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         };
       },
 
-      /**
-       * TUGAS 2 & 3: Ekonomi Jangka Panjang (Hardcore Cozy Pacing) & 8 Kasta Reset
-       * - Catat Transaksi Biasa: +5 Poin & +10 Stage XP (Maks 3 transaksi berpoin/hari)
-       * - Catat Transaksi Rinci (>= 2 sub-item valid): +10 Poin & +20 Stage XP (Maks 3 transaksi berpoin/hari)
-       * - Klaim Kehadiran / Streak Harian pertama hari itu: +10 Poin & +15 Stage XP (1x sehari)
-       */
       addTransaction: (payload) => {
         const state = get();
         const userProf = getActiveUserProfile(state);
@@ -1958,7 +2245,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             t.points_earned > 0
         ).length;
 
-        // Maksimal 3 transaksi berpoin per hari (Hardcore Cozy Pacing)
         const dailyCapReached = todayRewardedTxCount >= 3;
 
         const rawItems = payload.items || [];
@@ -1978,7 +2264,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           }
         }
 
-        // Klaim Kehadiran / Streak Harian (1x sehari: +10 Poin & +15 Stage XP)
         let streakBonusPoints = 0;
         let streakBonusXp = 0;
         let newStreak = userProf.current_streak;
@@ -2027,8 +2312,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         const newXp = userProf.xp + totalXpEarned;
         const { level: newLevel } = getLevelFromXp(newXp);
 
-        // Evaluasi Kasta 1..8 dengan Reset Progres saat naik Kasta
-        const casteEval = evaluateCasteProgression(
+        const growthEval = evaluateGrowthProgression(
           userProf,
           totalXpEarned,
           addedRecordedDays
@@ -2081,9 +2365,10 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                   ...p,
                   xp: newXp,
                   level: newLevel,
-                  currentStage: casteEval.nextStage,
-                  stageXp: casteEval.nextStageXp,
-                  stageRecordedDays: casteEval.nextStageDays,
+                  currentStage: growthEval.nextStage,
+                  stageXp: growthEval.nextStageXp,
+                  stageRecordedDays: growthEval.nextStageDays,
+                  ownedPets: growthEval.nextOwnedPets,
                   points_balance: p.points_balance + totalPointsEarned,
                   lifetime_points: p.lifetime_points + totalPointsEarned,
                   current_streak: newStreak,
@@ -2096,17 +2381,17 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                 }
               : p
           ),
-          celebrationModal: casteEval.promoted
+          celebrationModal: growthEval.promoted
             ? {
                 type: "level_up",
-                title: `KASTA NAIK! Stage ${casteEval.nextStage}: ${
-                  CASTE_META[casteEval.nextStage].name
+                title: `PERTUMBUHAN NAIK! Fase ${growthEval.nextStage}: ${
+                  GROWTH_STAGE_META[growthEval.nextStage].name
                 }!`,
-                subtitle: `Selamat! ${userProf.petCustomName} resmi naik ke Kasta ${
-                  CASTE_META[casteEval.nextStage].name
-                }. Progres Stage XP & Hari Mencatat direset ke 0 untuk perjalanan kasta berikutnya!`,
+                subtitle: `Selamat! ${userProf.petCustomName} tumbuh ke Fase ${
+                  GROWTH_STAGE_META[growthEval.nextStage].name
+                }. Progres Stage XP & Hari Mencatat direset ke 0 untuk fase pertumbuhan berikutnya!`,
                 newLevel,
-                mochiStage: Math.min(5, casteEval.nextStage) as MochiStage,
+                mochiStage: Math.min(5, growthEval.nextStage) as MochiStage,
                 rewardPoints: totalPointsEarned,
               }
             : state.celebrationModal,
@@ -2156,104 +2441,10 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         };
       },
 
-      /**
-       * Klaim Kehadiran / Streak Harian (termasuk Hari Rp0 Jajan): +10 Poin & +15 Stage XP (1x sehari)
-       */
       recordZeroSpendDay: () => {
-        const state = get();
-        const todayStr = getRelativeDateStr(0);
-        const userProf = getActiveUserProfile(state);
-
-        if (userProf.last_daily_claim_date === todayStr) {
-          set({
-            rewardToast: {
-              id: `toast-${Date.now()}`,
-              title: "Kehadiran Hari Ini Sudah Diklaim!",
-              subtitle:
-                "Klaim Kehadiran / Hari Rp0 Jajan berlaku 1x setiap hari (+10 Poin & +15 Stage XP).",
-              points: 0,
-              xp: 0,
-            },
-          });
-          return { alreadyRecorded: true, pointsEarned: 0, xpEarned: 0 };
-        }
-
-        const points = 10;
-        const xp = 15;
-        const newXp = userProf.xp + xp;
-        const { level: newLevel } = getLevelFromXp(newXp);
-
-        const isNewDay = userProf.last_recorded_date !== todayStr;
-        const newStreak = isNewDay
-          ? userProf.current_streak + 1
-          : userProf.current_streak;
-
-        const casteEval = evaluateCasteProgression(
-          userProf,
-          xp,
-          isNewDay ? 1 : 0
-        );
-
-        const hasNoSpendBadge = state.badges.some(
-          (b) => b.user_id === userProf.id && b.badge_code === "no_spend_hero"
-        );
-        const updatedBadges = [...state.badges];
-        if (!hasNoSpendBadge) {
-          updatedBadges.push({
-            id: `bdg-nospend-${Date.now()}`,
-            user_id: userProf.id,
-            badge_code: "no_spend_hero",
-            badge_name: BADGE_META.no_spend_hero.title,
-            praise_quote:
-              "Master Puasa Jajan! Hari tanpa pengeluaran impulsif membuat tabunganmu melesat cepat!",
-            unlocked_at: todayStr,
-          });
-        }
-
-        const nextZeroSpendDates = state.zeroSpendDates.includes(todayStr)
-          ? state.zeroSpendDates
-          : [...state.zeroSpendDates, todayStr];
-
-        set({
-          badges: updatedBadges,
-          zeroSpendDates: nextZeroSpendDates,
-          particleBurstKey: state.particleBurstKey + 1,
-          particleBurstType: "both",
-          profiles: state.profiles.map((p) =>
-            p.id === userProf.id
-              ? {
-                  ...p,
-                  xp: newXp,
-                  level: newLevel,
-                  currentStage: casteEval.nextStage,
-                  stageXp: casteEval.nextStageXp,
-                  stageRecordedDays: casteEval.nextStageDays,
-                  points_balance: p.points_balance + points,
-                  lifetime_points: p.lifetime_points + points,
-                  current_streak: newStreak,
-                  longest_streak: Math.max(p.longest_streak, newStreak),
-                  last_recorded_date: todayStr,
-                  last_daily_claim_date: todayStr,
-                }
-              : p
-          ),
-          rewardToast: {
-            id: `toast-${Date.now()}`,
-            title: "Klaim Kehadiran / Rp0 Jajan Berhasil!",
-            subtitle: `Streak harian terjaga (+${points} Poin & +${xp} Stage XP)!`,
-            points,
-            xp,
-            isCombo: true,
-          },
-        });
-
-        return { alreadyRecorded: false, pointsEarned: points, xpEarned: xp };
+        return { alreadyRecorded: true, pointsEarned: 0, xpEarned: 0 };
       },
 
-      /**
-       * Misi Harian: +15 Poin & +25 Stage XP
-       * Misi Evaluasi Mingguan: +150 Poin & +120 Stage XP
-       */
       claimMissionReward: (missionId) => {
         const state = get();
         const mission = state.missions.find((m) => m.id === missionId);
@@ -2267,15 +2458,16 @@ export const useBukuDompetStore = create<BukuDompetState>()(
 
         const userProf = getActiveUserProfile(state);
 
-        // Enforce strict Versi 3.0 rates
-        const strictPoints =
-          mission.mission_type === "daily" ? 15 : 150;
-        const strictStageXp =
-          mission.mission_type === "daily" ? 25 : 120;
+        const strictPoints = mission.mission_type === "daily" ? 15 : 150;
+        const strictStageXp = mission.mission_type === "daily" ? 25 : 120;
 
         const newXp = userProf.xp + strictStageXp;
         const { level: newLevel } = getLevelFromXp(newXp);
-        const casteEval = evaluateCasteProgression(userProf, strictStageXp, 0);
+        const growthEval = evaluateGrowthProgression(
+          userProf,
+          strictStageXp,
+          0
+        );
 
         set({
           missions: state.missions.map((m) =>
@@ -2289,23 +2481,24 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                   ...p,
                   xp: newXp,
                   level: newLevel,
-                  currentStage: casteEval.nextStage,
-                  stageXp: casteEval.nextStageXp,
-                  stageRecordedDays: casteEval.nextStageDays,
+                  currentStage: growthEval.nextStage,
+                  stageXp: growthEval.nextStageXp,
+                  stageRecordedDays: growthEval.nextStageDays,
+                  ownedPets: growthEval.nextOwnedPets,
                   points_balance: p.points_balance + strictPoints,
                   lifetime_points: p.lifetime_points + strictPoints,
                 }
               : p
           ),
-          celebrationModal: casteEval.promoted
+          celebrationModal: growthEval.promoted
             ? {
                 type: "level_up",
-                title: `KASTA NAIK! Stage ${casteEval.nextStage}: ${
-                  CASTE_META[casteEval.nextStage].name
+                title: `PERTUMBUHAN NAIK! Fase ${growthEval.nextStage}: ${
+                  GROWTH_STAGE_META[growthEval.nextStage].name
                 }!`,
-                subtitle: `Misi "${mission.title}" mengantarkan ${userProf.petCustomName} ke Kasta baru!`,
+                subtitle: `Misi "${mission.title}" mengantarkan ${userProf.petCustomName} tumbuh ke Fase baru!`,
                 newLevel,
-                mochiStage: Math.min(5, casteEval.nextStage) as MochiStage,
+                mochiStage: Math.min(5, growthEval.nextStage) as MochiStage,
                 rewardPoints: strictPoints,
               }
             : state.celebrationModal,
@@ -2327,21 +2520,17 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       },
 
       openMysteryBox: () => {
-        // Mystery Box Gacha Jackpot Poin dihapus sesuai Tugas 2.1
         return {
           success: false,
           rewardType: "points",
           amount: 0,
-          label: "Fitur Gacha Jackpot telah digantikan oleh Drop Aksesoris Jalur Harian.",
+          label:
+            "Fitur Gacha Jackpot telah digantikan oleh Drop Aksesoris Jalur Harian.",
         };
       },
 
       claimWeeklyCheckpointChest: (weekNumber) => {
-        const milestone = (
-          [7, 14, 21, 28].includes(weekNumber)
-            ? weekNumber
-            : Math.min(28, Math.max(7, weekNumber * 7))
-        ) as 7 | 14 | 21 | 28;
+        const milestone = weekNumber >= 7 ? weekNumber : weekNumber * 7;
         const res = get().claimPathMilestoneDrop(milestone);
         return { success: res.success, points: res.points };
       },
@@ -2473,9 +2662,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         }
       },
 
-      /**
-       * TUGAS 2.1: Stiker Apresiasi Visual Supervisor (0 Poin, Tanpa Boost Saldo Instan)
-       */
       sendSupervisorCheer: (customMessage) => {
         const state = get();
         const todayStr = getRelativeDateStr(0);
@@ -2602,11 +2788,12 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           isProudComboActive: false,
           lastSupervisorCheerDate: null,
           supervisorCheersCount: 1,
+          unboxedAccessoryDrop: null,
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: "Data Demo Versi 3.0 Direset!",
+            title: "Data Demo Versi 4.0 Direset!",
             subtitle:
-              "Seluruh akun multi-user, kasta, dan buku kas kembali ke pengaturan awal.",
+              "Seluruh akun multi-user, 8 fase pet, dan buku kas kembali ke pengaturan awal.",
             points: 0,
             xp: 0,
           },
@@ -2640,8 +2827,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       },
     }),
     {
-      name: "bukudompet-v3-storage",
-      version: 3,
+      name: "bukudompet-v4-storage",
+      version: 4,
       partialize: (state) => ({
         currentRole: state.currentRole,
         activeProfileId: state.activeProfileId,

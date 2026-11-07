@@ -16,6 +16,7 @@ import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 
 export function PointCashoutModal() {
   const {
+    activeProfileId,
     isCashoutModalOpen,
     setCashoutModalOpen,
     profiles,
@@ -24,7 +25,9 @@ export function PointCashoutModal() {
   } = useBukuDompetStore();
 
   const userProfile =
-    profiles.find((p) => p.role === "user") || profiles[0];
+    profiles.find((p) => p.id === activeProfileId && p.role === "user") ||
+    profiles.find((p) => p.role === "user") ||
+    profiles[0];
 
   const [pointsInput, setPointsInput] = useState<string>("5000");
   const [noteInput, setNoteInput] = useState<string>(
@@ -109,29 +112,28 @@ export function PointCashoutModal() {
                 </button>
               </div>
 
-              {/* Golden Balance Ticket Card */}
+              {/* Golden Balance Ticket Card — Stacked flex-col items-start gap-2 so Points Balance is never truncated */}
               <CozyCard tone="honey" className="relative overflow-hidden">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex flex-col items-start gap-2">
+                  <div className="min-w-0 w-full">
                     <p className="text-xs font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">
                       Saldo Dompet Poin Saat Ini
                     </p>
-                    <div className="font-display text-2xl sm:text-3xl font-extrabold text-[#3D352E] mt-1 flex items-center gap-2">
-                      <CozyIcon name="coin_rupiah" size={30} />
+                    <div className="font-display text-2xl sm:text-3xl font-extrabold text-[#3D352E] mt-1 flex items-center gap-2 flex-wrap">
+                      <CozyIcon name="coin_rupiah" size={30} className="shrink-0" />
                       <RollingNumber
                         value={userProfile.points_balance}
                         suffix=" Poin"
+                        className="break-words"
                       />
                     </div>
                     <p className="text-xs font-display font-extrabold tabular-nums text-[#46A302] mt-1">
                       Setara dengan {formatRupiah(userProfile.points_balance)}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <span className="px-3 py-1 rounded-full bg-white border-2 border-[#FDE08D] font-display text-xs font-extrabold">
-                      1 Poin = Rp1
-                    </span>
-                  </div>
+                  <span className="px-3 py-1 rounded-full bg-white border-2 border-[#FDE08D] font-display text-xs font-extrabold text-[#4A3500]">
+                    Kurs Tetap: 1 Poin = Rp1
+                  </span>
                 </div>
               </CozyCard>
 
