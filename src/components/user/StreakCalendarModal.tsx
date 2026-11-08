@@ -1,9 +1,14 @@
 "use client";
 
+import { ChipScroller } from "@/components/ui/ChipScroller";
+import { GlyphIcon, GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useState, useMemo } from "react";
 import { Drawer } from "vaul";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, X } from "@/components/illustrations/UiGlyphs";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
+import { localDateStr } from "@/lib/dates";
+import { totalShieldsFor } from "@/lib/streak-shields";
+import { pickViewedChild } from "@/lib/active-child";
 import {
   analyzeSpendingDetective,
   getLevelFromXp,
@@ -19,13 +24,15 @@ import { soundEffects } from "@/lib/sound-effects";
 import { cn, formatCompactRupiah } from "@/lib/utils";
 
 type SummaryTab = "daily" | "weekly" | "monthly";
-type TxFilterType = "all" | "expense" | "income";
+type TxFilterType = "all" | "expense" | "income" | "saving";
 
 export function StreakCalendarModal() {
   const {
     isStreakCalendarOpen,
     setStreakCalendarOpen,
     activeProfileId,
+    currentRole,
+    monitoredUserId,
     profiles,
     transactions,
     streakFreezeDates,
@@ -33,10 +40,7 @@ export function StreakCalendarModal() {
     buyStreakFreezeShield,
   } = useBukuDompetStore();
 
-  const userProfile =
-    profiles.find((p) => p.id === activeProfileId && p.role === "user") ||
-    profiles.find((p) => p.role === "user") ||
-    profiles[0];
+  const userProfile = pickViewedChild({ currentRole, activeProfileId, monitoredUserId, profiles });
 
   const userTransactions = useMemo(
     () => transactions.filter((t) => t.user_id === userProfile.id),
@@ -44,6 +48,8 @@ export function StreakCalendarModal() {
   );
 
   const levelInfo = getLevelFromXp(userProfile.xp);
+  /** Tampilan ramah anak SD: istilah sederhana, ikon besar, tanpa jargon "pemasukan/pengeluaran". */
+  const isKid = userProfile.role === "schoolchild";
 
   const report = analyzeSpendingDetective({
     transactions: userTransactions,
@@ -58,7 +64,7 @@ export function StreakCalendarModal() {
   const [viewYear, setViewYear] = useState<number>(today.getFullYear());
   const [viewMonth, setViewMonth] = useState<number>(today.getMonth()); // 0-11
   const [selectedDateStr, setSelectedDateStr] = useState<string>(
-    today.toISOString().split("T")[0]
+    localDateStr()
   );
   const [activeTab, setActiveTab] = useState<SummaryTab>("daily");
   const [txFilter, setTxFilter] = useState<TxFilterType>("all");
@@ -169,8 +175,11 @@ export function StreakCalendarModal() {
     const expense = allDay
       .filter((t) => t.type === "expense")
       .reduce((s, t) => s + Number(t.total_amount), 0);
+    const saving = allDay
+      .filter((t) => t.type === "saving")
+      .reduce((s, t) => s + Number(t.total_amount), 0);
     const safeRemaining = Math.max(0, report.dssl - expense);
-    return { income, expense, safeRemaining };
+    return { income, expense, saving, safeRemaining };
   }, [userTransactions, selectedDateStr, report.dssl]);
 
   // Weekly breakdown (Weeks 1 - 4 in current month)
@@ -203,7 +212,8 @@ export function StreakCalendarModal() {
         weeks.find((w) => dayNum >= w.min && dayNum <= w.max) || weeks[3];
       if (tx.type === "income") {
         bucket.income += Number(tx.total_amount);
-      } else {
+      } else if (tx.type === "expense") {
+        // Tabungan ("saving") bukan pengeluaran boros, jadi tidak ikut dihitung di sini.
         bucket.expense += Number(tx.total_amount);
       }
     }
@@ -292,7 +302,7 @@ export function StreakCalendarModal() {
           }
         }}
         title="Beli Perisai Es Streak Freeze?"
-        description="Tukarkan 500 Poin (Rp500) untuk mendapatkan +1 Perisai Es yang otomatis melindungi api Streak jika kamu lupa mencatat sehari."
+        description="Tukarkan 500 Poin (Rp500) untuk mendapatkan +1 Perisai Es yang otomatis melindungi api Streak jika kamu lupa mencatat sehari. Perisai gratis bulan ini selalu dipakai lebih dulu."
         confirmLabel="Ya, Beli (500 Poin)"
         confirmVariant="sky"
         badgeText="Proteksi Streak"
@@ -310,7 +320,7 @@ export function StreakCalendarModal() {
               // Mobile: Bottom Sheet
               "fixed bottom-0 left-0 right-0 rounded-t-[32px] max-h-[92dvh]",
               // Desktop (>= 768px): Master-Detail Modal max-w-4xl
-              "md:inset-x-auto md:left-1/2 md:top-1/2 md:bottom-auto md:-translate-x-1/2 md:-translate-y-1/2 md:w-[95vw] md:max-w-4xl md:rounded-3xl md:max-h-[88dvh] md:shadow-2xl"
+              "md:inset-x-auto md:left-1/2 md:top-1/2 md:bottom-auto md:-translate-x-1/2 md:-translate-y-1/2 md:after:hidden! md:w-[95vw] md:max-w-4xl md:rounded-3xl md:max-h-[88dvh] md:shadow-2xl"
             )}
           >
             <div className="md:hidden mx-auto w-14 h-2 rounded-full bg-[#D4C9B4] my-2.5 shrink-0" />
@@ -320,12 +330,13 @@ export function StreakCalendarModal() {
               <div className="flex items-center gap-3 min-w-0">
                 <CozyIcon name="calendar_streak" size={30} animated />
                 <div className="min-w-0">
-                  <Drawer.Title className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] truncate">
-                    Kalender Streak & Rekap Kas
+                  <Drawer.Title className="font-display text-base sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
+                    {isKid ? "Kalender Streak dan Rekap Catatan" : "Kalender Streak & Rekap Kas"}
                   </Drawer.Title>
-                  <Drawer.Description className="text-xs font-bold text-[#7A6E65] truncate">
-                    Ketuk tanggal mana pun untuk melihat rincian pemasukan &
-                    pengeluaran!
+                  <Drawer.Description className="text-xs font-bold text-[#7A6E65] leading-snug break-words">
+                    {isKid
+                      ? "Ketuk tanggal untuk melihat catatan jajan, uang masuk, dan tabunganmu!"
+                      : "Ketuk tanggal mana pun untuk melihat rincian pemasukan & pengeluaran!"}
                   </Drawer.Description>
                 </div>
               </div>
@@ -382,7 +393,7 @@ export function StreakCalendarModal() {
                       <p className="font-display text-base font-extrabold text-[#3D352E] flex items-center gap-1 mt-0.5">
                         <CozyIcon name="ice_shield" size={16} />
                         <span className="tabular-nums">
-                          {userProfile.streak_freeze_count}x
+                          {totalShieldsFor(userProfile, localDateStr(0))}x
                         </span>
                       </p>
                     </div>
@@ -516,9 +527,9 @@ export function StreakCalendarModal() {
                   <div className="grid grid-cols-3 gap-1.5 bg-[#F7F3EB] p-1.5 rounded-2xl border-2 border-[#E6DFD2]">
                     {(
                       [
-                        { id: "daily", label: "Tanggal Dipilih" },
-                        { id: "weekly", label: "Mingguan" },
-                        { id: "monthly", label: "Bulanan" },
+                        { id: "daily", label: isKid ? "Hari Ini" : "Tanggal Dipilih" },
+                        { id: "weekly", label: isKid ? "Per Minggu" : "Mingguan" },
+                        { id: "monthly", label: isKid ? "Sebulan" : "Bulanan" },
                       ] as const
                     ).map((t) => (
                       <button
@@ -560,15 +571,25 @@ export function StreakCalendarModal() {
                       </div>
 
                       {/* Visual Cashflow Bar (Pemasukan Hijau vs Pengeluaran Peach vs Sisa Uang Emas) */}
-                      <VisualCashflowBar
-                        income={selectedDaySummary.income}
-                        expense={selectedDaySummary.expense}
-                        remaining={selectedDaySummary.safeRemaining}
-                        remainingLabel="Sisa Aman Hari Ini"
-                      />
+                      {isKid ? (
+                        <KidDaySummary
+                          income={selectedDaySummary.income}
+                          expense={selectedDaySummary.expense}
+                          saving={selectedDaySummary.saving}
+                          remaining={selectedDaySummary.safeRemaining}
+                        />
+                      ) : (
+                        <VisualCashflowBar
+                          income={selectedDaySummary.income}
+                          expense={selectedDaySummary.expense}
+                          remaining={selectedDaySummary.safeRemaining}
+                          remainingLabel="Sisa Aman Hari Ini"
+                        />
+                      )}
 
                       {/* Quick Filter: Semua | Pengeluaran | Pemasukan */}
                       <TxQuickFilterBar
+                        kid={isKid}
                         active={txFilter}
                         onChange={(v) => {
                           setTxFilter(v);
@@ -593,9 +614,11 @@ export function StreakCalendarModal() {
                               fullWidth
                               onClick={() => setShowAllTx(!showAllTx)}
                             >
-                              {showAllTx
-                                ? "Tutup Sebagian ▴"
-                                : `Lihat Semua (${selectedDayTxs.length} Transaksi) ▾`}
+                              {showAllTx ? (
+                                <>Tutup Sebagian <ChevronUp className="w-4 h-4" /></>
+                              ) : (
+                                <>Lihat Semua ({selectedDayTxs.length} {isKid ? "Catatan" : "Transaksi"}) <ChevronDown className="w-4 h-4" /></>
+                              )}
                             </TactileButton>
                           )}
                         </div>
@@ -607,7 +630,7 @@ export function StreakCalendarModal() {
                   {activeTab === "weekly" && (
                     <CozyCard tone="white" className="p-4 space-y-3.5">
                       <h4 className="font-display text-sm sm:text-base font-extrabold text-[#3D352E]">
-                        Rekap Kas 4 Minggu ({monthName})
+                        {isKid ? "Rekap Catatan 4 Minggu" : "Rekap Kas 4 Minggu"} ({monthName})
                       </h4>
 
                       <div className="space-y-3">
@@ -625,15 +648,16 @@ export function StreakCalendarModal() {
                                 <span className="font-display text-[#3D352E] truncate">
                                   {w.label}
                                 </span>
-                                <span className="font-display tabular-nums text-[#C83E2B] shrink-0">
-                                  -{formatCompactRupiah(w.expense)}
+                                <span className="font-display tabular-nums text-[#C83E2B] shrink-0 inline-flex items-center gap-1">
+                                  {isKid && <GlyphIcon name={w.expense <= report.weeklyBudgetAllowance ? "smile" : "bolt"} size={16} />}
+                                  {isKid ? "Jajan " : ""}-{formatCompactRupiah(w.expense)}
                                 </span>
                               </div>
                               <VisualCashflowBar
                                 income={w.income}
                                 expense={w.expense}
                                 remaining={rem}
-                                remainingLabel="Sisa Kuota"
+                                remainingLabel={isKid ? "Sisa Jatah" : "Sisa Kuota"}
                                 compact
                               />
                             </div>
@@ -647,20 +671,20 @@ export function StreakCalendarModal() {
                   {activeTab === "monthly" && (
                     <CozyCard tone="white" className="p-4 space-y-3.5">
                       <h4 className="font-display text-sm sm:text-base font-extrabold text-[#3D352E]">
-                        Rekapitulasi Bulanan ({monthName})
+                        {isKid ? "Rekap Sebulan" : "Rekapitulasi Bulanan"} ({monthName})
                       </h4>
 
                       <VisualCashflowBar
                         income={monthlySummary.income}
                         expense={monthlySummary.totalExpense}
                         remaining={monthlySummary.netRemaining}
-                        remainingLabel="Sisa Uang Bersih"
+                        remainingLabel={isKid ? "Sisa Uangmu" : "Sisa Uang Bersih"}
                       />
 
                       <div className="grid grid-cols-2 gap-2">
                         <div className="p-2.5 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] min-w-0">
                           <p className="text-[10px] font-bold text-[#7A6E65]">
-                            Kebutuhan Pokok (Needs)
+                            {isKid ? "Kebutuhan" : "Kebutuhan Pokok (Needs)"}
                           </p>
                           <p className="font-display text-sm font-extrabold tabular-nums text-[#3D352E] truncate">
                             {formatCompactRupiah(monthlySummary.needsExpense)}
@@ -668,7 +692,7 @@ export function StreakCalendarModal() {
                         </div>
                         <div className="p-2.5 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] min-w-0">
                           <p className="text-[10px] font-bold text-[#7A6E65]">
-                            Keinginan / Jajan (Wants)
+                            {isKid ? "Jajan Keinginan" : "Keinginan / Jajan (Wants)"}
                           </p>
                           <p className="font-display text-sm font-extrabold tabular-nums text-[#C83E2B] truncate">
                             {formatCompactRupiah(monthlySummary.wantsExpense)}
@@ -677,6 +701,7 @@ export function StreakCalendarModal() {
                       </div>
 
                       <TxQuickFilterBar
+                        kid={isKid}
                         active={txFilter}
                         onChange={(v) => {
                           setTxFilter(v);
@@ -695,9 +720,11 @@ export function StreakCalendarModal() {
                             fullWidth
                             onClick={() => setShowAllTx(!showAllTx)}
                           >
-                            {showAllTx
-                              ? "Tutup Sebagian ▴"
-                              : `Lihat Semua (${monthlySummary.filteredMonthTxs.length} Transaksi) ▾`}
+                            {showAllTx ? (
+                              <>Tutup Sebagian <ChevronUp className="w-4 h-4" /></>
+                            ) : (
+                              <>Lihat Semua ({monthlySummary.filteredMonthTxs.length} {isKid ? "Catatan" : "Transaksi"}) <ChevronDown className="w-4 h-4" /></>
+                            )}
                           </TactileButton>
                         )}
                       </div>
@@ -710,6 +737,38 @@ export function StreakCalendarModal() {
         </Drawer.Portal>
       </Drawer.Root>
     </>
+  );
+}
+
+function KidDaySummary({
+  income,
+  expense,
+  saving,
+  remaining,
+}: {
+  income: number;
+  expense: number;
+  saving: number;
+  remaining: number;
+}) {
+  const tiles = [
+    { icon: "coin" as const, label: "Uang Masuk", value: `+${formatCompactRupiah(income)}`, tone: "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]" },
+    { icon: "shop_bag" as const, label: "Jajan & Belanja", value: `-${formatCompactRupiah(expense)}`, tone: "bg-[#FFF2F0] border-[#FFCDC6] text-[#C83E2B]" },
+    { icon: "piggy" as const, label: "Ditabung", value: formatCompactRupiah(saving), tone: "bg-[#EEF8FF] border-[#BCE3FF] text-[#1565C0]" },
+    { icon: "shield_check" as const, label: "Sisa Jatah Aman", value: formatCompactRupiah(remaining), tone: "bg-[#FFFBEB] border-[#FDE08D] text-[#4A3500]" },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {tiles.map((t) => (
+        <div key={t.label} className={cn("rounded-2xl border-2 p-2.5 flex items-center gap-2 min-w-0", t.tone)}>
+          <GlyphIcon name={t.icon} size={30} className="shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-display font-extrabold leading-tight opacity-80">{t.label}</p>
+            <p className="font-display text-sm font-extrabold tabular-nums truncate">{t.value}</p>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -793,17 +852,20 @@ function VisualCashflowBar({
 function TxQuickFilterBar({
   active,
   onChange,
+  kid = false,
 }: {
+  kid?: boolean;
   active: TxFilterType;
   onChange: (val: TxFilterType) => void;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <ChipScroller label="Filter jenis transaksi" watch={active}>
       {(
         [
           { id: "all", label: "Semua" },
-          { id: "expense", label: "Pengeluaran (-Rp)" },
-          { id: "income", label: "Pemasukan (+Rp)" },
+          { id: "expense", label: kid ? "Jajan & Belanja" : "Pengeluaran (-Rp)" },
+          { id: "income", label: kid ? "Uang Masuk" : "Pemasukan (+Rp)" },
+          { id: "saving", label: "Tabungan" },
         ] as const
       ).map((btn) => (
         <button
@@ -823,7 +885,7 @@ function TxQuickFilterBar({
           {btn.label}
         </button>
       ))}
-    </div>
+    </ChipScroller>
   );
 }
 
@@ -849,10 +911,14 @@ function CompactTxItem({
         <span
           className={cn(
             "font-display font-extrabold tabular-nums text-xs sm:text-sm shrink-0",
-            tx.type === "income" ? "text-[#2E6F00]" : "text-[#C83E2B]"
+            tx.type === "income"
+              ? "text-[#2E6F00]"
+              : tx.type === "saving"
+              ? "text-[#1565C0]"
+              : "text-[#C83E2B]"
           )}
         >
-          {tx.type === "income" ? "+" : "-"}
+          {tx.type === "income" ? "+" : tx.type === "saving" ? <GlyphInline name="piggy" className="mr-0.5" /> : "-"}
           {formatRupiah(tx.total_amount)}
         </span>
       </div>

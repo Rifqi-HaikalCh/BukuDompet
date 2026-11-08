@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'supervisor', 'user')),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'supervisor', 'user', 'schoolchild')),
   pin_code TEXT NOT NULL DEFAULT '1234',
   avatar_theme TEXT DEFAULT 'mochi-cat',
   xp INT NOT NULL DEFAULT 0,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS supervisor_assignments (
 CREATE TABLE IF NOT EXISTS transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+  type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'saving')),
   category TEXT NOT NULL,
   need_or_want TEXT NOT NULL CHECK (need_or_want IN ('need', 'want', 'income')),
   title TEXT NOT NULL,
@@ -120,6 +120,11 @@ CREATE TABLE IF NOT EXISTS point_redemptions (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   approved_at TIMESTAMPTZ
 );
+
+/* ===== DATA DEMO DINONAKTIFKAN (Versi 5.4 - GO LIVE) =====
+   Akun & catatan contoh (adik, bima, citra, orangtua, wali, abang) tidak lagi dibuat.
+   Akun asli dibuat oleh 004_v5_4_go_live.sql.
+   Skema (CREATE/ALTER) di atas tetap berlaku. Blok seed di bawah sengaja dikomentari.
 
 -- ============================================================
 -- SEED DATA MULTI-USER BUKUDOMPET VERSI 3.0
@@ -513,3 +518,4 @@ ON CONFLICT (id) DO UPDATE SET
   points_redeemed = EXCLUDED.points_redeemed,
   rupiah_value = EXCLUDED.rupiah_value,
   note = EXCLUDED.note;
+*/

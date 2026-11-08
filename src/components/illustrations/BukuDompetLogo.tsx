@@ -19,6 +19,14 @@
 
 import { MotionConfig, motion, type Transition } from "framer-motion";
 
+/**
+ * Reset origin transformasi untuk elemen SVG yang memakai atribut `transform="rotate/scale/..."`.
+ * Tanpa ini, CSS global `svg g, svg path { transform-box: fill-box }` memindahkan titik asal
+ * transformasi ke pojok bbox elemen sehingga bagian tubuh/ikon bergeser dan berantakan.
+ */
+const SVG_ATTR_ORIGIN = { transformBox: "view-box", transformOrigin: "0 0" } as const;
+
+
 /* ───────────────────────── Types ───────────────────────── */
 
 export type LogoVariant = "full" | "mark";
@@ -99,14 +107,14 @@ function Sparkle({
   still?: boolean;
 }) {
   return (
-    <g transform={`translate(${x} ${y})`}>
+    <g transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}>
       {still ? (
         <path d={sparklePath(size)} fill={color} />
       ) : (
         <motion.path
           d={sparklePath(size)}
           fill={color}
-          style={{ originX: 0.5, originY: 0.5 }}
+          style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
           animate={{ scale: [0.5, 1.1, 0.5], rotate: [0, 90, 180], opacity: [0.5, 1, 0.5] }}
           transition={{ duration: 1.8, repeat: Infinity, delay, ease: "easeInOut" }}
         />
@@ -157,7 +165,7 @@ function MochiPeek({ still }: { still?: boolean }) {
     if (still) return shape;
     return (
       <motion.g
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ scaleY: [1, 1, 0.1, 1] }}
         transition={{ duration: 4, times: [0, 0.93, 0.965, 1], repeat: Infinity, ease: "easeInOut" }}
       >
@@ -183,7 +191,7 @@ function MochiPeek({ still }: { still?: boolean }) {
     if (still) return body;
     return (
       <motion.g
-        style={{ originX: l ? 0.7 : 0.3, originY: 0.95 }}
+        style={{ transformBox: "fill-box", originX: l ? 0.7 : 0.3, originY: 0.95 }}
         animate={{ rotate: [0, l ? -9 : 9, 0, 0] }}
         transition={{
           duration: 0.5,
@@ -320,18 +328,22 @@ function Wordmark({ still }: { still?: boolean }) {
   return (
     <g>
       {/* lapisan bayangan dalam (lip) */}
-      <text {...common} transform="translate(0 5)">
+      <text {...common} transform="translate(0 5)" style={SVG_ATTR_ORIGIN}>
         {word("#B9AEA0", C.matchaDark, 1.6)}
       </text>
       {/* lapisan utama */}
       <text {...common}>{word(INK, C.matcha, 1.6)}</text>
 
       {/* aksen koin kecil berkilau */}
-      <g transform="translate(490 40)">
+      <g transform="translate(490 40)" style={SVG_ATTR_ORIGIN}>
         {still ? (
           <Coin cx={0} cy={0} r={9} />
         ) : (
-          <motion.g animate={{ y: [0, -4, 0], rotate: [-8, 8, -8] }} transition={loop(2)}>
+          <motion.g
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
+            animate={{ y: [0, -4, 0], rotate: [-8, 8, -8] }}
+            transition={loop(2)}
+          >
             <Coin cx={0} cy={0} r={9} />
           </motion.g>
         )}
@@ -474,7 +486,7 @@ function MochiSprite() {
 
 function BouncyCoin({ x, index }: { x: number; index: number }) {
   return (
-    <g transform={`translate(${x} 156)`}>
+    <g transform={`translate(${x} 156)`} style={SVG_ATTR_ORIGIN}>
       <motion.ellipse
         cx={0}
         cy={13}
@@ -482,7 +494,7 @@ function BouncyCoin({ x, index }: { x: number; index: number }) {
         ry={3.4}
         fill={INK}
         opacity={0.16}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ scaleX: [1, 0.6, 1] }}
         transition={{
           duration: 0.8,
@@ -494,7 +506,7 @@ function BouncyCoin({ x, index }: { x: number; index: number }) {
         }}
       />
       <motion.g
-        style={{ originX: 0.5, originY: 1 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
         animate={{ y: [0, -26, 0], scaleY: [0.86, 1.06, 0.86] }}
         transition={{
           duration: 0.8,
@@ -518,7 +530,7 @@ const INSIDE_SCALE = [0, 0, 0, -1, -1, 0, 0, 0];
 function LedgerBook() {
   const bookT: Transition = { duration: 3.6, times: BOOK_TIMES, repeat: Infinity, ease: "easeInOut" };
   return (
-    <g transform="translate(254 126)">
+    <g transform="translate(254 126)" style={SVG_ATTR_ORIGIN}>
       <ellipse cx={26} cy={46} rx={30} ry={4.4} fill={INK} opacity={0.14} />
       {/* halaman kanan (selalu ada) */}
       <rect x={26} y={0} width={26} height={42} rx={4} fill={C.cream} {...O} strokeWidth={2.6} />
@@ -526,7 +538,7 @@ function LedgerBook() {
       <circle cx={44} cy={33} r={3.6} fill={C.honey} {...O25} strokeWidth={1.8} />
       {/* halaman kiri (tampak saat buku terbuka) */}
       <motion.g
-        style={{ originX: 0, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0, originY: 0.5 }}
         animate={{ scaleX: INSIDE_SCALE }}
         transition={bookT}
       >
@@ -536,7 +548,7 @@ function LedgerBook() {
       </motion.g>
       {/* sampul matcha */}
       <motion.g
-        style={{ originX: 0, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0, originY: 0.5 }}
         animate={{ scaleX: COVER_SCALE }}
         transition={bookT}
       >
@@ -603,7 +615,7 @@ export function MochiLoadingHop({
           ))}
 
           {/* Mochi melompat */}
-          <g transform="translate(0 168)">
+          <g transform="translate(0 168)" style={SVG_ATTR_ORIGIN}>
             <motion.g
               animate={{ x: X_VALUES }}
               transition={{ duration: HOP_DURATION, times: X_TIMES, repeat: Infinity, ease: "linear" }}
@@ -611,12 +623,12 @@ export function MochiLoadingHop({
               <motion.g
                 animate={{ scaleX: FLIP_VALUES }}
                 transition={{ duration: HOP_DURATION, times: FLIP_TIMES, repeat: Infinity, ease: "easeInOut" }}
-                style={{ originX: 0.5, originY: 1 }}
+                style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
               >
                 <motion.g
                   animate={{ y: Y_VALUES, scaleY: SQUASH_VALUES }}
                   transition={{ duration: HOP_DURATION, times: Y_TIMES, repeat: Infinity, ease: "easeInOut" }}
-                  style={{ originX: 0.5, originY: 1 }}
+                  style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
                 >
                   <MochiSprite />
                 </motion.g>

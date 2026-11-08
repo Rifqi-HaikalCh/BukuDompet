@@ -21,6 +21,14 @@ import {
   type Transition,
 } from "framer-motion";
 
+/**
+ * Reset origin transformasi untuk elemen SVG yang memakai atribut `transform="rotate/scale/..."`.
+ * Tanpa ini, CSS global `svg g, svg path { transform-box: fill-box }` memindahkan titik asal
+ * transformasi ke pojok bbox elemen sehingga bagian tubuh/ikon bergeser dan berantakan.
+ */
+const SVG_ATTR_ORIGIN = { transformBox: "view-box", transformOrigin: "0 0" } as const;
+
+
 /* ───────────────────────── Types ───────────────────────── */
 
 export type MochiStage = 1 | 2 | 3 | 4 | 5;
@@ -148,10 +156,10 @@ function WingedCoin({ r = 10 }: { r?: number }) {
   const wing = "M0 0 Q-14 -13 -24 -5 Q-17 -2 -21 4 Q-10 4 0 7Z";
   return (
     <g>
-      <g transform={`translate(${-r + 3} -2)`}>
+      <g transform={`translate(${-r + 3} -2)`} style={SVG_ATTR_ORIGIN}>
         <path d={wing} fill={C.cream} {...line25} />
       </g>
-      <g transform={`translate(${r - 3} -2) scale(-1 1)`}>
+      <g transform={`translate(${r - 3} -2) scale(-1 1)`} style={SVG_ATTR_ORIGIN}>
         <path d={wing} fill={C.cream} {...line25} />
       </g>
       <Coin r={r} />
@@ -173,11 +181,11 @@ function Sparkle({
   delay?: number;
 }) {
   return (
-    <g transform={`translate(${x} ${y})`}>
+    <g transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}>
       <motion.path
         d={sparklePath(size)}
         fill={color}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         initial={{ scale: 0, rotate: 0, opacity: 0 }}
         animate={{ scale: [0, 1, 0], rotate: [0, 90, 180], opacity: [0, 1, 0] }}
         transition={{ duration: 1.8, repeat: Infinity, delay, ease: "easeInOut" }}
@@ -198,7 +206,7 @@ function Diamond({
   delay?: number;
 }) {
   return (
-    <g transform={`translate(${x} ${y})`}>
+    <g transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}>
       <motion.g animate={{ y: [0, -3, 0] }} transition={loop(2.4, { delay })}>
         <polygon
           points={`${-s},${-s * 0.25} ${-s * 0.55},${-s * 0.8} ${s * 0.55},${-s * 0.8} ${s},${-s * 0.25} 0,${s}`}
@@ -235,7 +243,7 @@ function CoinStack({
   h?: number;
 }) {
   return (
-    <g transform={`translate(${x} ${y})`}>
+    <g transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}>
       {Array.from({ length: n }).map((_, i) => {
         const yy = -i * h;
         return (
@@ -261,7 +269,7 @@ function TreasurePile({ x, y, flip = false }: { x: number; y: number; flip?: boo
       <CoinStack x={x - 20 * s} y={y} n={3} />
       <CoinStack x={x + 2 * s} y={y + 3} n={5} />
       <CoinStack x={x + 24 * s} y={y} n={2} />
-      <g transform={`translate(${x - 40 * s} ${y - 2})`}>
+      <g transform={`translate(${x - 40 * s} ${y - 2})`} style={SVG_ATTR_ORIGIN}>
         <Coin r={9} />
       </g>
       <Diamond x={x + 2 * s} y={y - 50} s={12} delay={flip ? 0.8 : 0} />
@@ -384,7 +392,7 @@ function Tail({ mood }: { mood: MochiMood }) {
     <motion.g
       animate={spec.animate}
       transition={spec.transition}
-      style={{ originX: 0.1, originY: 0.9 }}
+      style={{ transformBox: "fill-box", originX: 0.1, originY: 0.9 }}
     >
       <path d={d} fill="none" stroke={INK} strokeWidth={24} strokeLinecap="round" />
       <path d={d} fill="none" stroke={T.fur} strokeWidth={17} strokeLinecap="round" />
@@ -429,7 +437,7 @@ function Ear({ side, mood }: { side: "l" | "r"; mood: MochiMood }) {
     <motion.g
       animate={spec.animate}
       transition={spec.transition}
-      style={{ originX: l ? 0.7 : 0.3, originY: 0.95 }}
+      style={{ transformBox: "fill-box", originX: l ? 0.7 : 0.3, originY: 0.95 }}
     >
       <path d={outer} fill={T.fur} {...line} />
       <path d={inner} fill={T.peachSoft} />
@@ -452,7 +460,7 @@ function HeadMarks() {
 function Blink({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   return (
     <motion.g
-      style={{ originX: 0.5, originY: 0.5 }}
+      style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
       animate={{ scaleY: [1, 1, 0.1, 1] }}
       transition={{
         duration: 4,
@@ -478,7 +486,7 @@ function Eyes({ mood }: { mood: MochiMood }) {
         {[EYE_L, EYE_R].map((x, i) => (
           <motion.g
             key={x}
-            style={{ originX: 0.5, originY: 0.5 }}
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
             animate={{ scale: [1, 1.18, 1], rotate: [-8, 8, -8] }}
             transition={loop(0.7, { delay: i * 0.1 })}
           >
@@ -632,7 +640,7 @@ function Mouth({ mood, uid }: { mood: MochiMood; uid: string }) {
     case "shocked_boros":
       return (
         <motion.g
-          style={{ originX: 0.5, originY: 0 }}
+          style={{ transformBox: "fill-box", originX: 0.5, originY: 0 }}
           animate={{ scaleY: [1, 1.1, 1] }}
           transition={loop(0.4)}
         >
@@ -654,7 +662,7 @@ function Mouth({ mood, uid }: { mood: MochiMood; uid: string }) {
 function Face({ mood, uid }: { mood: MochiMood; uid: string }) {
   return (
     <motion.g
-      style={{ originX: 0.5, originY: 0.5 }}
+      style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
       initial={{ scale: 0.94 }}
       animate={{ scale: 1 }}
       transition={{ duration: 0.25 }}
@@ -774,12 +782,12 @@ function Plant() {
   ];
   return (
     <motion.g
-      style={{ originX: 0.5, originY: 1 }}
+      style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
       animate={{ rotate: [-2.5, 2.5, -2.5] }}
       transition={loop(3.4)}
     >
       {leaves.map((lf, i) => (
-        <g key={i} transform={`rotate(${lf.a} 87 302)`}>
+        <g key={i} transform={`rotate(${lf.a} 87 302)`} style={SVG_ATTR_ORIGIN}>
           <path
             d={`M87 302 Q68 ${302 - lf.l * 0.5} 87 ${302 - lf.l} Q106 ${302 - lf.l * 0.5} 87 302Z`}
             fill={lf.c}
@@ -825,7 +833,7 @@ function VaultCoins({ clipId }: { clipId: string }) {
   return (
     <g clipPath={`url(#${clipId})`}>
       {coins.map((c, i) => (
-        <g key={i} transform={`translate(${c.x} ${c.y})`}>
+        <g key={i} transform={`translate(${c.x} ${c.y})`} style={SVG_ATTR_ORIGIN}>
           <Coin r={11} />
         </g>
       ))}
@@ -1081,8 +1089,8 @@ function MatchaGlass() {
       <path d="M255 284 L283 284 L281 304 Q269 308 257 304Z" fill={T.matchaSoft} />
       <path d="M254 270 L284 270 L283 284 L255 284Z" fill={C.cream} />
       <path d="M255 284 L283 284" stroke={C.matcha} strokeWidth={3} strokeLinecap="round" />
-      <rect x={258} y={290} width={8} height={8} rx={2} fill={C.cream} opacity={0.8} transform="rotate(12 262 294)" />
-      <rect x={270} y={286} width={8} height={8} rx={2} fill={C.cream} opacity={0.8} transform="rotate(-14 274 290)" />
+      <rect x={258} y={290} width={8} height={8} rx={2} fill={C.cream} opacity={0.8} transform="rotate(12 262 294)" style={SVG_ATTR_ORIGIN} />
+      <rect x={270} y={286} width={8} height={8} rx={2} fill={C.cream} opacity={0.8} transform="rotate(-14 274 290)" style={SVG_ATTR_ORIGIN} />
       <path d="M252 258 L286 258 L281 306 L257 306Z" fill="none" {...line} />
       <path d="M257 264 L259 292" stroke={C.cream} strokeWidth={3} strokeLinecap="round" opacity={0.9} />
     </g>
@@ -1149,7 +1157,7 @@ function OutfitFront({ stage, mood }: { stage: MochiStage; mood: MochiMood }) {
       return (
         <g>
           <Scarf />
-          <g transform="translate(200 298)">
+          <g transform="translate(200 298)" style={SVG_ATTR_ORIGIN}>
             <Coin r={12} />
           </g>
           <Paw cx={178} cy={302} rx={14} ry={12} />
@@ -1175,7 +1183,7 @@ function OutfitFront({ stage, mood }: { stage: MochiStage; mood: MochiMood }) {
               <SleeveArm d="M246 268 Q260 288 254 306" color={C.taro} />
               <Paw cx={254} cy={314} rx={13} ry={11} />
               <SleeveArm d="M154 268 Q132 276 132 296" color={C.taro} />
-              <g transform="translate(-142 -4)">
+              <g transform="translate(-142 -4)" style={SVG_ATTR_ORIGIN}>
                 <MatchaGlass />
               </g>
               <Paw cx={130} cy={298} rx={14} ry={11} />
@@ -1208,7 +1216,7 @@ function OutfitFront({ stage, mood }: { stage: MochiStage; mood: MochiMood }) {
 
 function Plaster({ x, y, rot, w = 50 }: { x: number; y: number; rot: number; w?: number }) {
   return (
-    <g transform={`translate(${x} ${y}) rotate(${rot})`}>
+    <g transform={`translate(${x} ${y}) rotate(${rot})`} style={SVG_ATTR_ORIGIN}>
       <rect x={-w / 2} y={-10} width={w} height={20} rx={10} fill="#FFD9CC" {...line3} />
       <rect x={-w / 2 + 14} y={-10} width={w - 28} height={20} fill="#FFC4B3" />
       <path
@@ -1307,9 +1315,9 @@ function Cushion() {
 
 function PiggyBank() {
   return (
-    <g transform="translate(322 322)">
+    <g transform="translate(322 322)" style={SVG_ATTR_ORIGIN}>
       <motion.g
-        style={{ originX: 0.5, originY: 1 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
         animate={{ scaleY: [1, 1, 1, 0.93, 1] }}
         transition={{ duration: 3, times: [0, 0.6, 0.68, 0.76, 1], repeat: Infinity }}
       >
@@ -1330,9 +1338,9 @@ function PiggyBank() {
       <motion.g
         animate={{ y: [-34, -10, 14, 18, 18], opacity: [0, 1, 1, 0, 0], scaleX: [1, 0.3, 1, 0.5, 1] }}
         transition={{ duration: 3, times: [0, 0.3, 0.62, 0.7, 1], repeat: Infinity }}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
       >
-        <g transform="translate(14 -66)">
+        <g transform="translate(14 -66)" style={SVG_ATTR_ORIGIN}>
           <Coin r={9} />
         </g>
       </motion.g>
@@ -1404,7 +1412,7 @@ function Foreground({ stage }: { stage: MochiStage }) {
       return (
         <g>
           <TreasurePile x={330} y={346} flip />
-          <g transform="translate(228 350)">
+          <g transform="translate(228 350)" style={SVG_ATTR_ORIGIN}>
             <Coin r={8} />
           </g>
         </g>
@@ -1437,11 +1445,12 @@ const BURST = [
 function ProudOverlay() {
   return (
     <g>
-      <g transform="translate(200 150)">
+      <g transform="translate(200 150)" style={SVG_ATTR_ORIGIN}>
         {BURST.map((b, i) => (
           <motion.g
             key={i}
             initial={{ opacity: 0 }}
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
             animate={{
               x: [0, b.dx * 0.7, b.dx],
               y: [0, b.peak, 40],
@@ -1490,9 +1499,9 @@ function WorriedOverlay() {
       <motion.g
         animate={{ y: [0, 4, 18, 24], opacity: [0, 1, 1, 0], scale: [0.6, 1, 1, 0.8] }}
         transition={{ duration: 1.6, times: [0, 0.2, 0.8, 1], repeat: Infinity, ease: "easeIn" }}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
       >
-        <g transform="translate(270 172)">
+        <g transform="translate(270 172)" style={SVG_ATTR_ORIGIN}>
           <path d="M0 -11 Q9 2 0 9 Q-9 2 0 -11Z" fill={C.sky} {...line25} />
           <path d="M-2 -2 Q-4 3 -1 5" fill="none" stroke={C.cream} strokeWidth={2.5} strokeLinecap="round" />
         </g>
@@ -1514,7 +1523,7 @@ function WorriedOverlay() {
 function Siren() {
   return (
     <motion.g animate={{ y: [0, -5, 0] }} transition={loop(1)}>
-      <g transform="translate(200 60)">
+      <g transform="translate(200 60)" style={SVG_ATTR_ORIGIN}>
         <motion.g
           animate={{ opacity: [0, 1, 0] }}
           transition={loop(0.5)}
@@ -1545,7 +1554,7 @@ function Magnifier({ uid }: { uid: string }) {
       <motion.g
         animate={{ rotate: [-4, 4, -4] }}
         transition={loop(1.4)}
-        style={{ originX: 0.1, originY: 0.95 }}
+        style={{ transformBox: "fill-box", originX: 0.1, originY: 0.95 }}
       >
         <path d="M284 259 L262 292" stroke={INK} strokeWidth={13} strokeLinecap="round" />
         <path d="M284 259 L262 292" stroke={C.peach} strokeWidth={7} strokeLinecap="round" />
@@ -1558,7 +1567,7 @@ function Magnifier({ uid }: { uid: string }) {
             animate={{ y: [0, -4, 0] }}
             transition={loop(0.6)}
           >
-            <g transform="translate(305 238) scale(1.25)">
+            <g transform="translate(305 238) scale(1.25)" style={SVG_ATTR_ORIGIN}>
               <WingedCoin r={10} />
             </g>
           </motion.g>
@@ -1589,11 +1598,12 @@ function ShockedOverlay({ uid }: { uid: string }) {
   return (
     <g>
       <Siren />
-      <g transform="translate(150 300)">
+      <g transform="translate(150 300)" style={SVG_ATTR_ORIGIN}>
         {FLYERS.map((f, i) => (
           <motion.g
             key={i}
             initial={{ opacity: 0 }}
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
             animate={{ x: [0, f.x], y: [0, f.y], opacity: [0, 1, 1, 0], rotate: [0, -20, 10] }}
             transition={{
               duration: 2,
@@ -1662,12 +1672,12 @@ export function MochiCompanion({ stage, mood = "happy", className, title }: Moch
         <Backdrop stage={stage} uid={uid} />
 
         {/* kucing + kostum */}
-        <g transform={`translate(${place.x} ${place.y}) rotate(${place.r} 200 340)`}>
+        <g transform={`translate(${place.x} ${place.y}) rotate(${place.r} 200 340)`} style={SVG_ATTR_ORIGIN}>
           <Tail mood={mood} />
           <motion.g
             animate={body.animate}
             transition={body.transition}
-            style={{ originX: 0.5, originY: 1 }}
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
           >
             <OutfitBack stage={stage} />
             <Body />
@@ -1675,7 +1685,7 @@ export function MochiCompanion({ stage, mood = "happy", className, title }: Moch
             <motion.g
               animate={head.animate}
               transition={head.transition}
-              style={{ originX: 0.5, originY: 1 }}
+              style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
             >
               <Ear side="l" mood={mood} />
               <Ear side="r" mood={mood} />

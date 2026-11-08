@@ -43,10 +43,16 @@
   --font-sans: var(--font-sans), system-ui, sans-serif;
 }
 
-/* WAJIB: Perbaikan CSS SVG Transform-Box agar animasi Framer Motion berputar tepat pada engselnya */
-svg g, svg path, svg rect, svg circle, svg ellipse, svg polygon {
-  transform-box: fill-box;
-}
+/*
+ * CATATAN (sebelumnya: "svg g, svg path, ... { transform-box: fill-box }"):
+ * aturan global itu DIHAPUS karena membuat atribut SVG `transform="rotate(...)"`,
+ * `scale(...)`, dst. berputar/menskala di pojok kiri-atas bounding box tiap elemen
+ * (bukan di titik viewBox) -> telinga, surai, jari kaki, mata, dan ikon bergeser
+ * serta berantakan. Framer Motion sudah otomatis memberi
+ * `transform-box: fill-box; transform-origin: 50% 50%` pada elemen SVG yang dianimasikan,
+ * jadi aturan global tidak diperlukan. Komponen ilustrasi juga sudah menyetel
+ * `transformBox: "view-box"` pada elemen SVG biasa yang memakai atribut `transform`.
+ */
 
 body {
   background-color: #FFFDF9;
@@ -89,4 +95,108 @@ h1, h2, h3, h4, .font-fredoka, .font-display {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #B8AA93;
+}
+
+/* ───────────── Mode Streak Padam (Versi 5.0): suasana dingin ───────────── */
+body.cold-mode {
+  background-color: #EBF3F9;
+  background-image:
+    radial-gradient(circle at 18px 18px, rgba(150, 190, 220, 0.25) 1.5px, transparent 0),
+    linear-gradient(180deg, #EBF3F9 0%, #E3EEF6 60%, #DBE9F3 100%);
+  transition: background-color 0.6s ease;
+}
+body.cold-mode [class*="border-[#E6DFD2]"],
+body.cold-mode [class*="border-[#E2D8C5]"] {
+  border-color: #B8D4E8 !important;
+}
+body.cold-mode [class*="border-b-[#D4C9B4]"] {
+  border-bottom-color: #9CC0DB !important;
+}
+body.cold-mode [class*="bg-[#FFFDF9]"],
+body.cold-mode [class*="bg-[#F7F3EB]"] {
+  background-color: #F2F8FC;
+}
+body.cold-mode ::-webkit-scrollbar-track { background: #E3EEF6; }
+body.cold-mode ::-webkit-scrollbar-thumb { background: #9CC0DB; border-color: #E3EEF6; }
+
+@keyframes cold-flake-fall {
+  0%   { transform: translate3d(0, -12px, 0); }
+  100% { transform: translate3d(var(--drift, 0px), 105vh, 0); }
+}
+.cold-flake { animation-name: cold-flake-fall; animation-timing-function: linear; animation-iteration-count: infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .cold-flake { animation: none; top: auto !important; opacity: 0.35 !important; }
+}
+
+/* ───────── Bioma Hidup (Versi 5.0): awan, riak air, partikel cuaca ───────── */
+@keyframes living-cloud-drift {
+  0%   { left: -110px; }
+  100% { left: 100%; }
+}
+@keyframes living-fall {
+  0%   { top: -4%; opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { top: 104%; opacity: 0; }
+}
+@keyframes living-rise {
+  0%   { top: 104%; opacity: 0; }
+  10%  { opacity: 0.9; }
+  90%  { opacity: 0.9; }
+  100% { top: -4%; opacity: 0; }
+}
+@keyframes living-sway {
+  0%, 100% { transform: translate3d(calc(var(--drift, 12px) * -1), 0, 0) rotate(-18deg); }
+  50%      { transform: translate3d(var(--drift, 12px), 0, 0) rotate(24deg); }
+}
+@keyframes living-twinkle {
+  0%, 100% { transform: scale(0.5); opacity: 0.25; }
+  50%      { transform: scale(1.25); opacity: 1; }
+}
+@keyframes living-ripple {
+  0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0.75; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+@keyframes living-mist-drift {
+  0%   { left: -45%; }
+  100% { left: 100%; }
+}
+.living-cloud { position: absolute; animation: living-cloud-drift linear infinite; }
+.living-particle { position: absolute; animation-timing-function: linear; animation-iteration-count: infinite; }
+.living-particle-fall { animation-name: living-fall; }
+.living-particle-rise { animation-name: living-rise; }
+.living-particle-sway { animation: living-sway ease-in-out infinite; }
+.living-twinkle { position: absolute; animation: living-twinkle ease-in-out infinite; }
+.living-ripple { position: absolute; border-radius: 9999px; animation: living-ripple 3.2s ease-out infinite; }
+.living-mist { position: absolute; animation: living-mist-drift linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .living-cloud, .living-particle, .living-particle-sway, .living-twinkle, .living-ripple, .living-mist { animation: none !important; }
+  .living-particle { top: auto !important; opacity: 0.35; }
+  .living-ripple { transform: translate(-50%, -50%) scale(0.7); opacity: 0.4; }
+  .living-mist { left: 10% !important; opacity: 0.5; }
+}
+
+/* ───────── Badge Gelar & Latar (Versi 5.3) ───────── */
+.tb { position: relative; overflow: hidden; isolation: isolate; }
+.tb::before, .tb::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.tb > * { position: relative; z-index: 1; }
+@keyframes tb-sheen { 0% { background-position: 160% 0; } 100% { background-position: -60% 0; } }
+@keyframes tb-shift { 0% { background-position: 0% 50%; } 100% { background-position: 100% 50%; } }
+@keyframes tb-pingpong { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+@keyframes tb-twinkle { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.95; } }
+@keyframes tb-drift { 0% { background-position: 0 0; } 100% { background-position: -48px 24px; } }
+@keyframes tb-pulse { 0%, 100% { opacity: 0.3; transform: scale(0.9); } 50% { opacity: 0.85; transform: scale(1.1); } }
+.tb-sheen::after { background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.7) 50%, transparent 62%); background-size: 260% 100%; animation: tb-sheen 3.4s linear infinite; }
+.tb-twinkle::after { background: radial-gradient(circle, #fff 1px, transparent 1.6px) 0 0 / 13px 11px; animation: tb-twinkle 2.2s ease-in-out infinite; }
+.tb-aurora { background-size: 300% 100% !important; animation: tb-shift 6s linear infinite; }
+.tb-holo { background-size: 300% 100% !important; animation: tb-pingpong 4.5s ease-in-out infinite; }
+.tb-holo::after { background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.8) 50%, transparent 60%); background-size: 260% 100%; animation: tb-sheen 2.8s linear infinite; }
+.tb-ember { background-size: 220% 100% !important; animation: tb-pingpong 3s ease-in-out infinite; }
+.tb-ember::after { background: radial-gradient(circle at 20% 110%, rgba(255,255,200,.6), transparent 60%), radial-gradient(circle at 80% 110%, rgba(255,255,200,.45), transparent 55%); animation: tb-twinkle 1.6s ease-in-out infinite; }
+.tb-cosmos::before { background: radial-gradient(circle, rgba(255,255,255,.95) 1px, transparent 1.5px) 0 0 / 24px 24px; animation: tb-drift 7s linear infinite; opacity: .7; }
+.tb-cosmos::after { background: radial-gradient(circle, rgba(255,255,255,.8) 1px, transparent 1.4px) 8px 8px / 17px 19px; animation: tb-twinkle 2.6s ease-in-out infinite; }
+.tb-radiant::after { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.95), transparent 62%); animation: tb-pulse 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tb, .tb::before, .tb::after { animation: none !important; }
+  .tb-aurora, .tb-holo, .tb-ember { background-size: 100% 100% !important; }
 }

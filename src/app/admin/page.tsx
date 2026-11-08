@@ -1,5 +1,6 @@
 "use client";
 
+import { GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,9 +12,12 @@ import {
   Square,
   Volume2,
   VolumeX,
-} from "lucide-react";
+  ChevronUp,
+  ChevronDown,
+} from "@/components/illustrations/UiGlyphs";
 import {
   useBukuDompetStore,
+  isChildRole,
   type UserRole,
 } from "@/store/useBukuDompetStore";
 import {
@@ -35,7 +39,6 @@ import {
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { GamificationFX } from "@/components/ui/GamificationFX";
-import { TransactionDrawer } from "@/components/user/TransactionDrawer";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 import { useCozyBgm } from "@/lib/cozy-bgm";
 import { cn, formatCompactRupiah } from "@/lib/utils";
@@ -48,20 +51,17 @@ export default function AdminCommandCenterPage() {
     supervisorAssignments,
     transactions,
     redemptions,
-    isSandboxMode,
-    toggleSandboxMode,
-    setTransactionDrawerOpen,
     approveOrRejectCashout,
     updateBudgetSettings,
     addCustomMission,
     registerNewAccount,
     toggleSupervisorAssignment,
     switchRoleDirect,
-    resetToDemoSeed,
+    logout,
   } = useBukuDompetStore();
 
   const userProfiles = useMemo(
-    () => profiles.filter((p) => p.role === "user"),
+    () => profiles.filter((p) => isChildRole(p.role)),
     [profiles]
   );
   const supervisorProfiles = useMemo(
@@ -101,6 +101,7 @@ export default function AdminCommandCenterPage() {
   const [newRole, setNewRole] = useState<UserRole>("user");
   const [newBudgetTarget, setNewBudgetTarget] = useState<string>("1500000");
   const [newPetName, setNewPetName] = useState<string>("Mochi");
+  const [newSupervisorId, setNewSupervisorId] = useState<string>("");
   const [registerFeedback, setRegisterFeedback] = useState<{
     success: boolean;
     message: string;
@@ -125,7 +126,7 @@ export default function AdminCommandCenterPage() {
 
   // 4. Custom Mission Injector State
   const [missionTitle, setMissionTitle] = useState<string>(
-    "Tantangan Spesial Abang: Catat Struk Kantin"
+    "Tantangan Spesial: Catat Struk Kantin"
   );
   const [missionDesc, setMissionDesc] = useState<string>(
     "Catat pengeluaran makan siang dengan rincian jujur hari ini!"
@@ -141,7 +142,6 @@ export default function AdminCommandCenterPage() {
       | "approve_cashout"
       | "reject_cashout"
       | "save_budget"
-      | "reset_demo"
       | "exit_login";
     redemptionId?: string;
     amount?: number;
@@ -160,9 +160,13 @@ export default function AdminCommandCenterPage() {
       username: newUsername,
       pinCode: newPinCode,
       role: newRole,
-      monthlyBudgetTarget:
-        newRole === "user" ? Number(newBudgetTarget) || 1500000 : undefined,
-      petCustomName: newRole === "user" ? newPetName : undefined,
+      monthlyBudgetTarget: isChildRole(newRole)
+        ? Number(newBudgetTarget) || (newRole === "schoolchild" ? 150000 : 1500000)
+        : undefined,
+      petCustomName: isChildRole(newRole) ? newPetName : undefined,
+      supervisorId: isChildRole(newRole)
+        ? newSupervisorId || supervisorProfiles[0]?.id
+        : undefined,
     });
     setRegisterFeedback(res);
     if (res.success) {
@@ -198,10 +202,8 @@ export default function AdminCommandCenterPage() {
         Number(savingInput) || 350000,
         targetUserProfile.id
       );
-    } else if (pendingAction.type === "reset_demo") {
-      soundEffects.tactileClick();
-      resetToDemoSeed();
     } else if (pendingAction.type === "exit_login") {
+      logout();
       router.push("/login");
     }
     setPendingAction(null);
@@ -228,7 +230,6 @@ export default function AdminCommandCenterPage() {
       <PageTransitionLoader />
       <GamificationFX />
       <FloatingRewardBanner />
-      <TransactionDrawer />
 
       {/* Universal Admin Confirm Modal */}
       <CozyConfirmModal
@@ -242,8 +243,6 @@ export default function AdminCommandCenterPage() {
             ? "Tolak Tiket Pencairan Poin?"
             : pendingAction?.type === "save_budget"
             ? `Simpan Target Budget ${targetUserProfile.display_name}?`
-            : pendingAction?.type === "reset_demo"
-            ? "Reset Seluruh Data Demo?"
             : "Keluar ke Halaman Login?"
         }
         description={
@@ -259,8 +258,6 @@ export default function AdminCommandCenterPage() {
               )} dengan target tabungan ${formatRupiah(
                 Number(savingInput) || 0
               )}. Rumus DSSL akan otomatis menyesuaikan.`
-            : pendingAction?.type === "reset_demo"
-            ? "Seluruh akun tambahan, transaksi, poin, misi, dan evolusi akan dikembalikan ke data awal (Seed Data)."
             : "Anda akan kembali ke layar Login Kredensial."
         }
         confirmLabel={
@@ -270,7 +267,6 @@ export default function AdminCommandCenterPage() {
         }
         confirmVariant={
           pendingAction?.type === "reject_cashout" ||
-          pendingAction?.type === "reset_demo" ||
           pendingAction?.type === "exit_login"
             ? "peach"
             : "matcha"
@@ -279,7 +275,7 @@ export default function AdminCommandCenterPage() {
         mochiMood={
           pendingAction?.type === "reject_cashout" ? "worried" : "proud_combo"
         }
-        badgeText="Konfirmasi Admin Abang"
+        badgeText="Konfirmasi Admin"
       />
 
       {/* Top Sticky Admin Command Bar & Role View Switcher */}
@@ -298,7 +294,7 @@ export default function AdminCommandCenterPage() {
             />
             <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E3F4FF] border-2 border-[#9AD2FF] text-xs font-display font-extrabold text-[#1565C0] truncate">
               <CozyIcon name="crown_sultan" size={18} />
-              Command Center Abang (Admin Multi-User)
+              Command Center Admin (Multi-User)
             </span>
           </div>
 
@@ -331,7 +327,7 @@ export default function AdminCommandCenterPage() {
               href="/app"
               onClick={() => {
                 soundEffects.tactileClick();
-                switchRoleDirect("user", targetUserProfile.id);
+                switchRoleDirect(targetUserProfile.role, targetUserProfile.id);
               }}
               className="px-3 py-1.5 rounded-xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center gap-1.5 hover:bg-white transition-colors text-[#3D352E]"
             >
@@ -366,7 +362,7 @@ export default function AdminCommandCenterPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6 min-w-0 max-w-full overflow-hidden">
-        {/* 1. Sandbox / Simulasi Pencatatan Banner (Single Soft Pastel Sky Hero Card) */}
+        {/* 1. Banner Pusat Kendali (Single Soft Pastel Sky Hero Card) */}
         <CozyCard
           tone="sky"
           className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
@@ -386,14 +382,13 @@ export default function AdminCommandCenterPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-2.5 py-0.5 rounded-full bg-white border border-[#BCE3FF] text-xs font-display font-extrabold text-[#1565C0] inline-flex items-center gap-1">
                   <CozyIcon name="combo_sparkle" size={16} />
-                  {isSandboxMode
-                    ? "Mode Simulasi Sandbox: AKTIF"
-                    : "Mode Live Buku Kas: AKTIF"}
+                  Mode Live Buku Kas: AKTIF
                 </span>
                 <span className="text-xs font-display font-extrabold tabular-nums text-[#4A3500] bg-[#FFFBEB] px-2.5 py-0.5 rounded-full border border-[#FDE08D]">
                   Total Akun Terdaftar: {profiles.length} Akun (
-                  {userProfiles.length} User, {supervisorProfiles.length}{" "}
-                  Supervisor)
+                  {profiles.filter((p) => p.role === "user").length} User,{" "}
+                  {profiles.filter((p) => p.role === "schoolchild").length} Anak SD,{" "}
+                  {supervisorProfiles.length} Supervisor)
                 </span>
               </div>
               <h1 className="font-display text-xl font-extrabold text-[#3D352E] truncate">
@@ -406,33 +401,6 @@ export default function AdminCommandCenterPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto shrink-0">
-            <TactileButton
-              variant="cream"
-              size="md"
-              onClick={toggleSandboxMode}
-            >
-              <CozyIcon name="combo_sparkle" size={18} />
-              {isSandboxMode ? "Matikan Sandbox" : "Aktifkan Simulasi"}
-            </TactileButton>
-
-            <TactileButton
-              variant="matcha"
-              size="md"
-              onClick={() => setTransactionDrawerOpen(true)}
-            >
-              <CozyIcon name="plus_record" size={20} /> + Uji Catat Kas
-            </TactileButton>
-
-            <TactileButton
-              variant="peach"
-              size="sm"
-              onClick={() => setPendingAction({ type: "reset_demo" })}
-              title="Reset seluruh data kembali ke Seed Awal"
-            >
-              Reset Demo
-            </TactileButton>
-          </div>
         </CozyCard>
 
         {/* ============================================================
@@ -518,10 +486,19 @@ export default function AdminCommandCenterPage() {
                     </label>
                     <select
                       value={newRole}
-                      onChange={(e) => setNewRole(e.target.value as UserRole)}
+                      onChange={(e) => {
+                        const next = e.target.value as UserRole;
+                        setNewRole(next);
+                        // Uang saku Anak SD jauh lebih kecil daripada pengguna dewasa.
+                        if (next === "schoolchild") setNewBudgetTarget("150000");
+                        else if (next === "user") setNewBudgetTarget("1500000");
+                      }}
                       className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E] focus:outline-none"
                     >
                       <option value="user">User (Penabung / Anak)</option>
+                      <option value="schoolchild">
+                        Anak SD (Kelas 3 • Jurnal Cerita)
+                      </option>
                       <option value="supervisor">
                         Supervisor (Orang Tua / Wali)
                       </option>
@@ -530,7 +507,7 @@ export default function AdminCommandCenterPage() {
                   </div>
                 </div>
 
-                {newRole === "user" && (
+                {isChildRole(newRole) && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div>
                       <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
@@ -555,6 +532,29 @@ export default function AdminCommandCenterPage() {
                         className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E]"
                       />
                     </div>
+                  </div>
+                )}
+
+                {isChildRole(newRole) && supervisorProfiles.length > 0 && (
+                  <div>
+                    <label
+                      htmlFor="new-account-supervisor"
+                      className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1"
+                    >
+                      Supervisor Pemantau
+                    </label>
+                    <select
+                      id="new-account-supervisor"
+                      value={newSupervisorId || supervisorProfiles[0].id}
+                      onChange={(e) => setNewSupervisorId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E] focus:outline-none"
+                    >
+                      {supervisorProfiles.map((sup) => (
+                        <option key={sup.id} value={sup.id}>
+                          {sup.display_name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
 
@@ -662,6 +662,7 @@ export default function AdminCommandCenterPage() {
                               )}
                               <div className="min-w-0">
                                 <p className="font-display text-xs sm:text-sm font-extrabold text-[#3D352E] truncate">
+                                  {usr.role === "schoolchild" ? <GlyphInline name="backpack" className="mr-1" /> : null}
                                   {usr.display_name}{" "}
                                   <span className="text-[#7A6E65] font-bold">
                                     (@{usr.username})
@@ -849,8 +850,8 @@ export default function AdminCommandCenterPage() {
                   onClick={() => setShowAllHistory((prev) => !prev)}
                 >
                   {showAllHistory
-                    ? "Sembunyikan Sebagian ▴"
-                    : `Lihat Semua (${historyRedemptions.length} Riwayat) ▾`}
+                    ? <>Sembunyikan Sebagian <ChevronUp className="w-4 h-4" aria-hidden="true" /></>
+                    : <>Lihat Semua ({historyRedemptions.length} Riwayat) <ChevronDown className="w-4 h-4" aria-hidden="true" /></>}
                 </TactileButton>
               )}
             </div>

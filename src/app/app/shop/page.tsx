@@ -1,5 +1,6 @@
-import { redirect } from "next/navigation";
+import { SoftRedirect } from "@/components/ui/SoftRedirect";
 
+/** Rute lama: Butik sudah menjadi tab di Dunia Pet & Butik. */
 export default function ShopRedirectPage() {
-  redirect("/app/pets?tab=shop");
+  return <SoftRedirect to="/app/pets?tab=shop" label="Dunia Pet & Butik" />;
 }

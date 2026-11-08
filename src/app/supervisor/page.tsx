@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import Link from "next/link";
+import { ChipScroller } from "@/components/ui/ChipScroller";
+import { GlyphInline } from "@/components/illustrations/GlyphIcons";
+import React, { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -10,10 +11,11 @@ import {
   ChevronRight,
   Users,
   Heart,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
-import { useBukuDompetStore } from "@/store/useBukuDompetStore";
+} from "@/components/illustrations/UiGlyphs";
+import { useBukuDompetStore, isChildRole } from "@/store/useBukuDompetStore";
+import { SupervisorShell } from "@/components/supervisor/SupervisorShell";
+import { KidMonitorPanel } from "@/components/supervisor/KidMonitorPanel";
+import { localDateStr } from "@/lib/dates";
 import {
   analyzeSpendingDetective,
   getLevelFromXp,
@@ -22,35 +24,28 @@ import {
   CustomizablePetAvatar,
   GROWTH_STAGE_META,
 } from "@/components/illustrations/PetAvatarSystem";
-import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
 import { CozyIcon, CategoryIcon } from "@/components/illustrations/CozyIcons";
 import {
   TactileButton,
   CozyCard,
   ChunkyProgressBar,
   RollingNumber,
-  FloatingRewardBanner,
   formatRupiah,
 } from "@/components/ui/CozyPrimitives";
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
-import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
-import { GamificationFX } from "@/components/ui/GamificationFX";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
-import { useCozyBgm } from "@/lib/cozy-bgm";
 import { cn, formatCompactRupiah } from "@/lib/utils";
 
 type SupervisorTab = "today" | "week" | "month" | "calendar";
-type TxSubFilter = "all" | "expense" | "income";
+type TxSubFilter = "all" | "expense" | "income" | "saving";
 
+/** Tanggal lokal (WIB tidak lagi bergeser seperti saat memakai UTC). */
 function getRelativeDateStr(daysOffset: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + daysOffset);
-  return d.toISOString().split("T")[0];
+  return localDateStr(daysOffset);
 }
 
 export default function SupervisorDashboardPage() {
   const router = useRouter();
-  const { isPlaying: isBgmPlaying, toggleBgm } = useCozyBgm();
   const {
     activeProfileId,
     monitoredUserId,
@@ -62,7 +57,6 @@ export default function SupervisorDashboardPage() {
     lastSupervisorCheerDate,
     supervisorCheersCount,
     setMonitoredUserId,
-    switchRoleDirect,
     sendSupervisorCheer,
   } = useBukuDompetStore();
 
@@ -85,15 +79,17 @@ export default function SupervisorDashboardPage() {
         .map((a) => a.userId)
     );
     return profiles.filter(
-      (p) => p.role === "user" && allowedUserIds.has(p.id)
+      (p) => isChildRole(p.role) && allowedUserIds.has(p.id)
     );
   }, [profiles, supervisorAssignments, activeSupervisor.id]);
 
   const inspectedUser =
     assignedUsers.find((u) => u.id === monitoredUserId) ||
     assignedUsers[0] ||
-    profiles.find((p) => p.role === "user") ||
+    profiles.find((p) => isChildRole(p.role)) ||
     profiles[0];
+
+  const isKid = inspectedUser.role === "schoolchild";
 
   const userTransactions = useMemo(
     () => transactions.filter((t) => t.user_id === inspectedUser.id),
@@ -105,7 +101,6 @@ export default function SupervisorDashboardPage() {
     `Bangga banget lihat catatan kas ${inspectedUser.display_name} rapi & jujur!`
   );
   const [confirmCheerOpen, setConfirmCheerOpen] = useState<boolean>(false);
-  const [confirmExitOpen, setConfirmExitOpen] = useState<boolean>(false);
 
   // Zona 2 Navigation States
   const [activeTab, setActiveTab] = useState<SupervisorTab>("today");
@@ -121,6 +116,12 @@ export default function SupervisorDashboardPage() {
   const [calYear, setCalYear] = useState<number>(nowObj.getFullYear());
   const [calMonth, setCalMonth] = useState<number>(nowObj.getMonth());
   const [calSelectedDate, setCalSelectedDate] = useState<string>(todayStr);
+
+  // Versi 5.1: setelah login, Supervisor wajib memilih anak dulu (halaman "Pilih Anak").
+  const supervisorChildChosen = useBukuDompetStore((s) => s.supervisorChildChosen);
+  useEffect(() => {
+    if (!supervisorChildChosen) router.replace("/supervisor/pilih");
+  }, [supervisorChildChosen, router]);
 
   const levelInfo = getLevelFromXp(inspectedUser.xp);
   const currentStage = inspectedUser.currentStage || 1;
@@ -282,7 +283,8 @@ export default function SupervisorDashboardPage() {
         weeks.find((w) => dayNum >= w.min && dayNum <= w.max) || weeks[3];
       if (tx.type === "income") {
         bucket.income += Number(tx.total_amount);
-      } else {
+      } else if (tx.type === "expense") {
+        // Tabungan ("saving") bukan pengeluaran, jadi tidak masuk hitungan boros / kebutuhan vs keinginan.
         bucket.expense += Number(tx.total_amount);
         if (tx.need_or_want === "need") {
           needsSpend += Number(tx.total_amount);
@@ -421,12 +423,10 @@ export default function SupervisorDashboardPage() {
     return { income, expense };
   }, [userTransactions, calSelectedDate]);
 
-  return (
-    <div className="min-h-screen text-[#3D352E] pb-16">
-      <PageTransitionLoader />
-      <GamificationFX />
-      <FloatingRewardBanner />
+  if (!supervisorChildChosen) return null;
 
+  return (
+    <SupervisorShell active="monitor">
       <CozyConfirmModal
         open={confirmCheerOpen}
         onClose={() => setConfirmCheerOpen(false)}
@@ -440,112 +440,6 @@ export default function SupervisorDashboardPage() {
         badgeText="Apresiasi Visual Murni (0 Poin)"
       />
 
-      <CozyConfirmModal
-        open={confirmExitOpen}
-        onClose={() => setConfirmExitOpen(false)}
-        onConfirm={() => router.push("/login")}
-        title="Keluar ke Halaman Login?"
-        description="Anda akan kembali ke halaman Login Kredensial untuk beralih akun."
-        confirmLabel="Ya, Ke Halaman Login"
-        confirmVariant="peach"
-        mochiStage={report.mochiStage}
-      />
-
-      {/* Top Sticky Supervisor Bar */}
-      <header className="sticky top-0 z-40 bg-[#FFFDF9]/95 backdrop-blur-md border-b-2 border-[#E6DFD2]">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2 min-w-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <BukuDompetLogo
-              variant="mark"
-              size="sm"
-              className="sm:hidden w-10 h-10 shrink-0"
-            />
-            <BukuDompetLogo
-              variant="full"
-              size="sm"
-              className="hidden sm:block h-10 w-auto shrink-0"
-            />
-            <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-display font-extrabold truncate">
-              <CozyIcon name="parent_heart" size={16} />
-              <span>Supervisor:</span>
-              <select
-                value={activeSupervisor.id}
-                onChange={(e) => {
-                  soundEffects.tactileClick();
-                  switchRoleDirect("supervisor", e.target.value);
-                }}
-                className="bg-transparent font-display font-extrabold text-[#3D352E] focus:outline-none cursor-pointer"
-                title="Ganti Akun Supervisor Aktif"
-              >
-                {supervisorProfiles.map((sup) => (
-                  <option key={sup.id} value={sup.id}>
-                    {sup.display_name} (@{sup.username})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.tactileClick();
-                toggleBgm();
-              }}
-              className={cn(
-                "px-2.5 py-1.5 rounded-xl border-2 border-b-[3px] text-xs font-display font-extrabold flex items-center gap-1.5 cursor-pointer transition-all",
-                isBgmPlaying
-                  ? "bg-[#EFFBE6] border-[#C3EFA4] border-b-[#9EE070] text-[#2E6F00]"
-                  : "bg-[#F7F3EB] border-[#E6DFD2] border-b-[#D4C9B4] text-[#7A6E65]"
-              )}
-              title="Nyalakan / Matikan Musik Latar Cozy"
-            >
-              {isBgmPlaying ? (
-                <Volume2 className="w-4 h-4 text-[#2E6F00]" />
-              ) : (
-                <VolumeX className="w-4 h-4 text-[#7A6E65]" />
-              )}
-              <span className="hidden sm:inline">
-                Musik: {isBgmPlaying ? "Nyala" : "Senyap"}
-              </span>
-            </button>
-
-            <Link
-              href="/app"
-              onClick={() => {
-                soundEffects.tactileClick();
-                switchRoleDirect("user", inspectedUser.id);
-              }}
-              className="px-3 py-1.5 rounded-xl bg-[#F7F3EB] hover:bg-white border-2 border-[#E6DFD2] border-b-[3px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center gap-1.5 text-[#3D352E]"
-            >
-              <CozyIcon name="home_path" size={16} />
-              <span className="hidden sm:inline">Layar User</span>
-            </Link>
-            <Link
-              href="/admin"
-              onClick={() => soundEffects.tactileClick()}
-              className="px-3 py-1.5 rounded-xl bg-[#F7F3EB] hover:bg-white border-2 border-[#E6DFD2] border-b-[3px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center gap-1.5 text-[#3D352E]"
-            >
-              <CozyIcon name="crown_sultan" size={16} />
-              <span className="hidden sm:inline">Admin</span>
-            </Link>
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.tactileClick();
-                setConfirmExitOpen(true);
-              }}
-              className="px-3 py-1.5 rounded-xl bg-[#FFF2F0] hover:bg-[#FF8B7B]/30 border-2 border-[#FFCDC6] border-b-[3px] border-b-[#FFA89C] text-xs font-display font-extrabold flex items-center gap-1 cursor-pointer text-[#3D352E]"
-            >
-              <CozyIcon name="lock_cozy" size={16} />
-              <span>Keluar</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 space-y-6 min-w-0 max-w-full overflow-hidden">
         {/* ============================================================
             ZONA 1 — KARTU KESIMPULAN CEPAT ORANG TUA (EXECUTIVE SUMMARY)
            ============================================================ */}
@@ -554,14 +448,15 @@ export default function SupervisorDashboardPage() {
           <CozyCard tone="matcha" className="p-4 sm:p-5 space-y-4 w-full max-w-full overflow-hidden">
             <div className="flex flex-col xl:flex-row items-start justify-between gap-4 w-full max-w-full min-w-0">
               <div className="flex flex-col sm:flex-row items-start gap-3.5 w-full max-w-full min-w-0 flex-1">
-                <div className="w-20 h-22 rounded-2xl bg-white border-2 border-[#C3EFA4] flex items-center justify-center shrink-0 p-1">
+                {/* Karakter anak = tanda pengenal utama bagi orang tua: besar di ponsel (tengah, ±176px), ringkas di layar lebar. */}
+                <div className="w-44 h-48 sm:w-28 sm:h-32 mx-auto sm:mx-0 rounded-3xl bg-white border-2 border-[#C3EFA4] border-b-4 flex items-center justify-center shrink-0 p-1.5 sm:p-1">
                   <CustomizablePetAvatar
                     species={inspectedUser.activeSpecies || "chubby_cat"}
                     stage={currentStage}
                     mood={report.petMood}
                     customName={petName}
                     equippedAccessories={inspectedUser.equippedAccessories}
-                    className="w-18 h-20"
+                    className="w-full h-full"
                   />
                 </div>
                 <div className="space-y-2 w-full max-w-full min-w-0 flex-1">
@@ -586,20 +481,48 @@ export default function SupervisorDashboardPage() {
                         </option>
                       ))}
                     </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEffects.tactileClick();
+                        router.push("/supervisor/pilih");
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#FFFDF9] border-2 border-[#C3EFA4] border-b-[3px] text-xs font-display font-extrabold text-[#2E6F00] cursor-pointer inline-flex items-center justify-center gap-1.5"
+                    >
+                      <GlyphInline name="swap" /> Ganti Anak
+                    </button>
                   </div>
 
                   <div className="space-y-1 w-full max-w-full break-words">
-                    <h1 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
-                      Sisa Uang Saku {inspectedUser.display_name}:{" "}
-                      <span className="text-[#2E6F00] tabular-nums">
-                        {formatRupiah(report.remainingTotalBalanceThisMonth)}
-                      </span>
-                    </h1>
-                    <p className="text-xs sm:text-sm font-bold text-[#7A6E65] break-words">
-                      Batas Aman Harian: {formatRupiah(report.dssl)}/hari
-                    </p>
+                    {isKid ? (
+                      <>
+                        <h1 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
+                          Jurnal Cerita {inspectedUser.display_name}
+                        </h1>
+                        <p className="text-xs sm:text-sm font-bold text-[#7A6E65] break-words">
+                          Anak SD Kelas 3 • Streak {inspectedUser.current_streak} hari
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <h1 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
+                          Sisa Uang Saku {inspectedUser.display_name}:{" "}
+                          <span className="text-[#2E6F00] tabular-nums">
+                            {formatRupiah(report.remainingTotalBalanceThisMonth)}
+                          </span>
+                        </h1>
+                        <p className="text-xs sm:text-sm font-bold text-[#7A6E65] break-words">
+                          Batas Aman Harian: {formatRupiah(report.dssl)}/hari
+                        </p>
+                      </>
+                    )}
                   </div>
 
+                  {isKid ? (
+                    <p className="text-xs font-bold text-[#3D352E]/85 leading-relaxed break-words">
+                      {inspectedUser.display_name} bersama pet <strong>{petName}</strong> menulis cerita harian dan belajar mengelola celengan. Pantau perkembangannya di bawah.
+                    </p>
+                  ) : (
                   <p className="text-xs font-bold text-[#3D352E]/85 leading-relaxed break-words">
                     {inspectedUser.display_name} bersama pet{" "}
                     <strong>{petName}</strong> konsisten mencatat kas{" "}
@@ -613,6 +536,7 @@ export default function SupervisorDashboardPage() {
                     </strong>
                     .
                   </p>
+                  )}
                   {cheerMessage && (
                     <div className="w-full max-w-full">
                       <p className="text-xs font-extrabold text-[#2E6F00] bg-white px-3 py-1.5 rounded-xl border border-[#C3EFA4] break-words leading-snug">
@@ -649,7 +573,10 @@ export default function SupervisorDashboardPage() {
             </div>
           </CozyCard>
 
+          {isKid && <KidMonitorPanel user={inspectedUser} />}
+
           {/* 3 Clean White Metric Cards below Executive Summary (No truncate on Rupiah!) */}
+          {!isKid && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-0">
             {/* Card 1: Pengeluaran Hari Ini */}
             <CozyCard tone="white" className="p-4 space-y-2">
@@ -715,11 +642,13 @@ export default function SupervisorDashboardPage() {
               </div>
             </CozyCard>
           </div>
+          )}
         </section>
 
         {/* ============================================================
             ZONA 2 — JURNAL KAS & KALENDER TRANSPARAN (4 TAB TERSTRUKTUR)
            ============================================================ */}
+        {!isKid && (
         <CozyCard tone="white" className="p-4 sm:p-6 space-y-5">
           {/* Header & Segmented Control */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b-2 border-[#E6DFD2] pb-4">
@@ -767,7 +696,7 @@ export default function SupervisorDashboardPage() {
 
           {/* Sub-filter: Semua | Pengeluaran (-Rp) | Pemasukan (+Rp) */}
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
+            <ChipScroller label="Filter jenis transaksi" watch={subFilter} className="flex-1">
               <span className="text-xs font-bold text-[#7A6E65] mr-1">
                 Filter Jenis:
               </span>
@@ -776,6 +705,7 @@ export default function SupervisorDashboardPage() {
                   { id: "all", label: "Semua" },
                   { id: "expense", label: "Pengeluaran (-Rp)" },
                   { id: "income", label: "Pemasukan (+Rp)" },
+                  { id: "saving", label: "Tabungan" },
                 ] as const
               ).map((sub) => (
                 <button
@@ -795,7 +725,7 @@ export default function SupervisorDashboardPage() {
                   {sub.label}
                 </button>
               ))}
-            </div>
+            </ChipScroller>
           </div>
 
           {/* ------------------------------------------------------------
@@ -1043,8 +973,8 @@ export default function SupervisorDashboardPage() {
                     onClick={() => setShowAllMonthTx(!showAllMonthTx)}
                   >
                     {showAllMonthTx
-                      ? "Tutup Sebagian Daftar ▴"
-                      : `Lihat Semua (${monthlyData.filteredMonthTxs.length} Transaksi) ▾`}
+                      ? <>Tutup Sebagian Daftar <ChevronUp className="w-4 h-4" aria-hidden="true" /></>
+                      : <>Lihat Semua ({monthlyData.filteredMonthTxs.length} Transaksi) <ChevronDown className="w-4 h-4" aria-hidden="true" /></>}
                   </TactileButton>
                 )}
               </div>
@@ -1216,8 +1146,9 @@ export default function SupervisorDashboardPage() {
             </div>
           )}
         </CozyCard>
-      </main>
-    </div>
+        )}
+
+      </SupervisorShell>
   );
 }
 
@@ -1268,10 +1199,14 @@ function SupervisorTransparentTxCard({
         <span
           className={cn(
             "font-display text-sm sm:text-base font-extrabold tabular-nums shrink-0",
-            tx.type === "income" ? "text-[#2E6F00]" : "text-[#C83E2B]"
+            tx.type === "income"
+              ? "text-[#2E6F00]"
+              : tx.type === "saving"
+              ? "text-[#1565C0]"
+              : "text-[#C83E2B]"
           )}
         >
-          {tx.type === "income" ? "+" : "-"}
+          {tx.type === "income" ? "+" : tx.type === "saving" ? <GlyphInline name="piggy" className="mr-0.5" /> : "-"}
           {formatRupiah(tx.total_amount)}
         </span>
       </div>

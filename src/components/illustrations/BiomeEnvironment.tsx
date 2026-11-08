@@ -5,8 +5,18 @@
  * Gaya: Duolingo × Finch Cozy Pastel (outline hangat #3D352E, duotone vector layers).
  */
 
+import { GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React from "react";
 import { MotionConfig, motion } from "framer-motion";
+import { LivingBiomeBackdrop, LivingBiomeTrees } from "./LivingBiome";
+
+/**
+ * Reset origin transformasi untuk elemen SVG yang memakai atribut `transform="rotate/scale/..."`.
+ * Tanpa ini, CSS global `svg g, svg path { transform-box: fill-box }` memindahkan titik asal
+ * transformasi ke pojok bbox elemen sehingga bagian tubuh/ikon bergeser dan berantakan.
+ */
+const SVG_ATTR_ORIGIN = { transformBox: "view-box", transformOrigin: "0 0" } as const;
+
 
 export type WeatherType =
   | "sparkle_dew"
@@ -296,7 +306,7 @@ export function getBiomeResourceStatus(
       stageTitle: "Panen Pohon Koin Berbuah",
       nextTargetDays: 28,
       daysRemainingToNext: Math.max(0, 28 - steps),
-      bannerText: `🌳 Ekosistem ${biome.monthName}: Level 4 (Panen ${biome.resourceName}) — Pohon Koin telah berbuah lebat!`,
+      bannerText: `Ekosistem ${biome.monthName}: Level 4 (Panen ${biome.resourceName}) — Pohon Koin telah berbuah lebat!`,
       progressPercent: 100,
     };
   }
@@ -307,7 +317,7 @@ export function getBiomeResourceStatus(
       stageTitle: "Taman Berbunga",
       nextTargetDays: 20,
       daysRemainingToNext: rem,
-      bannerText: `🌱 Ekosistem Bulan Ini: Level 3 (Taman Berbunga) — Catat ${rem} hari lagi agar Pohon Koin berbuah!`,
+      bannerText: `Ekosistem Bulan Ini: Level 3 (Taman Berbunga) — Catat ${rem} hari lagi agar Pohon Koin berbuah!`,
       progressPercent: Math.min(100, Math.round((steps / 20) * 100)),
     };
   }
@@ -318,7 +328,7 @@ export function getBiomeResourceStatus(
       stageTitle: "Tunas Rimbun",
       nextTargetDays: 10,
       daysRemainingToNext: rem,
-      bannerText: `🌿 Ekosistem Bulan Ini: Level 2 (Tunas Rimbun) — Catat ${rem} hari lagi menuju Taman Berbunga!`,
+      bannerText: `Ekosistem Bulan Ini: Level 2 (Tunas Rimbun) — Catat ${rem} hari lagi menuju Taman Berbunga!`,
       progressPercent: Math.min(100, Math.round((steps / 10) * 100)),
     };
   }
@@ -328,14 +338,14 @@ export function getBiomeResourceStatus(
     stageTitle: "Bibit Awal",
     nextTargetDays: 4,
     daysRemainingToNext: rem,
-    bannerText: `🌱 Ekosistem Bulan Ini: Level 1 (Bibit Awal) — Catat ${rem} hari lagi agar tunas ekosistem tumbuh!`,
+    bannerText: `Ekosistem Bulan Ini: Level 1 (Bibit Awal) — Catat ${rem} hari lagi agar tunas ekosistem tumbuh!`,
     progressPercent: Math.min(100, Math.round((steps / 4) * 100)),
   };
 }
 
 const INK = "#3D352E";
 
-function GrowingResourceTree({
+export function GrowingResourceTree({
   x,
   y,
   scale = 1,
@@ -351,7 +361,7 @@ function GrowingResourceTree({
   foliageLight: string;
 }) {
   return (
-    <g transform={`translate(${x} ${y}) scale(${scale})`}>
+    <g transform={`translate(${x} ${y}) scale(${scale})`} style={SVG_ATTR_ORIGIN}>
       {/* Ground shadow */}
       <ellipse cx={0} cy={4} rx={28} ry={7} fill={INK} opacity={0.12} />
 
@@ -535,7 +545,7 @@ function GrowingResourceTree({
             [18, -34],
             [0, -38],
           ].map(([cx, cy], idx) => (
-            <g key={idx} transform={`translate(${cx} ${cy})`}>
+            <g key={idx} transform={`translate(${cx} ${cy})`} style={SVG_ATTR_ORIGIN}>
               <circle
                 r={6.5}
                 fill="#FFC800"
@@ -547,121 +557,6 @@ function GrowingResourceTree({
           ))}
         </motion.g>
       )}
-    </g>
-  );
-}
-
-const PARTICLE_POSITIONS: readonly { x: number; y: number; delay: number; size: number }[] = [
-  { x: 55, y: 40, delay: 0, size: 7 },
-  { x: 140, y: 80, delay: 0.6, size: 6 },
-  { x: 260, y: 50, delay: 1.2, size: 8 },
-  { x: 345, y: 95, delay: 0.3, size: 6 },
-  { x: 85, y: 210, delay: 0.9, size: 7 },
-  { x: 320, y: 240, delay: 1.5, size: 8 },
-  { x: 60, y: 380, delay: 0.4, size: 6 },
-  { x: 340, y: 410, delay: 1.1, size: 7 },
-];
-
-function WeatherOverlay({ weatherType }: { weatherType: WeatherType }) {
-  return (
-    <g pointerEvents="none">
-      {PARTICLE_POSITIONS.map((p, idx) => {
-        if (weatherType === "cozy_rain") {
-          return (
-            <motion.line
-              key={idx}
-              x1={p.x}
-              y1={p.y}
-              x2={p.x - 4}
-              y2={p.y + 14}
-              stroke="#38B6FF"
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              opacity={0.55}
-              animate={{ y: [0, 36], opacity: [0, 0.7, 0] }}
-              transition={{
-                duration: 1.6,
-                repeat: Infinity,
-                delay: p.delay,
-                ease: "linear",
-              }}
-            />
-          );
-        }
-
-        if (weatherType === "crystal_snow") {
-          return (
-            <motion.circle
-              key={idx}
-              cx={p.x}
-              cy={p.y}
-              r={p.size * 0.6}
-              fill="#FFFFFF"
-              stroke="#38B6FF"
-              strokeWidth={1.5}
-              animate={{ y: [0, 32], x: [-4, 4, -4], opacity: [0.3, 0.95, 0.3] }}
-              transition={{
-                duration: 3.2,
-                repeat: Infinity,
-                delay: p.delay,
-                ease: "easeInOut",
-              }}
-            />
-          );
-        }
-
-        if (weatherType === "sakura_petal" || weatherType === "maple_fall") {
-          const fill = weatherType === "sakura_petal" ? "#FFB5A8" : "#FF8B7B";
-          return (
-            <motion.ellipse
-              key={idx}
-              cx={p.x}
-              cy={p.y}
-              rx={p.size * 0.8}
-              ry={p.size * 0.45}
-              fill={fill}
-              stroke={INK}
-              strokeWidth={1.5}
-              style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
-              animate={{
-                y: [0, 28],
-                x: [0, 10, 0],
-                rotate: [0, 45, 90],
-                opacity: [0.3, 0.9, 0.3],
-              }}
-              transition={{
-                duration: 3.4,
-                repeat: Infinity,
-                delay: p.delay,
-                ease: "easeInOut",
-              }}
-            />
-          );
-        }
-
-        return (
-          <motion.circle
-            key={idx}
-            cx={p.x}
-            cy={p.y}
-            r={p.size * 0.55}
-            fill="#FFC800"
-            stroke={INK}
-            strokeWidth={1.5}
-            animate={{
-              scale: [0.6, 1.2, 0.6],
-              opacity: [0.35, 0.95, 0.35],
-              y: [0, -8, 0],
-            }}
-            transition={{
-              duration: 2.4,
-              repeat: Infinity,
-              delay: p.delay,
-              ease: "easeInOut",
-            }}
-          />
-        );
-      })}
     </g>
   );
 }
@@ -694,7 +589,10 @@ export function BiomeMapSection({
           background: `linear-gradient(180deg, ${biome.bgTop} 0%, ${biome.bgBottom} 100%)`,
         }}
       >
-        {/* Illustrated SVG Biome Scenery & Weather Layer */}
+        {/* Bioma Hidup: awan, kolam beriak, partikel cuaca */}
+        <LivingBiomeBackdrop biome={biome} />
+
+        {/* Illustrated SVG Biome Scenery */}
         <svg
           viewBox="0 0 400 560"
           preserveAspectRatio="xMidYMid slice"
@@ -731,47 +629,13 @@ export function BiomeMapSection({
             strokeLinecap="round"
             opacity={0.65}
           />
-
-          {/* Growing Ecosystem Trees on Left & Right Banks */}
-          <GrowingResourceTree
-            x={48}
-            y={145}
-            scale={0.85}
-            level={eco.ecosystemLevel}
-            foliage={biome.treeFoliage}
-            foliageLight={biome.treeFoliageLight}
-          />
-          <GrowingResourceTree
-            x={352}
-            y={195}
-            scale={0.9}
-            level={eco.ecosystemLevel}
-            foliage={biome.treeFoliage}
-            foliageLight={biome.treeFoliageLight}
-          />
-          <GrowingResourceTree
-            x={46}
-            y={365}
-            scale={0.92}
-            level={eco.ecosystemLevel}
-            foliage={biome.treeFoliage}
-            foliageLight={biome.treeFoliageLight}
-          />
-          <GrowingResourceTree
-            x={350}
-            y={430}
-            scale={0.85}
-            level={eco.ecosystemLevel}
-            foliage={biome.treeFoliage}
-            foliageLight={biome.treeFoliageLight}
-          />
-
-          {/* Animated Weather Particles */}
-          <WeatherOverlay weatherType={biome.weatherType} />
         </svg>
 
         {/* Foreground Content (Stepping Stones & Checkpoints) */}
         <div className="relative z-10 p-4 sm:p-6">{children}</div>
+
+        {/* Pohon tepi peta yang bisa diketuk */}
+        <LivingBiomeTrees biome={biome} level={eco.ecosystemLevel} />
       </div>
     </MotionConfig>
   );
@@ -812,12 +676,12 @@ export function BiomeTransitionDivider({
         }}
       >
         <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#F7F3EB] border border-[#E6DFD2] text-[10px] font-display font-extrabold text-[#7A6E65] uppercase tracking-wider mb-1">
-          <span>⛩️ {isStartGate ? `Gerbang Awal Perjalanan • Hari ke-${dayNumber}` : `Gerbang Transisi Bioma • Hari ke-${dayNumber}`}</span>
+          <span><GlyphInline name="gate" /> {isStartGate ? `Gerbang Awal Perjalanan • Hari ke-${dayNumber}` : `Gerbang Transisi Bioma • Hari ke-${dayNumber}`}</span>
         </div>
 
         <p className="font-display text-sm sm:text-base font-extrabold text-[#3D352E] leading-snug break-words">
           {prevBiome && prevBiome.monthIndex !== currBiome.monthIndex
-            ? `${prevBiome.biomeTitle} ➔ ${currBiome.biomeTitle}`
+            ? <>{prevBiome.biomeTitle} <GlyphInline name="arrow_right" /> {currBiome.biomeTitle}</>
             : `Memasuki Wilayah: ${currBiome.biomeTitle} (${currBiome.monthName})`}
         </p>
 

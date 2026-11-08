@@ -15,6 +15,14 @@
 import { useId, type ReactNode } from "react";
 import { MotionConfig, motion, type Transition } from "framer-motion";
 
+/**
+ * Reset origin transformasi untuk elemen SVG yang memakai atribut `transform="rotate/scale/..."`.
+ * Tanpa ini, CSS global `svg g, svg path { transform-box: fill-box }` memindahkan titik asal
+ * transformasi ke pojok bbox elemen sehingga bagian tubuh/ikon bergeser dan berantakan.
+ */
+const SVG_ATTR_ORIGIN = { transformBox: "view-box", transformOrigin: "0 0" } as const;
+
+
 /* ───────────────────────── Types & metadata ───────────────────────── */
 
 export type BadgeId =
@@ -102,6 +110,9 @@ const loop = (duration: number, extra: Transition = {}): Transition =>
 
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
+/** Bulatkan 2 desimal: hasil sin/cos bisa beda di digit terakhir antara server & klien (mismatch hidrasi). */
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
 const starPoints = (cx: number, cy: number, outer: number, inner: number, n = 5): string => {
   const pts: string[] = [];
   for (let i = 0; i < n * 2; i++) {
@@ -129,11 +140,11 @@ function Sparkle({
   delay?: number;
 }) {
   return (
-    <g transform={`translate(${x} ${y})`}>
+    <g transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}>
       <motion.path
         d={sparklePath(size)}
         fill={color}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: [0, 1, 0], rotate: [0, 90, 180], opacity: [0, 1, 0] }}
         transition={{ duration: 1.8, repeat: Infinity, delay, ease: "easeInOut" }}
@@ -161,16 +172,27 @@ const THEME: Record<BadgeId, Theme> = {
 
 /* ───────────────────────── Medal frame ───────────────────────── */
 
+type RimColors = readonly [string, string, string];
+
 function MedalFrame({
   uid,
   theme,
   earned,
   children,
+  rim,
+  stars = 3,
+  gem = false,
 }: {
   uid: string;
   theme: Theme;
   earned: boolean;
   children: ReactNode;
+  /** Warna tepi medali (terang, tengah, gelap). Default: emas. */
+  rim?: RimColors;
+  /** Jumlah bintang pada banner pita (1-3). */
+  stars?: 1 | 2 | 3;
+  /** Tampilkan permata kecil di puncak medali (tier Berlian). */
+  gem?: boolean;
 }) {
   const gold = `${uid}-gold`;
   const face = `${uid}-face`;
@@ -184,9 +206,9 @@ function MedalFrame({
     >
       <defs>
         <linearGradient id={gold} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#FFF0A0" />
-          <stop offset="0.5" stopColor={C.honey} />
-          <stop offset="1" stopColor={GOLD_DARK} />
+          <stop offset="0" stopColor={rim ? rim[0] : "#FFF0A0"} />
+          <stop offset="0.5" stopColor={rim ? rim[1] : C.honey} />
+          <stop offset="1" stopColor={rim ? rim[2] : GOLD_DARK} />
         </linearGradient>
         <radialGradient id={face} cx="0.4" cy="0.35" r="0.8">
           <stop offset="0" stopColor={theme.faceLight} />
@@ -224,8 +246,8 @@ function MedalFrame({
       {Array.from({ length: 20 }).map((_, i) => (
         <circle
           key={i}
-          cx={100 + 59.5 * Math.cos(rad(i * 18))}
-          cy={112 + 59.5 * Math.sin(rad(i * 18))}
+          cx={r2(100 + 59.5 * Math.cos(rad(i * 18)))}
+          cy={r2(112 + 59.5 * Math.sin(rad(i * 18)))}
           r={2.4}
           fill={C.cream}
           opacity={0.85}
@@ -245,19 +267,34 @@ function MedalFrame({
 
       {/* banner pita */}
       <path d="M36 160 Q100 182 164 160 L164 186 Q100 208 36 186Z" fill={theme.ribbon[0]} {...line} />
-      {[
-        [68, 181],
-        [100, 184],
-        [132, 181],
-      ].map(([x, y]) => (
+      {(
+        stars === 1
+          ? [[100, 184]]
+          : stars === 2
+          ? [
+              [84, 183],
+              [116, 183],
+            ]
+          : [
+              [68, 181],
+              [100, 184],
+              [132, 181],
+            ]
+      ).map(([x, y]) => (
         <polygon key={x} points={starPoints(x, y, 5.5, 2.4)} fill={C.cream} {...line25} strokeWidth={2} />
       ))}
+      {gem && (
+        <g>
+          <polygon points="100,38 112,50 100,64 88,50" fill="#BDEBFF" {...line25} />
+          <path d="M88 50 L112 50 M100 38 L100 64" fill="none" stroke={C.cream} strokeWidth={2} strokeLinecap="round" opacity={0.8} />
+        </g>
+      )}
 
       {/* kilau */}
       {earned && (
         <>
           <g clipPath={`url(#${clip})`}>
-            <g transform="rotate(25 100 112)">
+            <g transform="rotate(25 100 112)" style={SVG_ATTR_ORIGIN}>
               <motion.rect
                 x={-70}
                 y={20}
@@ -289,21 +326,21 @@ function TorchEmblem() {
         return (
           <motion.circle
             key={i}
-            cx={100 + 44 * Math.cos(a)}
-            cy={112 + 44 * Math.sin(a)}
+            cx={r2(100 + 44 * Math.cos(a))}
+            cy={r2(112 + 44 * Math.sin(a))}
             r={3.6}
             fill={C.honey}
             stroke={INK}
             strokeWidth={2}
-            style={{ originX: 0.5, originY: 0.5 }}
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
             animate={{ scale: [1, 1.5, 1] }}
             transition={loop(1.4, { delay: i * 0.15 })}
           />
         );
       })}
-      <g transform="translate(0 8)">
+      <g transform="translate(0 8)" style={SVG_ATTR_ORIGIN}>
         <motion.g
-          style={{ originX: 0.5, originY: 1 }}
+          style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
           animate={{ scaleY: [1, 1.1, 0.95, 1.06, 1], skewX: [-3, 3, -2, 2, -3] }}
           transition={loop(1.2)}
         >
@@ -334,7 +371,7 @@ function ReceiptEmblem() {
   const bottom = Array.from({ length: 9 }, (_, i) => `L${(102 - i * 4.75).toFixed(2)} ${i % 2 ? 140 : 146}`).join(" ");
   return (
     <g>
-      <g transform="rotate(-8 83 108)">
+      <g transform="rotate(-8 83 108)" style={SVG_ATTR_ORIGIN}>
         <path d={`M64 72 L102 72 ${bottom} Z`} fill={C.cream} {...line} />
         <path
           d="M70 82 L96 82 M70 92 L84 92 M90 92 L96 92 M70 100 L82 100 M90 100 L96 100 M70 134 L96 134"
@@ -347,7 +384,7 @@ function ReceiptEmblem() {
         <polygon points={starPoints(83, 117, 11, 5)} fill={C.honey} {...line3} />
       </g>
       <motion.g
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ rotate: [-6, 6, -6] }}
         transition={loop(2.2)}
       >
@@ -369,7 +406,7 @@ function ShieldEmblem({ uid }: { uid: string }) {
   const clip = `${uid}-shield`;
   return (
     <motion.g
-      style={{ originX: 0.5, originY: 0.5 }}
+      style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
       animate={{ scale: [1, 1.04, 1] }}
       transition={loop(2.4)}
     >
@@ -400,7 +437,7 @@ function ShieldEmblem({ uid }: { uid: string }) {
         strokeLinejoin="round"
       />
       <path d={outline} fill="none" {...line} />
-      <g transform="translate(100 112)">
+      <g transform="translate(100 112)" style={SVG_ATTR_ORIGIN}>
         <circle r={16} fill={C.honey} {...line3} />
         <circle r={11.5} fill={HONEY_SOFT} stroke={GOLD_DARK} strokeWidth={2} />
         <path
@@ -422,7 +459,7 @@ const WING_D =
 function Wing() {
   return (
     <motion.g
-      style={{ originX: 1, originY: 0.6 }}
+      style={{ transformBox: "fill-box", originX: 1, originY: 0.6 }}
       animate={{ rotate: [0, -14, 0] }}
       transition={loop(1.1)}
     >
@@ -442,10 +479,10 @@ function Wing() {
 function WingedCoinEmblem() {
   return (
     <g>
-      <g transform="translate(84 108) scale(0.58)">
+      <g transform="translate(84 108) scale(0.58)" style={SVG_ATTR_ORIGIN}>
         <Wing />
       </g>
-      <g transform="translate(116 108) scale(-0.58 0.58)">
+      <g transform="translate(116 108) scale(-0.58 0.58)" style={SVG_ATTR_ORIGIN}>
         <Wing />
       </g>
 
@@ -462,7 +499,7 @@ function WingedCoinEmblem() {
       <circle cx={112} cy={117} r={3.2} fill={C.peach} opacity={0.75} />
 
       {/* kue dicoret = puasa jajan */}
-      <g transform="translate(122 138)">
+      <g transform="translate(122 138)" style={SVG_ATTR_ORIGIN}>
         <circle r={9} fill={TAN} {...line25} />
         <circle cx={-3} cy={-2} r={1.8} fill={INK} />
         <circle cx={3} cy={-3} r={1.8} fill={INK} />
@@ -480,11 +517,11 @@ function WingedCoinEmblem() {
 function DetectiveEmblem() {
   const tips = Array.from({ length: 5 }).map((_, k) => {
     const a = rad(-90 + k * 72);
-    return { x: 100 + 22 * Math.cos(a), y: 140 + 22 * Math.sin(a) };
+    return { x: r2(100 + 22 * Math.cos(a)), y: r2(140 + 22 * Math.sin(a)) };
   });
   return (
     <g>
-      <g transform="translate(100 90) scale(0.9) translate(-100 -90)">
+      <g transform="translate(100 90) scale(0.9) translate(-100 -90)" style={SVG_ATTR_ORIGIN}>
         <path d="M62 86 Q48 94 56 112 Q68 112 70 98Z" fill={TAN_LIGHT} {...line} />
         <path d="M138 86 Q152 94 144 112 Q132 112 130 98Z" fill={TAN_LIGHT} {...line} />
         <path d="M64 102 Q66 70 100 68 Q134 70 136 102 Q100 112 64 102Z" fill={TAN} {...line} />
@@ -497,13 +534,13 @@ function DetectiveEmblem() {
           opacity={0.65}
         />
         <path d="M76 104 Q100 118 124 104 L128 112 Q100 128 72 112Z" fill={TAN_DARK} {...line} />
-        <ellipse cx={92} cy={65} rx={7} ry={4.5} fill={TAN_LIGHT} {...line25} transform="rotate(-20 92 65)" />
-        <ellipse cx={108} cy={65} rx={7} ry={4.5} fill={TAN_LIGHT} {...line25} transform="rotate(20 108 65)" />
+        <ellipse cx={92} cy={65} rx={7} ry={4.5} fill={TAN_LIGHT} {...line25} transform="rotate(-20 92 65)" style={SVG_ATTR_ORIGIN} />
+        <ellipse cx={108} cy={65} rx={7} ry={4.5} fill={TAN_LIGHT} {...line25} transform="rotate(20 108 65)" style={SVG_ATTR_ORIGIN} />
         <circle cx={100} cy={67} r={4} fill={TAN_DARK} {...line25} />
       </g>
 
       <motion.g
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ rotate: [-4, 4, -4] }}
         transition={loop(2)}
       >
@@ -523,7 +560,7 @@ function DetectiveEmblem() {
 /* 6 ─ Kandidat Jutawan: piala bermahkota berlian */
 function TrophyEmblem() {
   return (
-    <g transform="translate(100 108) scale(0.9) translate(-100 -108)">
+    <g transform="translate(100 108) scale(0.9) translate(-100 -108)" style={SVG_ATTR_ORIGIN}>
       {/* gagang */}
       <path d="M74 94 Q54 92 56 108 Q58 122 78 118" fill="none" stroke={INK} strokeWidth={8} strokeLinecap="round" />
       <path d="M74 94 Q54 92 56 108 Q58 122 78 118" fill="none" stroke={C.honey} strokeWidth={4} strokeLinecap="round" />
@@ -538,11 +575,11 @@ function TrophyEmblem() {
       <path d="M82 96 L84 114" stroke={C.cream} strokeWidth={4.5} strokeLinecap="round" opacity={0.65} />
       {/* berlian */}
       <motion.g
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ scale: [1, 1.12, 1] }}
         transition={loop(1.6)}
       >
-        <g transform="translate(100 108)">
+        <g transform="translate(100 108)" style={SVG_ATTR_ORIGIN}>
           <polygon points="-12,-3 -6.6,-9.6 6.6,-9.6 12,-3 0,12" fill={C.sky} {...line3} />
           <path
             d="M-12 -3 L12 -3 M-6.6 -9.6 L-3 -3 L0 12 M6.6 -9.6 L3 -3 L0 12"
@@ -601,6 +638,200 @@ export function PraiseBadge({ type, earned = true, className, title }: PraiseBad
         <title>{label}</title>
         <MedalFrame uid={uid} theme={theme} earned={earned}>
           {EMBLEMS[type]({ uid })}
+        </MedalFrame>
+      </svg>
+    </MotionConfig>
+  );
+}
+
+/* ───────────────────────── Medali Bertingkat (Versi 5.0) ───────────────────────── */
+
+export type MedalBadgeTier = "bronze" | "silver" | "gold" | "diamond";
+export type MedalBadgeGlyph =
+  | "flame"
+  | "receipt"
+  | "piggy"
+  | "shield"
+  | "calendar"
+  | "pen"
+  | "heart"
+  | "book"
+  | "gamepad"
+  | "coin";
+
+/** Piggy bank dengan koin masuk. */
+function PiggyEmblem() {
+  return (
+    <g>
+      <ellipse cx={100} cy={118} rx={34} ry={26} fill={C.peach} {...line} />
+      <polygon points="80,96 86,84 94,95" fill={C.peach} {...line25} />
+      <ellipse cx={132} cy={116} rx={9} ry={11} fill="#FFB1A6" {...line25} />
+      <circle cx={130} cy={113} r={1.6} fill={INK} />
+      <circle cx={130} cy={120} r={1.6} fill={INK} />
+      <circle cx={112} cy={106} r={3.2} fill={INK} />
+      <path d="M92 94 L108 94" stroke={INK} strokeWidth={3} strokeLinecap="round" />
+      <rect x={84} y={138} width={9} height={11} rx={3} fill="#FFB1A6" {...line25} />
+      <rect x={108} y={138} width={9} height={11} rx={3} fill="#FFB1A6" {...line25} />
+      <motion.g
+        animate={{ y: [-4, 0, -4] }}
+        transition={loop(1.8)}
+      >
+        <circle cx={100} cy={80} r={9} fill={C.honey} {...line25} />
+        <path d="M100 75 L100 85 M96 80 L104 80" stroke={INK} strokeWidth={2} strokeLinecap="round" />
+      </motion.g>
+    </g>
+  );
+}
+
+/* Kalender dengan centang */
+function CalendarEmblem() {
+  return (
+    <g>
+      <rect x={68} y={78} width={64} height={60} rx={9} fill={C.cream} {...line} />
+      <path d="M68 96 L132 96 L132 87 Q132 78 123 78 L77 78 Q68 78 68 87Z" fill={C.peach} {...line} />
+      <path d="M84 70 L84 82 M116 70 L116 82" stroke={INK} strokeWidth={4} strokeLinecap="round" />
+      <motion.path
+        d="M84 117 L95 128 L117 106"
+        fill="none"
+        stroke={MATCHA_DARK}
+        strokeWidth={6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        initial={{ pathLength: 0.2 }}
+        animate={{ pathLength: [0.2, 1, 1] }}
+        transition={loop(2.4)}
+      />
+    </g>
+  );
+}
+
+/* Pena + kertas tulisan */
+function PenEmblem() {
+  return (
+    <g>
+      <rect x={72} y={76} width={52} height={64} rx={7} fill={C.cream} {...line} />
+      <path d="M82 94 L112 94 M82 106 L112 106 M82 118 L100 118" stroke={TAN_DARK} strokeWidth={3} strokeLinecap="round" />
+      <g transform="rotate(35 120 100)" style={SVG_ATTR_ORIGIN}>
+        <rect x={113} y={66} width={13} height={50} rx={4} fill={C.honey} {...line25} />
+        <polygon points="113,116 126,116 119.5,132" fill={TAN_LIGHT} {...line25} />
+        <rect x={113} y={66} width={13} height={9} rx={3} fill={C.peach} {...line25} />
+      </g>
+    </g>
+  );
+}
+
+/* Hati besar berdenyut */
+function HeartEmblem() {
+  return (
+    <motion.g
+      animate={{ scale: [1, 1.08, 1] }}
+      transition={loop(1.6)}
+      style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
+    >
+      <path
+        d="M100 142 C60 116 60 80 82 78 C92 77 98 84 100 90 C102 84 108 77 118 78 C140 80 140 116 100 142Z"
+        fill={C.peach}
+        {...line}
+      />
+      <path d="M78 90 Q80 84 87 84" fill="none" stroke={C.cream} strokeWidth={4.5} strokeLinecap="round" opacity={0.75} />
+    </motion.g>
+  );
+}
+
+/* Buku terbuka dengan bintang */
+function BookEmblem() {
+  return (
+    <g>
+      <path d="M100 90 Q84 80 64 84 L64 134 Q84 130 100 140Z" fill={C.cream} {...line} />
+      <path d="M100 90 Q116 80 136 84 L136 134 Q116 130 100 140Z" fill="#F4F0FF" {...line} />
+      <path d="M72 96 Q86 94 92 100 M72 108 Q86 106 92 112" fill="none" stroke={TAN_DARK} strokeWidth={2.5} strokeLinecap="round" />
+      <polygon points={starPoints(118, 106, 10, 4.5)} fill={C.honey} {...line25} />
+    </g>
+  );
+}
+
+/* Gamepad */
+function GamepadEmblem() {
+  return (
+    <g>
+      <path
+        d="M70 104 Q70 88 86 88 L114 88 Q130 88 130 104 L130 118 Q130 132 118 132 Q108 132 104 124 L96 124 Q92 132 82 132 Q70 132 70 118Z"
+        fill={C.sky}
+        {...line}
+      />
+      <path d="M84 100 L84 116 M76 108 L92 108" stroke={C.cream} strokeWidth={5} strokeLinecap="round" />
+      <circle cx={113} cy={102} r={4.5} fill={C.honey} {...line25} />
+      <circle cx={121} cy={112} r={4.5} fill={C.peach} {...line25} />
+    </g>
+  );
+}
+
+const MEDAL_GLYPH_EMBLEM: Record<MedalBadgeGlyph, (props: { uid: string }) => ReactNode> = {
+  flame: () => <TorchEmblem />,
+  receipt: () => <ReceiptEmblem />,
+  piggy: () => <PiggyEmblem />,
+  shield: ({ uid }) => <ShieldEmblem uid={uid} />,
+  calendar: () => <CalendarEmblem />,
+  pen: () => <PenEmblem />,
+  heart: () => <HeartEmblem />,
+  book: () => <BookEmblem />,
+  gamepad: () => <GamepadEmblem />,
+  coin: () => <WingedCoinEmblem />,
+};
+
+const MEDAL_GLYPH_FACE: Record<MedalBadgeGlyph, { face: string; faceLight: string }> = {
+  flame: { face: C.taro, faceLight: "#E6BBFF" },
+  receipt: { face: C.sky, faceLight: "#9ADBFF" },
+  piggy: { face: "#FFD9A8", faceLight: "#FFF1D6" },
+  shield: { face: "#FFF1D6", faceLight: C.cream },
+  calendar: { face: C.matcha, faceLight: "#9BE45A" },
+  pen: { face: "#9ADBFF", faceLight: "#D6F0FF" },
+  heart: { face: "#FFC2B8", faceLight: "#FFE3DD" },
+  book: { face: "#C79BF7", faceLight: "#E6D4FF" },
+  gamepad: { face: "#9BE45A", faceLight: "#CFF5A5" },
+  coin: { face: TARO_DEEP, faceLight: "#C79BF7" },
+};
+
+const MEDAL_TIER_STYLE: Record<
+  MedalBadgeTier,
+  { rim: RimColors; ribbon: [string, string]; stars: 1 | 2 | 3; gem: boolean; label: string }
+> = {
+  bronze: { rim: ["#F8D2AE", "#DE8F52", "#A9622E"], ribbon: [C.peach, TAN], stars: 1, gem: false, label: "Perunggu" },
+  silver: { rim: ["#F7FAFD", "#C9D3DE", "#8E9BAA"], ribbon: [C.sky, C.taro], stars: 2, gem: false, label: "Perak" },
+  gold: { rim: ["#FFF0A0", C.honey, GOLD_DARK], ribbon: [C.matcha, C.honey], stars: 3, gem: false, label: "Emas" },
+  diamond: { rim: ["#EAFBFF", "#86DCFF", "#38B6FF"], ribbon: [C.sky, C.taro], stars: 3, gem: true, label: "Berlian" },
+};
+
+export interface MedalBadgeProps {
+  tier: MedalBadgeTier;
+  glyph: MedalBadgeGlyph;
+  title: string;
+  /** false → abu-abu, statis, belum diraih. */
+  earned?: boolean;
+  className?: string;
+}
+
+/** Medali bertingkat (Perunggu/Perak/Emas/Berlian) dengan lambang sesuai keluarga medali. */
+export function MedalBadge({ tier, glyph, title, earned = true, className }: MedalBadgeProps) {
+  const uid = useId().replace(/:/g, "");
+  const ts = MEDAL_TIER_STYLE[tier];
+  const face = MEDAL_GLYPH_FACE[glyph];
+  const theme: Theme = { face: face.face, faceLight: face.faceLight, ribbon: ts.ribbon };
+  const label = `${title} (${ts.label})${earned ? "" : ", belum diraih"}`;
+
+  return (
+    <MotionConfig reducedMotion={earned ? "user" : "always"}>
+      <svg
+        viewBox="0 0 200 210"
+        xmlns="http://www.w3.org/2000/svg"
+        role="img"
+        aria-label={label}
+        className={className}
+        style={{ overflow: "visible", filter: earned ? undefined : "grayscale(1) opacity(0.55)" }}
+      >
+        <title>{label}</title>
+        <MedalFrame uid={uid} theme={theme} earned={earned} rim={ts.rim} stars={ts.stars} gem={ts.gem}>
+          {MEDAL_GLYPH_EMBLEM[glyph]({ uid })}
         </MedalFrame>
       </svg>
     </MotionConfig>

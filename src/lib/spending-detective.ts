@@ -1,3 +1,4 @@
+import { addDaysStr, localDateStr } from "@/lib/dates";
 import type { MochiMood, MochiStage } from "@/components/illustrations/MochiCompanion";
 import type {
   CasteStage,
@@ -10,7 +11,8 @@ import {
   PET_SPECIES_CATALOG,
 } from "@/components/illustrations/PetAvatarSystem";
 
-export type TransactionType = "income" | "expense";
+/** `saving` = setoran celengan (Versi 5.0). Bukan pengeluaran, jadi tidak pernah dihitung boros. */
+export type TransactionType = "income" | "expense" | "saving";
 export type NeedOrWant = "need" | "want" | "income";
 
 export interface TransactionItem {
@@ -41,28 +43,26 @@ export interface TransactionRecord {
 export const EXPENSE_CATEGORIES: {
   name: string;
   group: "need" | "want";
-  emoji: string;
   color: string;
 }[] = [
-  { name: "Makan Pokok", group: "need", emoji: "🍱", color: "#58CC02" },
-  { name: "Transportasi", group: "need", emoji: "🚆", color: "#38B6FF" },
-  { name: "Kuliah/Alat Tulis", group: "need", emoji: "📚", color: "#CE82FF" },
-  { name: "Tagihan", group: "need", emoji: "💡", color: "#FFC800" },
-  { name: "Jajan/Cemilan", group: "want", emoji: "🍡", color: "#FF8B7B" },
-  { name: "Kopi/Minuman", group: "want", emoji: "🧋", color: "#E5A400" },
-  { name: "Nongkrong", group: "want", emoji: "🍕", color: "#FF4B4B" },
-  { name: "Belanja/Hiburan", group: "want", emoji: "🛍️", color: "#A552DB" },
-  { name: "Lainnya", group: "want", emoji: "✨", color: "#7A6E65" },
+  { name: "Makan Pokok", group: "need", color: "#58CC02" },
+  { name: "Transportasi", group: "need", color: "#38B6FF" },
+  { name: "Kuliah/Alat Tulis", group: "need", color: "#CE82FF" },
+  { name: "Tagihan", group: "need", color: "#FFC800" },
+  { name: "Jajan/Cemilan", group: "want", color: "#FF8B7B" },
+  { name: "Kopi/Minuman", group: "want", color: "#E5A400" },
+  { name: "Nongkrong", group: "want", color: "#FF4B4B" },
+  { name: "Belanja/Hiburan", group: "want", color: "#A552DB" },
+  { name: "Lainnya", group: "want", color: "#7A6E65" },
 ];
 
 export const INCOME_CATEGORIES: {
   name: string;
-  emoji: string;
 }[] = [
-  { name: "Uang Saku Bulanan", emoji: "💌" },
-  { name: "Bonus Orang Tua / Abang", emoji: "🎁" },
-  { name: "Hadiah Tukar Poin Gamifikasi", emoji: "🏆" },
-  { name: "Tabungan / Lainnya", emoji: "🪙" },
+  { name: "Uang Saku Bulanan" },
+  { name: "Bonus Orang Tua / Abang" },
+  { name: "Hadiah Tukar Poin Gamifikasi" },
+  { name: "Tabungan / Lainnya" },
 ];
 
 /**
@@ -325,8 +325,7 @@ export interface SpendingDetectiveReport {
   categoryBreakdown: {
     category: string;
     group: "need" | "want";
-    emoji: string;
-    color: string;
+      color: string;
     amount: number;
     percentage: number;
   }[];
@@ -387,8 +386,7 @@ export function analyzeSpendingDetective(params: {
 
   const petName = petCustomName.trim() || "Mochi";
 
-  const todayStr =
-    referenceDateStr || new Date().toISOString().split("T")[0];
+  const todayStr = referenceDateStr || localDateStr();
   const todayDate = new Date(todayStr + "T12:00:00");
   const year = todayDate.getFullYear();
   const month = todayDate.getMonth();
@@ -398,9 +396,7 @@ export function analyzeSpendingDetective(params: {
 
   const monthPrefix = todayStr.slice(0, 7);
 
-  const sevenDaysAgo = new Date(todayDate);
-  sevenDaysAgo.setDate(todayDate.getDate() - 6);
-  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
+  const sevenDaysAgoStr = addDaysStr(todayStr, -6);
 
   const monthlyTx = transactions.filter((t) =>
     t.transaction_date.startsWith(monthPrefix)
@@ -495,14 +491,14 @@ export function analyzeSpendingDetective(params: {
     if (todayWantsSpend > 0.4 * todayTotalSpend) {
       walletStatus = "BENGKAK";
       statusColor = "berry";
-      statusTitle = "Status Bengkak! (Sirine Detektif Aktif 🚨)";
+      statusTitle = "Status Bengkak! (Sirine Detektif Aktif)";
       statusDescription = `Pengeluaran hari ini tembus ${Math.round(
         doi * 100
       )}% batas aman dan didominasi keinginan/jajan!`;
     } else {
       walletStatus = "PENTING_TERDETEKSI";
       statusColor = "sky";
-      statusTitle = "Pengeluaran Penting Terdeteksi 📚";
+      statusTitle = "Pengeluaran Penting Terdeteksi";
       statusDescription =
         "Hari ini pengeluaran melewati batas harian, tapi mayoritas untuk Kebutuhan Pokok/Kuliah (Bukan Boros!).";
     }
@@ -541,7 +537,7 @@ export function analyzeSpendingDetective(params: {
         totalSpent: stat.total,
         suggestedCutCount: cutCount,
         potentialSaving: saving,
-        message: `🕵️‍♂️ Investigasi Detektif ${petName}: Minggu ini kamu sudah beli [${cat}] sebanyak ${
+        message: `Investigasi Detektif ${petName}: Minggu ini kamu sudah beli [${cat}] sebanyak ${
           stat.count
         }x dengan total Rp${stat.total.toLocaleString(
           "id-ID"
@@ -565,7 +561,7 @@ export function analyzeSpendingDetective(params: {
       totalSpent: smallWantsTotal,
       suggestedCutCount: 2,
       potentialSaving: saving,
-      message: `🕵️‍♂️ Investigasi Detektif ${petName}: Akumulasi jajan kecil (< Rp35.000) minggu ini mencapai ${smallTxCumulativePercent}% dari jatah mingguan (Rp${smallWantsTotal.toLocaleString(
+      message: `Investigasi Detektif ${petName}: Akumulasi jajan kecil (< Rp35.000) minggu ini mencapai ${smallTxCumulativePercent}% dari jatah mingguan (Rp${smallWantsTotal.toLocaleString(
         "id-ID"
       )}). Yuk rem 2x jajan impulsif buat hemat Rp${saving.toLocaleString(
         "id-ID"
@@ -583,13 +579,11 @@ export function analyzeSpendingDetective(params: {
       const meta = EXPENSE_CATEGORIES.find((c) => c.name === category) || {
         name: category,
         group: "want" as const,
-        emoji: "✨",
         color: "#7A6E65",
       };
       return {
         category,
         group: meta.group,
-        emoji: meta.emoji,
         color: meta.color,
         amount,
         percentage:
@@ -603,30 +597,30 @@ export function analyzeSpendingDetective(params: {
   const mochiStage = Math.min(5, Math.max(1, currentStage || getMochiStageFromLevel(userLevel))) as MochiStage;
   let mochiMood: MochiMood = "happy";
   let petMood: PetMood = "happy";
-  let mochiSpeech = `Halo! Aku ${petName}. Catatan kasmu rapi banget hari ini, yuk pertahankan sisa jatah harianmu! 🐾✨`;
+  let mochiSpeech = `Halo! Aku ${petName}. Catatan kasmu rapi banget hari ini, yuk pertahankan sisa jatah harianmu!`;
 
   if (isProudComboActive) {
     mochiMood = "proud_combo";
     petMood = "proud";
-    mochiSpeech = `STRUK RINCI TERCATAT! ${petName} bangga banget kamu jujur merinci item belanjaan! +10 Poin & +20 Stage XP! 🎉`;
+    mochiSpeech = `STRUK RINCI TERCATAT! ${petName} bangga banget kamu jujur merinci item belanjaan! +10 Poin & +20 Stage XP!`;
   } else if (todayTotalSpend > dssl) {
     if (walletStatus === "BENGKAK") {
       mochiMood = "shocked_boros";
       petMood = "shocked_boros";
-      mochiSpeech = `Waduh?! 😱 Pengeluaran jajan hari ini lewat batas aman! Detektif ${petName} menyalakan alarm hemat!`;
+      mochiSpeech = `Waduh?! Pengeluaran jajan hari ini lewat batas aman! Detektif ${petName} menyalakan alarm hemat!`;
     } else {
       mochiMood = "worried";
       petMood = "worried";
-      mochiSpeech = `Hmm, hari ini ada pengeluaran kebutuhan penting yang lumayan besar. Besok kita bareng ${petName} lebih hemat ya! 📚🐾`;
+      mochiSpeech = `Hmm, hari ini ada pengeluaran kebutuhan penting yang lumayan besar. Besok kita bareng ${petName} lebih hemat ya!`;
     }
   } else if (todayTotalSpend >= 0.8 * dssl) {
     mochiMood = "worried";
     petMood = "worried";
-    mochiSpeech = `Hati-hati ya, jatah aman harianmu tinggal sedikit lagi. ${petName} ingatkan jangan tergoda jajan sore ini! 🧋🚫`;
+    mochiSpeech = `Hati-hati ya, jatah aman harianmu tinggal sedikit lagi. ${petName} ingatkan jangan tergoda jajan sore ini!`;
   } else if (microLeaks.length > 0) {
     mochiMood = "happy";
     petMood = "happy";
-    mochiSpeech = `Hari ini aman, tapi Detektif ${petName} mengendus bocor halus di kategori ${microLeaks[0].keywordOrCategory}! 🕵️‍♂️`;
+    mochiSpeech = `Hari ini aman, tapi Detektif ${petName} mengendus bocor halus di kategori ${microLeaks[0].keywordOrCategory}!`;
   }
 
   return {

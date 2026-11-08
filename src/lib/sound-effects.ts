@@ -216,6 +216,108 @@ class BukuDompetSynthesizer {
     osc.start(now);
     osc.stop(now + 0.17);
   }
+
+  /* ───────────── Arcade Sekolah (Versi 5.2) ───────────── */
+
+  /** Satu nada pendek; dasar semua efek arcade. `slideTo` membuat nada meluncur. */
+  private tone(ctx: AudioContext, freq: number, at: number, dur: number, type: OscillatorType, vol: number, slideTo?: number) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, at);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, at + dur);
+    gain.gain.setValueAtTime(vol, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + dur + 0.02);
+  }
+
+  /** Jawaban benar: "ting-ting!" naik. `streak` menaikkan nada agar beruntun terasa seru. */
+  arcadeCorrect(streak = 1) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const lift = Math.pow(1.0595, Math.min(6, Math.max(0, streak - 1)) * 2);
+    this.tone(ctx, 784 * lift, now, 0.1, "square", 0.12);
+    this.tone(ctx, 1046.5 * lift, now + 0.09, 0.12, "square", 0.12);
+    this.tone(ctx, 1568 * lift, now + 0.18, 0.28, "triangle", 0.2);
+  }
+
+  /** Jawaban salah: "bwoop" lembut yang turun (tidak menakutkan untuk anak). */
+  arcadeWrong() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.tone(ctx, 330, now, 0.16, "triangle", 0.2, 220);
+    this.tone(ctx, 220, now + 0.15, 0.24, "triangle", 0.18, 150);
+  }
+
+  /** Membalik kartu / memilih ubin. */
+  arcadeFlip() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    this.tone(ctx, 520, ctx.currentTime, 0.07, "square", 0.08, 900);
+  }
+
+  /** Sepasang kartu cocok. */
+  arcadeMatch() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.tone(ctx, 659.25, now, 0.1, "triangle", 0.2);
+    this.tone(ctx, 987.77, now + 0.08, 0.2, "triangle", 0.2);
+  }
+
+  /** Awal ronde: hitung mundur 3-2-1 lalu "GO!" singkat. */
+  arcadeStart() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.tone(ctx, 440, now, 0.1, "square", 0.1);
+    this.tone(ctx, 440, now + 0.16, 0.1, "square", 0.1);
+    this.tone(ctx, 659.25, now + 0.32, 0.26, "square", 0.14);
+  }
+
+  /** Lulus ronde: fanfare ceria. */
+  arcadeWin() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5, 1318.51].forEach((f, i) => {
+      this.tone(ctx, f, now + i * 0.09, i === 6 ? 0.5 : 0.12, i % 2 ? "triangle" : "square", i === 6 ? 0.22 : 0.12);
+    });
+  }
+
+  /** Naik level: arpeggio panjang + kilau. */
+  arcadeLevelUp() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [392, 523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98, 2093].forEach((f, i) => {
+      this.tone(ctx, f, now + i * 0.075, 0.18, "triangle", 0.2);
+    });
+    this.tone(ctx, 1046.5, now + 0.7, 0.7, "sine", 0.16);
+    this.tone(ctx, 1567.98, now + 0.7, 0.7, "sine", 0.12);
+  }
+
+  /** Belum lulus: dua nada turun yang ramah ("coba lagi ya"). */
+  arcadeTryAgain() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    this.tone(ctx, 392, now, 0.2, "triangle", 0.18);
+    this.tone(ctx, 294, now + 0.2, 0.34, "triangle", 0.18);
+  }
+
+  /** Peringatan sisa waktu bermain hampir habis. */
+  arcadeTimeWarning() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [880, 660, 880, 660].forEach((f, i) => this.tone(ctx, f, now + i * 0.16, 0.12, "sine", 0.16));
+  }
 }
 
 export const soundEffects = new BukuDompetSynthesizer();
