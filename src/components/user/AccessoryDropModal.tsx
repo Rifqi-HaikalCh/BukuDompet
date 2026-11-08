@@ -1,5 +1,6 @@
 "use client";
 
+import { GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useEffect, useId, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
@@ -9,7 +10,7 @@ import {
   GROWTH_STAGE_META,
 } from "@/components/illustrations/PetAvatarSystem";
 import { TactileButton } from "@/components/ui/CozyPrimitives";
-import { Sparkles, Archive } from "lucide-react";
+import { Sparkles, Archive } from "@/components/illustrations/UiGlyphs";
 
 const SVG_ATTR_ORIGIN = {
   transformBox: "view-box" as const,
@@ -107,7 +108,7 @@ export function AccessoryDropModal() {
 
           {/* Exclusive Path Drop Badge */}
           <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#FFF9E6] border-2 border-[#E5A400] text-[#4A3500] text-xs font-extrabold tracking-wide mb-3">
-            🎁 ITEM EKSKLUSIF JALUR KAS DITEMUKAN!
+            <GlyphInline name="gift" /> ITEM EKSKLUSIF JALUR KAS DITEMUKAN!
           </div>
 
           <p className="text-xs font-bold text-[#7A6E65] mb-1">

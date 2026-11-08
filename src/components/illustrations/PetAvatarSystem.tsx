@@ -55,6 +55,10 @@ import {
   type Transition,
 } from "framer-motion";
 
+import { EXTRA_AURA_REG } from "./ExtraAuras";
+import { EXTRA_BG_REG } from "./ExtraBackgrounds";
+import { EXTRA_COSMETIC_SPECS } from "./extraCosmeticSpecs";
+
 /**
  * Reset origin transformasi untuk elemen SVG biasa (bukan motion) yang memakai atribut
  * `transform="rotate/scale/..."`. Titik asal dikunci ke pojok viewBox sehingga hasilnya sama di semua
@@ -82,7 +86,20 @@ export type GrowthStage = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 /** Alias agar kode lama yang memakai `CasteStage` tetap valid. */
 export type CasteStage = GrowthStage;
 
-export type PetMood = "happy" | "proud" | "worried" | "shocked_boros";
+/**
+ * Suasana pet. `shivering_cold` = menggigil kedinginan (dipakai saat streak padam / 0 hari):
+ * mata menyipit rapat, gigi bergemeletuk, pipi membiru, telinga & ekor merapat, serta salju turun.
+ */
+export type PetMood = "happy" | "proud" | "worried" | "shocked_boros" | "shivering_cold";
+
+/** Deskripsi suasana (Bahasa Indonesia) untuk aria-label avatar. */
+export const PET_MOOD_LABEL: Readonly<Record<PetMood, string>> = {
+  happy: "senang",
+  proud: "bangga",
+  worried: "cemas",
+  shocked_boros: "kaget melihat pengeluaran boros",
+  shivering_cold: "menggigil kedinginan",
+};
 
 export type AccessorySlot = "head" | "outfit" | "face" | "neck" | "prop" | "aura" | "background";
 export type AccessorySource = "shop" | "path_drop";
@@ -158,7 +175,7 @@ export const PET_SPECIES_LIST: readonly PetSpecies[] = [
   "cloud_unicorn",
 ];
 export const GROWTH_STAGES: readonly GrowthStage[] = [1, 2, 3, 4, 5, 6, 7, 8];
-export const PET_MOODS: readonly PetMood[] = ["happy", "proud", "worried", "shocked_boros"];
+export const PET_MOODS: readonly PetMood[] = ["happy", "proud", "worried", "shocked_boros", "shivering_cold"];
 export const ACCESSORY_SLOTS: readonly AccessorySlot[] = [
   "head",
   "outfit",
@@ -263,7 +280,7 @@ export const SLOT_LABEL: Record<AccessorySlot, string> = {
 };
 
 /* ═════════════════════════════════════════════════════════════
- *  KATALOG KOSMETIK — 144 item, 18 per fase.
+ *  KATALOG KOSMETIK — 176 item (144 dasar + 32 aura/latar Butik V5.1).
  *  96 dijual di Shop, 48 eksklusif drop dari peti Peta Jalur Kas Harian.
  * ═════════════════════════════════════════════════════════════ */
 
@@ -438,10 +455,12 @@ const ACCESSORY_EXTRA: readonly AccessoryItem[] = [
   { id: "bg_city_night", name: "Atap Kota Malam Hari", slot: "background", stageRequirement: 8, pricePoints: 0, source: "path_drop", gender: "unisex", description: "Atap gedung dengan gemerlap lampu kota di kejauhan." },
 ];
 
-/** Seluruh katalog: 48 item dasar + 96 tambahan = 144 item (18 per fase; 96 Shop + 48 drop Peta Jalur Kas). */
+/** Seluruh katalog: 48 item dasar + 96 tambahan + 32 aura/latar Butik (V5.1) = 176 item. */
 export const ACCESSORY_CATALOG: readonly AccessoryItem[] = [
   ...ACCESSORY_CORE.map((a): AccessoryItem => ({ ...a, gender: CORE_GENDER[a.id] ?? "unisex" })),
   ...ACCESSORY_EXTRA,
+  // Versi 5.1: 16 aura + 16 latar tambahan, semuanya dapat dibeli di Butik.
+  ...EXTRA_COSMETIC_SPECS.map((e): AccessoryItem => ({ ...e, source: "shop", gender: "unisex" })),
 ];
 
 export type AccessoryId = (typeof ACCESSORY_CATALOG)[number]["id"];
@@ -793,6 +812,9 @@ function earSpec(mood: PetMood, side: "l" | "r", amp: number): MotionSpec {
       return { animate: { rotate: [s * 24, s * 21, s * 24] }, transition: loop(0.4) };
     case "shocked_boros":
       return { animate: { rotate: [-s * 3, s * 3, -s * 3] }, transition: loop(0.25) };
+    case "shivering_cold":
+      // telinga merapat dan bergetar cepat
+      return { animate: { rotate: [s * 16, s * 19, s * 16] }, transition: loop(0.11) };
     default:
       return {
         animate: { rotate: [0, s * 10, 0, 0] },
@@ -844,6 +866,7 @@ const TAIL_RIG: Record<PetMood, MotionSpec> = {
   proud: { animate: { rotate: [-14, 16, -14] }, transition: loop(0.45) },
   worried: { animate: { rotate: [20, 25, 20] }, transition: loop(0.4) },
   shocked_boros: { animate: { rotate: [-12, -7, -12] }, transition: loop(0.25) },
+  shivering_cold: { animate: { rotate: [26, 31, 26] }, transition: loop(0.1) },
 };
 
 /** Pembungkus ekor: bergoyang sesuai mood; titik putar default di pangkal ekor (kiri-bawah bbox). */
@@ -1059,6 +1082,27 @@ function Eyes({ spec, mood, stage }: { spec: FaceSpec; mood: PetMood; stage: Gro
     );
   }
 
+  if (mood === "shivering_cold") {
+    // Mata menyipit rapat ("> <") dengan geometri dihitung langsung (tanpa mirror transform)
+    return (
+      <g>
+        {pts.map(([[x, y], side]) => {
+          const dir = side === "l" ? 1 : -1;
+          return (
+            <g key={side}>
+              <path
+                d={`M${f2(x - 12 * k * dir)} ${f2(y - 9 * k)} L${f2(x + 8 * k * dir)} ${f2(y)} L${f2(x - 12 * k * dir)} ${f2(y + 9 * k)}`}
+                fill="none"
+                {...O}
+              />
+              <ellipse cx={x} cy={y + 15 * k} rx={5 * k} ry={2.4 * k} fill={C.skySoft} opacity={0.85} />
+            </g>
+          );
+        })}
+      </g>
+    );
+  }
+
   if (mood === "shocked_boros") {
     return (
       <g>
@@ -1094,6 +1138,14 @@ function Brows({ spec, mood, stage }: { spec: FaceSpec; mood: PetMood; stage: Gr
       <motion.g animate={{ y: [0, 1.5, 0] }} transition={loop(0.8)}>
         <path d={`M${eyeL[0] - 20} ${browY + 8} Q${eyeL[0] - 4} ${browY + 2} ${eyeL[0] + 14} ${browY - 8}`} fill="none" {...O} />
         <path d={`M${eyeR[0] + 20} ${browY + 8} Q${eyeR[0] + 4} ${browY + 2} ${eyeR[0] - 14} ${browY - 8}`} fill="none" {...O} />
+      </motion.g>
+    );
+  }
+  if (mood === "shivering_cold") {
+    return (
+      <motion.g animate={{ y: [0, 1, 0] }} transition={loop(0.1)}>
+        <path d={`M${eyeL[0] - 18} ${browY + 6} Q${eyeL[0] - 2} ${browY + 2} ${eyeL[0] + 14} ${browY - 6}`} fill="none" {...O} />
+        <path d={`M${eyeR[0] + 18} ${browY + 6} Q${eyeR[0] + 2} ${browY + 2} ${eyeR[0] - 14} ${browY - 6}`} fill="none" {...O} />
       </motion.g>
     );
   }
@@ -1210,6 +1262,22 @@ function Mouth({ spec, mood, uid }: { spec: FaceSpec; mood: PetMood; uid: string
           transition={loop(0.35)}
         />
       );
+    case "shivering_cold": {
+      // Gigi bergemeletuk: zig-zag rapat yang bergetar
+      const step = 5.4;
+      let d = `M${f2(cx - step * 3)} ${f2(y + 3)}`;
+      for (let i = 0; i < 6; i++) d += ` l${step} ${i % 2 === 0 ? -6 : 6}`;
+      return (
+        <motion.path
+          d={d}
+          fill="none"
+          {...O}
+          strokeWidth={3}
+          animate={{ y: [0, 1.4, 0] }}
+          transition={loop(0.08)}
+        />
+      );
+    }
     case "shocked_boros":
       return (
         <motion.g style={fb(0.5, 0)} animate={{ scaleY: [1, 1.1, 1] }} transition={loop(0.4)}>
@@ -1234,12 +1302,19 @@ function Mouth({ spec, mood, uid }: { spec: FaceSpec; mood: PetMood; uid: string
 
 function Cheeks({ spec, mood, stage }: { spec: FaceSpec; mood: PetMood; stage: GrowthStage }) {
   const { cheekY, cheekDX, cheekColor } = spec;
-  const base = mood === "happy" || mood === "proud" ? 0.75 : mood === "worried" ? 0.3 : 0;
+  const base =
+    mood === "happy" || mood === "proud"
+      ? 0.75
+      : mood === "shivering_cold"
+      ? 0.85
+      : mood === "worried"
+      ? 0.3
+      : 0;
   const o = stage === 3 ? Math.min(1, base + 0.2) : base;
   const rx = stage === 3 ? 20 : stage === 2 ? 17 : 15;
   const ry = stage === 3 ? 12 : stage === 2 ? 10 : 9;
   return (
-    <g fill={cheekColor}>
+    <g fill={mood === "shivering_cold" ? C.skySoft : cheekColor}>
       {[200 - cheekDX, 200 + cheekDX].map((x) => (
         <motion.ellipse
           key={x}
@@ -4118,7 +4193,6 @@ function AbWarmRoom({ uid }: { uid: string }) {
 
       {/* karpet lembut */}
       <ellipse cx={200} cy={376} rx={150} ry={17} fill={C.taroSoft} opacity={0.5} />
-      <ellipse cx={200} cy={376} rx={128} ry={12} fill="none" stroke={C.cream} strokeWidth={3} strokeDasharray="7 8" strokeLinecap="round" opacity={0.7} />
 
       {/* berkas cahaya jendela */}
       <motion.polygon
@@ -4507,7 +4581,6 @@ function AbLibrary({ uid }: { uid: string }) {
 
       {/* karpet */}
       <ellipse cx={200} cy={380} rx={156} ry={20} fill={C.peach} opacity={0.55} />
-      <ellipse cx={200} cy={380} rx={140} ry={15} fill="none" stroke={C.cream} strokeWidth={3} strokeDasharray="6 8" strokeLinecap="round" opacity={0.7} />
       <ellipse cx={200} cy={380} rx={156} ry={20} fill="none" stroke={INK} strokeWidth={2.6} opacity={0.35} />
 
       <AbMote x={150} y={150} d={0.2} />
@@ -9266,6 +9339,7 @@ const MOOD_MOTION: Record<PetMood, MotionSpec> = {
   proud: { animate: { y: [0, -7, 0] }, transition: loop(0.55) },
   worried: { animate: { y: [0, 2, 0], x: [0, -1, 0] }, transition: loop(1.6) },
   shocked_boros: { animate: { x: [-2, 2, -2], y: [0, -1, 0] }, transition: loop(0.2) },
+  shivering_cold: { animate: { x: [-1.8, 1.8, -1.8], y: [0, 0.8, 0] }, transition: loop(0.09) },
 };
 
 function PetMotion({ mood, children }: { mood: PetMood; children: ReactNode }) {
@@ -9302,6 +9376,28 @@ function Exclaim({ x, y, delay = 0 }: { x: number; y: number; delay?: number }) 
     </motion.g>
   );
 }
+
+/** Kristal salju 6 sisi (koordinat dibulatkan agar SSR dan CSR identik). */
+function snowflakePath(r: number): string {
+  let d = "";
+  for (let i = 0; i < 3; i++) {
+    const a = (Math.PI / 3) * i;
+    d += `M${f2(-r * Math.cos(a))} ${f2(-r * Math.sin(a))} L${f2(r * Math.cos(a))} ${f2(r * Math.sin(a))} `;
+  }
+  return d.trim();
+}
+
+/** Posisi butiran salju tetap (deterministik, tanpa Math.random). */
+const SNOW_FLAKES: readonly { x: number; y: number; r: number; dur: number; delay: number; drift: number }[] = [
+  { x: 64, y: 72, r: 7, dur: 3.2, delay: 0, drift: 10 },
+  { x: 100, y: 56, r: 5, dur: 2.8, delay: 0.7, drift: -8 },
+  { x: 120, y: 90, r: 4, dur: 3.5, delay: 1.4, drift: 6 },
+  { x: 282, y: 90, r: 4, dur: 3, delay: 0.3, drift: -6 },
+  { x: 304, y: 58, r: 5, dur: 3.3, delay: 1.1, drift: 8 },
+  { x: 338, y: 74, r: 7, dur: 2.9, delay: 1.8, drift: -10 },
+  { x: 82, y: 120, r: 4, dur: 2.6, delay: 2.1, drift: 6 },
+  { x: 322, y: 118, r: 4, dur: 2.7, delay: 0.5, drift: -6 },
+];
 
 function MoodOverlay({ mood }: { mood: PetMood }) {
   switch (mood) {
@@ -9357,6 +9453,47 @@ function MoodOverlay({ mood }: { mood: PetMood }) {
             animate={{ y: [0, 10], opacity: [1, 0] }}
             transition={{ duration: 1.4, repeat: Infinity, ease: "easeIn" }}
           />
+        </g>
+      );
+    case "shivering_cold":
+      return (
+        <g pointerEvents="none">
+          {/* Garis getar di kiri-kanan badan */}
+          <motion.g
+            animate={{ opacity: [1, 0.25, 1] }}
+            transition={loop(0.22)}
+            fill="none"
+            stroke={C.skyDark}
+            strokeWidth={3.4}
+            strokeLinecap="round"
+          >
+            <path d="M104 214 l-12 -6 M102 238 l-16 0 M106 262 l-12 6" />
+            <path d="M296 214 l12 -6 M298 238 l16 0 M294 262 l12 6" />
+          </motion.g>
+          {/* Butiran salju jatuh (posisi tetap, tidak acak) */}
+          {SNOW_FLAKES.map((f, i) => (
+            <motion.g
+              key={i}
+              animate={{ y: [0, 210], x: [0, f.drift], opacity: [0, 1, 1, 0] }}
+              transition={{ duration: f.dur, repeat: Infinity, ease: "linear", delay: f.delay }}
+            >
+              <g transform={`translate(${f.x} ${f.y})`} style={SVG_ATTR_ORIGIN}>
+                <path d={snowflakePath(f.r)} fill="none" stroke={C.skyDark} strokeWidth={2.2} strokeLinecap="round" />
+                <circle cx={0} cy={0} r={f.r * 0.22} fill={C.cream} />
+              </g>
+            </motion.g>
+          ))}
+          {/* Uap napas dingin */}
+          <motion.g
+            animate={{ y: [0, -16], x: [0, -10], opacity: [0.9, 0] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "easeOut" }}
+          >
+            <path
+              d="M96 250 Q84 250 84 240 Q84 230 96 230 Q100 220 112 224 Q124 220 126 232 Q136 236 130 246 Q126 252 114 250Z"
+              fill={C.cream}
+              {...O25}
+            />
+          </motion.g>
         </g>
       );
     case "shocked_boros":
@@ -9614,13 +9751,13 @@ function OutfitPreviewAny({ id, uid }: { id: string; uid: string }) {
 }
 
 function AuraAny({ id, cy, uid }: { id: string; cy: number; uid: string }) {
-  const Aura = AURA_REG[id];
+  const Aura = AURA_REG[id] ?? EXTRA_AURA_REG[id];
   if (Aura) return <Aura cy={cy} uid={uid} />;
   return <AuraItem id={id} cy={cy} uid={uid} />;
 }
 
 function BackgroundAny({ id, uid }: { id: string; uid: string }) {
-  const Bg = BG_REG[id];
+  const Bg = BG_REG[id] ?? EXTRA_BG_REG[id];
   if (Bg) return <Bg uid={uid} />;
   return <BackgroundItem id={id} uid={uid} />;
 }
@@ -10071,7 +10208,7 @@ export const CustomizablePetAvatar = memo(function CustomizablePetAvatar({
 
   const ariaLabel = locked
     ? `Siluet rahasia: ${info.name} fase ${stage} belum terbuka`
-    : `${name}, ${info.name}, fase ${stage} ${stageInfo.name}, suasana ${effMood.replace("_", " ")}`;
+    : `${name}, ${info.name}, fase ${stage} ${stageInfo.name}, suasana ${PET_MOOD_LABEL[effMood]}`;
 
   const lower = (
     <PetMotion mood={effMood}>

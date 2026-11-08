@@ -1,9 +1,11 @@
 "use client";
 
+import { ChipScroller } from "@/components/ui/ChipScroller";
 import React, { useState } from "react";
 import { Drawer } from "vaul";
-import { X } from "lucide-react";
+import { X } from "@/components/illustrations/UiGlyphs";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
+import { pickViewedChild } from "@/lib/active-child";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import {
   TactileButton,
@@ -11,12 +13,15 @@ import {
   RollingNumber,
   formatRupiah,
 } from "@/components/ui/CozyPrimitives";
-import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
-import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
+import { PointTransferModal } from "@/components/ui/PointTransferModal";
+import { FamilyAvatar } from "@/components/family/FamilyAvatar";
+import { soundEffects } from "@/lib/sound-effects";
 
 export function PointCashoutModal() {
   const {
     activeProfileId,
+    currentRole,
+    monitoredUserId,
     isCashoutModalOpen,
     setCashoutModalOpen,
     profiles,
@@ -24,10 +29,7 @@ export function PointCashoutModal() {
     requestPointCashout,
   } = useBukuDompetStore();
 
-  const userProfile =
-    profiles.find((p) => p.id === activeProfileId && p.role === "user") ||
-    profiles.find((p) => p.role === "user") ||
-    profiles[0];
+  const userProfile = pickViewedChild({ currentRole, activeProfileId, monitoredUserId, profiles });
 
   const [pointsInput, setPointsInput] = useState<string>("5000");
   const [noteInput, setNoteInput] = useState<string>(
@@ -41,42 +43,43 @@ export function PointCashoutModal() {
     setConfirmOpen(true);
   };
 
+  const [lastOk, setLastOk] = useState<boolean>(false);
+  const adminProfile = profiles.find((p) => p.role === "admin") ?? null;
+
   const executeCashout = () => {
     const pts = Number(pointsInput) || 0;
     const res = requestPointCashout(pts, noteInput);
-    setFeedback(res.message);
-    if (res.success) {
-      soundEffects.comboFanfare();
-      fireCozyConfetti("combo");
-      setTimeout(() => {
-        setFeedback(null);
-        setCashoutModalOpen(false);
-      }, 1800);
-    } else {
-      soundEffects.detectiveBuzz();
-    }
+    setLastOk(res.success);
+    setFeedback(res.success ? null : res.message);
+    return res;
   };
 
   return (
     <>
-      <CozyConfirmModal
+      <PointTransferModal
         open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        onConfirm={executeCashout}
-        title={`Cetak Tiket Pencairan ${formatRupiah(Number(pointsInput) || 0)}?`}
-        description={`Kamu akan menukarkan ${(
-          Number(pointsInput) || 0
-        ).toLocaleString(
-          "id-ID"
-        )} Poin menjadi saldo uang asli Rp${(
-          Number(pointsInput) || 0
-        ).toLocaleString(
-          "id-ID"
-        )}. Tiket akan dikirim ke Abang (Admin) untuk disetujui.`}
+        onClose={() => {
+          setConfirmOpen(false);
+          if (lastOk) {
+            setLastOk(false);
+            setCashoutModalOpen(false);
+          }
+        }}
+        mode="cashout"
+        from={{ name: userProfile.display_name.split(" ")[0], visual: <FamilyAvatar profile={userProfile} size={64} /> }}
+        to={{
+          name: "Abang (Admin)",
+          visual: adminProfile ? (
+            <FamilyAvatar profile={adminProfile} size={64} />
+          ) : (
+            <CozyIcon name="rewards_ticket" size={56} />
+          ),
+        }}
+        amount={Number(pointsInput) || 0}
+        fromBalance={userProfile.points_balance}
+        execute={executeCashout}
         confirmLabel="Ya, Cetak Tiket!"
-        confirmVariant="honey"
-        mochiMood="proud_combo"
-        badgeText="Kurs Jujur: 1 Poin = Rp 1"
+        receiveNote={`Tiket ${formatRupiah(Number(pointsInput) || 0)} (1 Poin = Rp 1)`}
       />
 
       <Drawer.Root
@@ -150,7 +153,7 @@ export function PointCashoutModal() {
                     onChange={(e) => setPointsInput(e.target.value)}
                     className="w-full px-4 py-3 rounded-2xl border-2 border-[#E6DFD2] bg-white font-display font-extrabold tabular-nums text-lg text-[#3D352E] focus:outline-none focus:border-[#FFC800]"
                   />
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  <ChipScroller label="Nominal tukar cepat" className="mt-2">
                     {[2000, 5000, 10000, userProfile.points_balance].map(
                       (preset, idx) =>
                         preset >= 1000 && (
@@ -169,7 +172,7 @@ export function PointCashoutModal() {
                           </button>
                         )
                     )}
-                  </div>
+                  </ChipScroller>
                 </div>
 
                 <div>

@@ -1,63 +1,60 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { MochiLoadingHop } from "@/components/illustrations/BukuDompetLogo";
+import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 
-const COZY_FINANCE_TIPS = [
-  "Mencatat minimal 2 item rincian memberimu +35 Poin (Rp35) otomatis!",
-  "1 Poin di BukuDompet bernilai Rp 1 asli yang bisa dicairkan!",
-  "Hari tanpa jajan impulsif tetap menjaga api Streak menyala!",
-  "Detektif Mochi membantumu mendeteksi bocor halus sebelum dompet tipis!",
-  "Mochi berevolusi dari Mochi Kardus hingga Sultan Mochi Jutawan!",
-];
+/** Lama minimal overlay tetap terlihat setelah halaman tujuan siap, agar tidak berkedip. */
+const MIN_VISIBLE_AFTER_NAV_MS = 260;
 
+/**
+ * Overlay loading global (Versi 5.0).
+ *
+ * Dinyalakan SEKETIKA saat onClick lewat `triggerActionLoading()` (nav, tombol brankas,
+ * `TactileButton showLoadingOnClick`), bukan menunggu halaman selesai dimuat. Dimatikan saat
+ * rute berganti (navigasi tuntas) atau oleh timer pengaman di store.
+ */
 export function PageTransitionLoader() {
   const pathname = usePathname();
-  const prevPathRef = useRef<string>(pathname);
-  const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
-  const [tipIndex, setTipIndex] = useState<number>(0);
+  const isActionLoading = useBukuDompetStore((s) => s.isActionLoading);
+  const clearActionLoading = useBukuDompetStore((s) => s.clearActionLoading);
 
   useEffect(() => {
-    if (prevPathRef.current !== pathname) {
-      prevPathRef.current = pathname;
-      setTipIndex((prev) => (prev + 1) % COZY_FINANCE_TIPS.length);
-      setIsTransitioning(true);
-      const timer = setTimeout(() => {
-        setIsTransitioning(false);
-      }, 360);
-      return () => clearTimeout(timer);
-    }
-  }, [pathname]);
+    // Rute berubah = navigasi selesai. Beri jeda singkat lalu matikan overlay.
+    const timer = setTimeout(() => clearActionLoading(), MIN_VISIBLE_AFTER_NAV_MS);
+    return () => clearTimeout(timer);
+  }, [pathname, clearActionLoading]);
 
   return (
     <AnimatePresence>
-      {isTransitioning && (
+      {isActionLoading && (
         <motion.div
-          key={pathname}
+          key="action-loading"
+          data-testid="action-loading-overlay"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.16 }}
-          className="fixed inset-0 z-[110] bg-[#FFFDF9]/90 backdrop-blur-xs flex flex-col items-center justify-center p-6 pointer-events-none"
+          transition={{ duration: 0.12 }}
+          className="fixed inset-0 z-[100] backdrop-blur-md bg-[#FFFDF7]/65 flex items-center justify-center p-6"
+          aria-busy="true"
         >
-          <motion.div
-            initial={{ scale: 0.9, y: 8 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.94, y: -6 }}
-            className="rounded-3xl bg-white border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] px-6 py-5 flex flex-col items-center text-center max-w-sm shadow-lg"
-          >
-            <MochiLoadingHop
-              message="Melompat ke halaman..."
-              className="w-40"
-            />
-            <p className="text-xs font-bold text-[#7A6E65] mt-2">
-              {COZY_FINANCE_TIPS[tipIndex]}
-            </p>
-          </motion.div>
+          <MochiLoadingHop message="Melompat ke halaman..." className="w-48 sm:w-56" />
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+/** Layar pemuat penuh untuk menunggu hidrasi store (render pertama = HTML server). */
+export function HydrationSplash() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center p-6 bg-[#FFFDF7]"
+      data-testid="hydration-splash"
+    >
+      <MochiLoadingHop message="Menyiapkan Jurnal Kas Mochi..." className="w-48 sm:w-56" />
+    </div>
   );
 }

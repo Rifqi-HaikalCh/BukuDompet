@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'supervisor', 'user')),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'supervisor', 'user', 'schoolchild')),
   pin_code TEXT NOT NULL DEFAULT '1234',
   avatar_theme TEXT DEFAULT 'mochi-cat',
   xp INT NOT NULL DEFAULT 0,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS supervisor_assignments (
 CREATE TABLE IF NOT EXISTS transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+  type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'saving')),
   category TEXT NOT NULL,
   need_or_want TEXT NOT NULL CHECK (need_or_want IN ('need', 'want', 'income')),
   title TEXT NOT NULL,

@@ -1,3 +1,4 @@
+import { AppProviders } from "@/components/ui/AppProviders";
 import { UserAppShell } from "@/components/user/UserAppShell";
 
 export default function AppLayout({
@@ -5,5 +6,9 @@ export default function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <UserAppShell>{children}</UserAppShell>;
+  return (
+    <AppProviders auth="required">
+      <UserAppShell>{children}</UserAppShell>
+    </AppProviders>
+  );
 }

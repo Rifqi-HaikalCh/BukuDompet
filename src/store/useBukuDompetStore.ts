@@ -23,9 +23,25 @@ import {
   PET_SPECIES_SHOP_PRICES,
 } from "@/lib/spending-detective";
 import { pickPathDropItem } from "@/lib/path-drop";
+import { localDateStr } from "@/lib/dates";
+import { evaluateStreakContinuity, nextStreakOnRecord } from "@/lib/streak";
+import {
+  MAX_PAID_SHIELDS,
+  SHIELD_PACK_BY_ID,
+  freeShieldsFor,
+  monthKeyOf,
+  monthlyFreeFields,
+  spendShields,
+  type ShieldPackId,
+} from "@/lib/streak-shields";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export type UserRole = "user" | "supervisor" | "admin";
+export type UserRole = "user" | "supervisor" | "admin" | "schoolchild";
+
+/** Peran yang punya Pet, Streak, Poin dan Buku Kas/Cerita sendiri (User dewasa/remaja & Anak SD). */
+export function isChildRole(role: UserRole | undefined | null): boolean {
+  return role === "user" || role === "schoolchild";
+}
 
 export interface SupervisorCheerSticker {
   id: string;
@@ -72,11 +88,23 @@ export interface ProfileData {
   lifetime_points: number;
   current_streak: number;
   longest_streak: number;
+  /** Perisai Es hasil beli (disimpan sampai terpakai, maks. 10). */
   streak_freeze_count: number;
+  /** Versi 5.1: sisa perisai GRATIS bulan `free_shield_month` (jatah 3 per bulan, hangus tiap pergantian bulan). */
+  free_shield_left?: number;
+  free_shield_month?: string;
   last_recorded_date: string;
   last_daily_claim_date?: string;
   monthly_budget_target: number;
   monthly_saving_target: number;
+  /** Versi 5.0: Mode Streak Padam. true = streak putus, seluruh aplikasi bersuasana dingin. */
+  isColdStreakMode?: boolean;
+  /** Tanggal terakhir streak menjadi 0 (untuk pesan pengingat). */
+  coldSince?: string;
+  /** Tanggal terakhir evaluasi streak dijalankan (cegah evaluasi ganda dalam sehari). */
+  lastStreakCheckDate?: string;
+  /** Hanya dipakai tombol uji "Streak Padam": streak sebelum diuji, dipulihkan saat dihangatkan lagi. */
+  streakBeforeCold?: number;
 }
 
 export interface SupervisorAssignment {
@@ -145,9 +173,8 @@ export interface UnboxedAccessoryDropState {
 }
 
 function getRelativeDateStr(daysOffset: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + daysOffset);
-  return d.toISOString().split("T")[0];
+  // Zona waktu lokal (bukan UTC) agar pergantian hari tepat tengah malam waktu pengguna.
+  return localDateStr(daysOffset);
 }
 
 export const USER_1_ID = "11111111-1111-4111-8111-111111111111"; // Adik Rara
@@ -156,6 +183,7 @@ export const USER_3_ID = "11111111-1111-4111-8111-333333333333"; // Sepupu Citra
 export const SUPERVISOR_1_ID = "22222222-2222-4222-8222-222222222222"; // Ayah & Ibu
 export const SUPERVISOR_2_ID = "22222222-2222-4222-8222-333333333333"; // Bibi Ratna (Wali)
 export const ADMIN_ID = "99999999-9999-4999-8999-999999999999"; // Abang Admin
+export const SCHOOLCHILD_1_ID = "11111111-1111-4111-8111-444444444444"; // Adik Kecil (Kelas 3 SD)
 
 export const INITIAL_SUPERVISOR_ASSIGNMENTS: SupervisorAssignment[] = [
   // Ayah & Ibu memantau Adik Rara & Adik Bima
@@ -164,6 +192,8 @@ export const INITIAL_SUPERVISOR_ASSIGNMENTS: SupervisorAssignment[] = [
   // Bibi Ratna (Wali) memantau Sepupu Citra & Adik Rara
   { supervisorId: SUPERVISOR_2_ID, userId: USER_3_ID },
   { supervisorId: SUPERVISOR_2_ID, userId: USER_1_ID },
+  // Orang Tua juga memantau Adik Kecil (Kelas 3 SD)
+  { supervisorId: SUPERVISOR_1_ID, userId: SCHOOLCHILD_1_ID },
 ];
 
 export const INITIAL_PROFILES: ProfileData[] = [
@@ -213,7 +243,7 @@ export const INITIAL_PROFILES: ProfileData[] = [
       {
         id: "cheer-seed-1",
         fromSupervisorName: "Ayah & Ibu (Orang Tua)",
-        stickerLabel: "Stiker Bintang Kebanggaan Keluarga 🌟",
+        stickerLabel: "Stiker Bintang Kebanggaan Keluarga",
         message: "Bangga banget lihat catatan kas Rara minggu ini rapi & jujur!",
         sentAt: getRelativeDateStr(-1),
       },
@@ -336,6 +366,45 @@ export const INITIAL_PROFILES: ProfileData[] = [
     last_daily_claim_date: getRelativeDateStr(-1),
     monthly_budget_target: 1500000,
     monthly_saving_target: 300000,
+  },
+  {
+    id: SCHOOLCHILD_1_ID,
+    username: "adik_sd",
+    display_name: "Adik Kecil (Kelas 3 SD)",
+    role: "schoolchild",
+    pin_code: "3333",
+    avatar_theme: "mochi-cat",
+    xp: 180,
+    level: 2,
+    currentStage: 2, // Menetas Imut
+    stageXp: 120,
+    stageRecordedDays: 3,
+    petCustomName: "Kumo",
+    activeSpecies: "hamster_cheek",
+    unlockedSpecies: ["hamster_cheek"],
+    ownedPets: {
+      hamster_cheek: {
+        species: "hamster_cheek",
+        customName: "Kumo",
+        currentStage: 2,
+        stageXp: 120,
+        stageRecordedDays: 3,
+        unlockedAt: getRelativeDateStr(-4),
+      },
+    },
+    ownedAccessories: ["head_straw_hat", "bg_warm_room"],
+    equippedAccessories: { head: "head_straw_hat", background: "bg_warm_room" },
+    claimedPathMilestones: [],
+    supervisorCheers: [],
+    points_balance: 90,
+    lifetime_points: 90,
+    current_streak: 4,
+    longest_streak: 4,
+    streak_freeze_count: 1,
+    // Kemarin sudah menulis cerita -> hari ini belum, jadi beranda menampilkan pengingat.
+    last_recorded_date: getRelativeDateStr(-1),
+    monthly_budget_target: 150000,
+    monthly_saving_target: 50000,
   },
   {
     id: SUPERVISOR_1_ID,
@@ -1172,6 +1241,71 @@ function evaluateGrowthProgression(
   };
 }
 
+/**
+ * Terapkan hadiah (Poin + Stage XP) ke satu profil secara murni.
+ * `continueStreak` menyambung streak hanya jika hari ini belum tercatat; hasilnya juga
+ * mematikan Mode Streak Padam karena pengguna sudah kembali mencatat.
+ */
+function applyRewardToProfile(
+  prof: ProfileData,
+  points: number,
+  xp: number,
+  continueStreak: boolean,
+  today: string
+): {
+  next: ProfileData;
+  promoted: boolean;
+  newStreak: number;
+  newLevel: number;
+  nextStage: GrowthStage;
+} {
+  let newStreak = prof.current_streak;
+  let addedDays = 0;
+  let lastRecorded = prof.last_recorded_date;
+  let continued = false;
+
+  if (continueStreak && prof.last_recorded_date !== today) {
+    newStreak = nextStreakOnRecord(
+      prof.last_recorded_date,
+      prof.current_streak,
+      today
+    );
+    addedDays = 1;
+    lastRecorded = today;
+    continued = true;
+  }
+
+  const newXp = prof.xp + xp;
+  const { level: newLevel } = getLevelFromXp(newXp);
+  const growth = evaluateGrowthProgression(prof, xp, addedDays);
+
+  const next: ProfileData = {
+    ...prof,
+    xp: newXp,
+    level: newLevel,
+    currentStage: growth.nextStage,
+    stageXp: growth.nextStageXp,
+    stageRecordedDays: growth.nextStageDays,
+    ownedPets: growth.nextOwnedPets,
+    points_balance: prof.points_balance + points,
+    lifetime_points: prof.lifetime_points + Math.max(0, points),
+    current_streak: newStreak,
+    longest_streak: Math.max(prof.longest_streak, newStreak),
+    last_recorded_date: lastRecorded,
+    isColdStreakMode: continued ? false : prof.isColdStreakMode,
+    coldSince: continued ? undefined : prof.coldSince,
+    streakBeforeCold: continued ? undefined : prof.streakBeforeCold,
+  };
+
+  return {
+    next,
+    promoted: growth.promoted,
+    newStreak,
+    newLevel,
+    nextStage: growth.nextStage,
+  };
+}
+
 interface BukuDompetState {
   // Active Session Role & Multi-User Context
   currentRole: UserRole;
@@ -1202,6 +1336,9 @@ interface BukuDompetState {
   isTransactionDrawerOpen: boolean;
   isCashoutModalOpen: boolean;
   isStreakCalendarOpen: boolean;
+  /** Versi 5.0: modal Tulis Cerita (Anak SD) & Catat Tabungan. */
+  isStoryModalOpen: boolean;
+  isSavingsModalOpen: boolean;
   unboxedAccessoryDrop: UnboxedAccessoryDropState | null;
 
   // FX & Celebrations
@@ -1210,6 +1347,16 @@ interface BukuDompetState {
   particleBurstType: "coin" | "xp" | "both";
   celebrationModal: CelebrationModalState | null;
   supabaseConnected: boolean;
+
+  // Versi 5.0: sesi permanen, kartu profil tersimpan, dan overlay loading global
+  /** Sesi permanen: tetap true sampai pengguna menekan Keluar. Disimpan di localStorage. */
+  isLoggedIn: boolean;
+  /** Versi 5.1: Supervisor sudah memilih anak yang dipantau pada sesi masuk ini (false setiap login baru). */
+  supervisorChildChosen: boolean;
+  /** Daftar ID akun yang pernah masuk di perangkat ini (Kartu Profil Tersimpan). */
+  savedProfileIds: string[];
+  /** Overlay loading global; dinyalakan saat onClick, bukan saat halaman selesai dimuat. */
+  isActionLoading: boolean;
 
   // Auth & Multi-User RBAC Actions
   loginWithCredentials: (
@@ -1227,6 +1374,52 @@ interface BukuDompetState {
   ) => { success: boolean; message?: string };
   switchRoleDirect: (role: UserRole, profileId?: string) => void;
   setMonitoredUserId: (userId: string) => void;
+  /** Versi 5.1: pilih anak yang dipantau dari halaman "Pilih Anak" Supervisor. */
+  chooseMonitoredChild: (userId: string) => void;
+  /** Keluar dari sesi (kartu profil tersimpan tetap ada). */
+  logout: () => void;
+  /** Lupakan kartu profil dari perangkat ini. */
+  forgetSavedProfile: (profileId: string) => void;
+  /** Nyalakan overlay loading seketika (dipanggil di onClick). `autoHideMs` menjadi pengaman. */
+  triggerActionLoading: (autoHideMs?: number) => void;
+  clearActionLoading: () => void;
+
+  // Versi 5.0: Streak ketat & Mode Streak Padam
+  /** Evaluasi semua profil anak/user terhadap tanggal hari ini. Idempoten per hari. */
+  runStreakEvaluation: () => void;
+  /** Tombol uji/demo: nyalakan atau matikan suasana dingin untuk satu profil. */
+  setColdStreakMode: (profileId: string, cold: boolean) => void;
+  /**
+   * Beri hadiah generik (Poin + Stage XP) ke profil, opsional sekaligus menyambung streak.
+   * Dipakai Cerita Harian, Arcade, Misi Katalog, Tabungan, dan Hadiah Poin dari keluarga.
+   */
+  awardReward: (payload: {
+    profileId?: string;
+    points: number;
+    xp: number;
+    title: string;
+    subtitle?: string;
+    continueStreak?: boolean;
+    isCombo?: boolean;
+  }) => { promoted: boolean; newStreak: number };
+  /** Pindahkan Poin dari satu profil ke profil lain (Hadiah Poin di Beranda Keluarga). */
+  transferPoints: (
+    fromProfileId: string,
+    toProfileId: string,
+    points: number
+  ) => { success: boolean; message: string };
+  /** Catat setoran tabungan sebagai transaksi `saving` (bukan pengeluaran). */
+  addSavingDeposit: (payload: {
+    profileId?: string;
+    amount: number;
+    goalName: string;
+    category: string;
+  }) => {
+    success: boolean;
+    message: string;
+    pointsEarned: number;
+    xpEarned: number;
+  };
 
   // Admin Account Management & Supervisor Assignment Actions
   registerNewAccount: (payload: {
@@ -1237,6 +1430,8 @@ interface BukuDompetState {
     monthlyBudgetTarget?: number;
     monthlySavingTarget?: number;
     petCustomName?: string;
+    /** Untuk peran `schoolchild`: Supervisor yang otomatis memantau akun baru ini. */
+    supervisorId?: string;
   }) => { success: boolean; message: string; newProfileId?: string };
   toggleSupervisorAssignment: (supervisorId: string, userId: string) => void;
 
@@ -1244,6 +1439,8 @@ interface BukuDompetState {
   setTransactionDrawerOpen: (open: boolean) => void;
   setCashoutModalOpen: (open: boolean) => void;
   setStreakCalendarOpen: (open: boolean) => void;
+  setStoryModalOpen: (open: boolean) => void;
+  setSavingsModalOpen: (open: boolean) => void;
   closeUnboxedAccessoryModal: () => void;
   clearRewardToast: () => void;
   closeCelebrationModal: () => void;
@@ -1274,7 +1471,7 @@ interface BukuDompetState {
   equipMochiStage: (stage: MochiStage | null) => void;
   equipSpecialTitle: (title: string) => void;
   petMochiForAffection: () => { xpEarned: number; leveledUp: boolean };
-  buyStreakFreezeShield: () => { success: boolean; message: string };
+  buyStreakFreezeShield: (packId?: ShieldPackId) => { success: boolean; message: string };
 
   // Core Gamification & Cashbook Actions
   addTransaction: (payload: {
@@ -1351,6 +1548,9 @@ interface BukuDompetState {
   syncWithSupabaseIfAvailable: () => Promise<void>;
 }
 
+/** Token pemicu overlay loading terakhir (mencegah timer lama mematikan overlay milik klik baru). */
+let loadingToken = 0;
+
 async function trySupabaseInsert(table: string, row: Record<string, unknown>) {
   try {
     if (
@@ -1372,18 +1572,18 @@ function getActiveUserProfile(state: {
   monitoredUserId: string;
   profiles: ProfileData[];
 }): ProfileData {
-  if (state.currentRole === "user") {
+  if (isChildRole(state.currentRole)) {
     const found = state.profiles.find(
-      (p) => p.id === state.activeProfileId && p.role === "user"
+      (p) => p.id === state.activeProfileId && isChildRole(p.role)
     );
     if (found) return found;
   }
   const monitored = state.profiles.find(
-    (p) => p.id === state.monitoredUserId && p.role === "user"
+    (p) => p.id === state.monitoredUserId && isChildRole(p.role)
   );
   if (monitored) return monitored;
   return (
-    state.profiles.find((p) => p.role === "user") || INITIAL_PROFILES[0]
+    state.profiles.find((p) => isChildRole(p.role)) || INITIAL_PROFILES[0]
   );
 }
 
@@ -1432,12 +1632,18 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       isTransactionDrawerOpen: false,
       isCashoutModalOpen: false,
       isStreakCalendarOpen: false,
+      isStoryModalOpen: false,
+      isSavingsModalOpen: false,
       unboxedAccessoryDrop: null,
       rewardToast: null,
       particleBurstKey: 0,
       particleBurstType: "both",
       celebrationModal: null,
       supabaseConnected: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      isLoggedIn: false,
+      supervisorChildChosen: false,
+      savedProfileIds: [],
+      isActionLoading: false,
 
       loginWithCredentials: (username, pin) => {
         const state = get();
@@ -1464,7 +1670,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         }
 
         let nextMonitoredUserId = state.monitoredUserId;
-        if (profile.role === "user") {
+        if (isChildRole(profile.role)) {
           nextMonitoredUserId = profile.id;
         } else if (profile.role === "supervisor") {
           const assigned = state.supervisorAssignments.find(
@@ -1479,13 +1685,18 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           profile.role === "admin"
             ? "/admin"
             : profile.role === "supervisor"
-            ? "/supervisor"
+            ? "/supervisor/pilih"
             : "/app";
 
         set({
           currentRole: profile.role,
           activeProfileId: profile.id,
           monitoredUserId: nextMonitoredUserId,
+          isLoggedIn: true,
+          supervisorChildChosen: false,
+          savedProfileIds: Array.from(
+            new Set([...state.savedProfileIds, profile.id])
+          ),
         });
 
         return {
@@ -1512,7 +1723,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         }
 
         let nextMonitored = state.monitoredUserId;
-        if (profile.role === "user") {
+        if (isChildRole(profile.role)) {
           nextMonitored = profile.id;
         } else if (profile.role === "supervisor") {
           const assigned = state.supervisorAssignments.find(
@@ -1525,6 +1736,11 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           currentRole: profile.role,
           activeProfileId: profile.id,
           monitoredUserId: nextMonitored,
+          isLoggedIn: true,
+          supervisorChildChosen: false,
+          savedProfileIds: Array.from(
+            new Set([...state.savedProfileIds, profile.id])
+          ),
         });
         return { success: true };
       },
@@ -1537,7 +1753,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
 
         if (profile) {
           let nextMonitored = state.monitoredUserId;
-          if (profile.role === "user") {
+          if (isChildRole(profile.role)) {
             nextMonitored = profile.id;
           } else if (profile.role === "supervisor") {
             const assigned = state.supervisorAssignments.find(
@@ -1545,16 +1761,320 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             );
             if (assigned) nextMonitored = assigned.userId;
           }
+          const newSupervisorSession =
+            profile.role === "supervisor" &&
+            (state.currentRole !== "supervisor" || state.activeProfileId !== profile.id);
           set({
             currentRole: profile.role,
             activeProfileId: profile.id,
             monitoredUserId: nextMonitored,
+            isLoggedIn: true,
+            supervisorChildChosen: newSupervisorSession ? false : state.supervisorChildChosen,
+            savedProfileIds: Array.from(
+              new Set([...state.savedProfileIds, profile.id])
+            ),
           });
         }
       },
 
       setMonitoredUserId: (userId) => {
         set({ monitoredUserId: userId });
+      },
+
+      chooseMonitoredChild: (userId) => {
+        set({ monitoredUserId: userId, supervisorChildChosen: true });
+      },
+
+      logout: () => {
+        set({ isLoggedIn: false, supervisorChildChosen: false, isActionLoading: false });
+      },
+
+      forgetSavedProfile: (profileId) => {
+        set((st) => ({
+          savedProfileIds: st.savedProfileIds.filter((id) => id !== profileId),
+        }));
+      },
+
+      triggerActionLoading: (autoHideMs = 6000) => {
+        loadingToken += 1;
+        const myToken = loadingToken;
+        set({ isActionLoading: true });
+        if (typeof window !== "undefined") {
+          window.setTimeout(() => {
+            // Pengaman: hanya mematikan overlay milik pemicu yang sama (bukan pemicu yang lebih baru).
+            if (myToken === loadingToken && get().isActionLoading) {
+              set({ isActionLoading: false });
+            }
+          }, autoHideMs);
+        }
+      },
+
+      clearActionLoading: () => {
+        loadingToken += 1;
+        if (get().isActionLoading) set({ isActionLoading: false });
+      },
+
+      runStreakEvaluation: () => {
+        const state = get();
+        const today = getRelativeDateStr(0);
+        const month = monthKeyOf(today);
+        let changed = false;
+        const nextProfiles = state.profiles.map((p) => {
+          if (!isChildRole(p.role)) return p;
+          // Awal bulan: jatah 3 perisai gratis diisi ulang (sisa bulan lalu hangus).
+          let base = p;
+          if (p.free_shield_month !== month) {
+            base = { ...p, ...monthlyFreeFields(p, today) };
+            changed = true;
+          }
+          if (base.lastStreakCheckDate === today) return base;
+          changed = true;
+          const res = evaluateStreakContinuity({
+            lastRecordedDate: base.last_recorded_date,
+            currentStreak: base.current_streak,
+            freezeCount: freeShieldsFor(base, today) + base.streak_freeze_count,
+            today,
+          });
+          if (res.status === "ok") {
+            return { ...base, lastStreakCheckDate: today };
+          }
+          if (res.status === "saved_by_shield") {
+            return {
+              ...base,
+              ...spendShields(base, today, res.shieldsUsed),
+              last_recorded_date: res.nextLastRecordedDate,
+              lastStreakCheckDate: today,
+            };
+          }
+          return {
+            ...base,
+            current_streak: 0,
+            isColdStreakMode: true,
+            coldSince: base.coldSince ?? today,
+            lastStreakCheckDate: today,
+          };
+        });
+        if (changed) set({ profiles: nextProfiles });
+      },
+
+      setColdStreakMode: (profileId, cold) => {
+        const state = get();
+        set({
+          profiles: state.profiles.map((p) => {
+            if (p.id !== profileId) return p;
+            if (cold) {
+              if (p.isColdStreakMode) return p;
+              return {
+                ...p,
+                isColdStreakMode: true,
+                coldSince: getRelativeDateStr(0),
+                streakBeforeCold: p.current_streak,
+                current_streak: 0,
+              };
+            }
+            return {
+              ...p,
+              isColdStreakMode: false,
+              coldSince: undefined,
+              current_streak:
+                p.current_streak === 0 && p.streakBeforeCold !== undefined
+                  ? p.streakBeforeCold
+                  : p.current_streak,
+              streakBeforeCold: undefined,
+            };
+          }),
+        });
+      },
+
+      awardReward: (payload) => {
+        const state = get();
+        const prof = payload.profileId
+          ? state.profiles.find((p) => p.id === payload.profileId)
+          : getActiveUserProfile(state);
+        if (!prof) return { promoted: false, newStreak: 0 };
+
+        const today = getRelativeDateStr(0);
+        const res = applyRewardToProfile(
+          prof,
+          payload.points,
+          payload.xp,
+          Boolean(payload.continueStreak),
+          today
+        );
+
+        set({
+          particleBurstKey: state.particleBurstKey + 1,
+          particleBurstType: "both",
+          profiles: state.profiles.map((p) => (p.id === prof.id ? res.next : p)),
+          celebrationModal: res.promoted
+            ? {
+                type: "level_up",
+                title: `PERTUMBUHAN NAIK! Fase ${res.nextStage}: ${
+                  GROWTH_STAGE_META[res.nextStage].name
+                }!`,
+                subtitle: `${prof.petCustomName} tumbuh ke Fase ${
+                  GROWTH_STAGE_META[res.nextStage].name
+                }. Progres Stage XP & Hari Mencatat direset ke 0 untuk fase berikutnya!`,
+                newLevel: res.newLevel,
+                mochiStage: Math.min(5, res.nextStage) as MochiStage,
+                rewardPoints: payload.points,
+              }
+            : state.celebrationModal,
+          rewardToast: {
+            id: `toast-${Date.now()}`,
+            title: payload.title,
+            subtitle:
+              payload.subtitle ??
+              `+${payload.points} Poin & +${payload.xp} Stage XP masuk ke akunmu!`,
+            points: payload.points,
+            xp: payload.xp,
+            isCombo: payload.isCombo,
+          },
+        });
+
+        return { promoted: res.promoted, newStreak: res.newStreak };
+      },
+
+      transferPoints: (fromProfileId, toProfileId, points) => {
+        const state = get();
+        const amount = Math.floor(Number(points));
+        if (fromProfileId === toProfileId) {
+          return { success: false, message: "Tidak bisa menghadiahi diri sendiri." };
+        }
+        if (!(amount > 0)) {
+          return { success: false, message: "Jumlah Poin harus lebih dari 0." };
+        }
+        const from = state.profiles.find((p) => p.id === fromProfileId);
+        const to = state.profiles.find((p) => p.id === toProfileId);
+        if (!from || !to) {
+          return { success: false, message: "Profil tidak ditemukan." };
+        }
+        if (from.points_balance < amount) {
+          return {
+            success: false,
+            message: `Poinmu belum cukup (saldo ${from.points_balance.toLocaleString("id-ID")} Poin).`,
+          };
+        }
+        set({
+          profiles: state.profiles.map((p) => {
+            if (p.id === fromProfileId) {
+              return { ...p, points_balance: p.points_balance - amount };
+            }
+            if (p.id === toProfileId) {
+              return {
+                ...p,
+                points_balance: p.points_balance + amount,
+                lifetime_points: p.lifetime_points + amount,
+              };
+            }
+            return p;
+          }),
+          rewardToast: {
+            id: `toast-${Date.now()}`,
+            title: `Hadiah ${amount} Poin terkirim!`,
+            subtitle: `${to.display_name} menerima hadiah darimu.`,
+            points: 0,
+            xp: 0,
+          },
+        });
+        return { success: true, message: `Hadiah ${amount} Poin terkirim ke ${to.display_name}.` };
+      },
+
+      addSavingDeposit: ({ profileId, amount, goalName, category }) => {
+        const state = get();
+        const prof = profileId
+          ? state.profiles.find((p) => p.id === profileId)
+          : getActiveUserProfile(state);
+        const amt = Math.round(Number(amount));
+        if (!prof || !(amt > 0)) {
+          return {
+            success: false,
+            message: "Nominal tabungan harus lebih dari Rp0.",
+            pointsEarned: 0,
+            xpEarned: 0,
+          };
+        }
+
+        const today = getRelativeDateStr(0);
+        // Setoran memakai batas harian yang sama dengan catatan kas (maks. 3 transaksi berpoin).
+        const rewardedToday = state.transactions.filter(
+          (t) =>
+            t.user_id === prof.id &&
+            t.transaction_date === today &&
+            t.points_earned > 0
+        ).length;
+        const capped = rewardedToday >= 3;
+        const points = capped ? 0 : 5;
+        const xp = capped ? 0 : 10;
+
+        const tx: TransactionRecord = {
+          id: `tx-save-${Date.now()}`,
+          user_id: prof.id,
+          type: "saving",
+          category,
+          // Tabungan bukan pengeluaran: tidak pernah masuk hitungan Boros/Bengkak Inspektur Saku.
+          need_or_want: "need",
+          title: `Setor ke celengan: ${goalName}`,
+          total_amount: amt,
+          is_itemized: false,
+          points_earned: points,
+          xp_earned: xp,
+          transaction_date: today,
+          created_at: new Date().toISOString(),
+          items: [],
+        };
+
+        const res = applyRewardToProfile(prof, points, xp, true, today);
+
+        set({
+          transactions: [tx, ...state.transactions],
+          particleBurstKey: state.particleBurstKey + 1,
+          particleBurstType: "coin",
+          profiles: state.profiles.map((p) => (p.id === prof.id ? res.next : p)),
+          celebrationModal: res.promoted
+            ? {
+                type: "level_up",
+                title: `PERTUMBUHAN NAIK! Fase ${res.nextStage}: ${
+                  GROWTH_STAGE_META[res.nextStage].name
+                }!`,
+                subtitle: `Rajin menabung membuat ${prof.petCustomName} tumbuh ke fase baru!`,
+                newLevel: res.newLevel,
+                mochiStage: Math.min(5, res.nextStage) as MochiStage,
+                rewardPoints: points,
+              }
+            : state.celebrationModal,
+          rewardToast: {
+            id: `toast-${Date.now()}`,
+            title: `Rp${amt.toLocaleString("id-ID")} masuk celengan!`,
+            subtitle: capped
+              ? "Tersimpan! (Batas 3/3 catatan berpoin hari ini tercapai)"
+              : "+5 Poin & +10 Stage XP untuk kebiasaan menabung!",
+            points,
+            xp,
+          },
+        });
+
+        if (!state.isSandboxMode) {
+          trySupabaseInsert("transactions", {
+            user_id: prof.id,
+            type: tx.type,
+            category: tx.category,
+            need_or_want: tx.need_or_want,
+            title: tx.title,
+            total_amount: tx.total_amount,
+            is_itemized: false,
+            points_earned: tx.points_earned,
+            xp_earned: tx.xp_earned,
+            transaction_date: tx.transaction_date,
+          });
+        }
+
+        return {
+          success: true,
+          message: `Rp${amt.toLocaleString("id-ID")} tersimpan di celengan "${goalName}".`,
+          pointsEarned: points,
+          xpEarned: xp,
+        };
       },
 
       registerNewAccount: (payload) => {
@@ -1585,7 +2105,9 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         }
 
         const newId = `prof-${Date.now()}`;
-        const budget = Number(payload.monthlyBudgetTarget) || 1500000;
+        const isKid = payload.role === "schoolchild";
+        const budget =
+          Number(payload.monthlyBudgetTarget) || (isKid ? 150000 : 1500000);
         const saving =
           Number(payload.monthlySavingTarget) || Math.round(budget * 0.2);
         const petName = payload.petCustomName?.trim() || "Mochi";
@@ -1695,10 +2217,23 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           );
         }
 
+        const nextAssignments =
+          payload.supervisorId &&
+          isChildRole(payload.role) &&
+          state.profiles.some(
+            (p) => p.id === payload.supervisorId && p.role === "supervisor"
+          )
+            ? [
+                ...state.supervisorAssignments,
+                { supervisorId: payload.supervisorId, userId: newId },
+              ]
+            : state.supervisorAssignments;
+
         set({
           profiles: [...state.profiles, newProfile],
           transactions: nextTransactions,
           missions: nextMissions,
+          supervisorAssignments: nextAssignments,
           rewardToast: {
             id: `toast-${Date.now()}`,
             title: `Akun "${cleanDisplayName}" Berhasil Dibuat!`,
@@ -1757,6 +2292,10 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       setCashoutModalOpen: (open) => set({ isCashoutModalOpen: open }),
 
       setStreakCalendarOpen: (open) => set({ isStreakCalendarOpen: open }),
+
+      setStoryModalOpen: (open) => set({ isStoryModalOpen: open }),
+
+      setSavingsModalOpen: (open) => set({ isSavingsModalOpen: open }),
 
       closeUnboxedAccessoryModal: () => set({ unboxedAccessoryDrop: null }),
 
@@ -1919,7 +2458,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           ),
           celebrationModal: {
             type: "milestone",
-            title: `Telur Baru Diadopsi: ${spInfo.name}! 🥚✨`,
+            title: `Telur Baru Diadopsi: ${spInfo.name}!`,
             subtitle: `${newEggInstance.customName} lahir sebagai Fase 1 (${GROWTH_STAGE_META[1].name}). Yuk catat kas rutin agar telurnya menetas dan tumbuh besar!`,
             rewardPoints: 0,
           },
@@ -2072,7 +2611,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           ),
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: `${item.name} Langsung Dipasang! ✨`,
+            title: `${item.name} Langsung Dipasang!`,
             subtitle: `${targetUser.petCustomName} langsung mengenakan ${item.name}!`,
             points: 0,
             xp: 0,
@@ -2155,7 +2694,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           },
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: `🎁 Item Eksklusif Ditemukan: ${droppedItem.name}!`,
+            title: `Item Eksklusif Ditemukan: ${droppedItem.name}!`,
             subtitle: `Hadiah Peti Hari ke-${milestoneDay} (+${rewardPoints} Poin & +${rewardStageXp} Stage XP)`,
             points: rewardPoints,
             xp: rewardStageXp,
@@ -2208,37 +2747,49 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         return { xpEarned: 0, leveledUp: false };
       },
 
-      buyStreakFreezeShield: () => {
+      buyStreakFreezeShield: (packId = "single") => {
         const state = get();
         const userProf = getActiveUserProfile(state);
-        const cost = 500;
-        if (userProf.points_balance < cost) {
+        const pack = SHIELD_PACK_BY_ID[packId];
+        if (userProf.points_balance < pack.price) {
           return {
             success: false,
-            message: "Poin belum cukup (butuh 500 Poin untuk 1 Perisai Es).",
+            message: `Poin belum cukup (butuh ${pack.price.toLocaleString("id-ID")} Poin untuk ${pack.name}).`,
           };
         }
+        const room = MAX_PAID_SHIELDS - userProf.streak_freeze_count;
+        if (pack.shields > room) {
+          return {
+            success: false,
+            message:
+              room <= 0
+                ? `Tas perisai beli sudah penuh (maks. ${MAX_PAID_SHIELDS}). Pakai dulu sebelum membeli lagi.`
+                : `Tas perisai hanya muat ${room} lagi (maks. ${MAX_PAID_SHIELDS}). Pilih paket yang lebih kecil.`,
+          };
+        }
+        const today = getRelativeDateStr(0);
         set({
           profiles: state.profiles.map((p) =>
             p.id === userProf.id
               ? {
                   ...p,
-                  points_balance: p.points_balance - cost,
-                  streak_freeze_count: p.streak_freeze_count + 1,
+                  ...monthlyFreeFields(p, today),
+                  points_balance: p.points_balance - pack.price,
+                  streak_freeze_count: p.streak_freeze_count + pack.shields,
                 }
               : p
           ),
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: "Perisai Es Streak Freeze Dibeli!",
-            subtitle: "+1 Perisai Es siap melindungi api streak harianmu!",
+            title: `${pack.name} Dibeli!`,
+            subtitle: `+${pack.shields} Perisai Es siap melindungi api streak harianmu!`,
             points: 0,
             xp: 0,
           },
         });
         return {
           success: true,
-          message: "Berhasil menukar 500 Poin menjadi +1 Perisai Es!",
+          message: `Berhasil menukar ${pack.price.toLocaleString("id-ID")} Poin menjadi +${pack.shields} Perisai Es!`,
         };
       },
 
@@ -2280,7 +2831,12 @@ export const useBukuDompetStore = create<BukuDompetState>()(
 
         if (userProf.last_recorded_date !== todayStr) {
           addedRecordedDays = 1;
-          newStreak += 1;
+          // Streak ketat: jeda lebih dari 1 hari memulai lagi dari 1 (bukan menyambung).
+          newStreak = nextStreakOnRecord(
+            userProf.last_recorded_date,
+            userProf.current_streak,
+            todayStr
+          );
           if (userProf.last_daily_claim_date !== todayStr) {
             streakBonusPoints = 10;
             streakBonusXp = 15;
@@ -2387,6 +2943,11 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                     streakBonusPoints > 0
                       ? todayStr
                       : p.last_daily_claim_date,
+                  isColdStreakMode:
+                    addedRecordedDays > 0 ? false : p.isColdStreakMode,
+                  coldSince: addedRecordedDays > 0 ? undefined : p.coldSince,
+                  streakBeforeCold:
+                    addedRecordedDays > 0 ? undefined : p.streakBeforeCold,
                 }
               : p
           ),
@@ -2683,7 +3244,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           id: `cheer-${Date.now()}`,
           fromSupervisorName:
             supervisorProf?.display_name || "Supervisor Keluarga",
-          stickerLabel: "Stiker Apresiasi Keluarga 💖",
+          stickerLabel: "Stiker Apresiasi Keluarga",
           message:
             customMessage?.trim() ||
             `Semangat terus mencatat kasnya ya, ${targetUser.display_name}! Kami bangga sama kedisiplinanmu!`,
@@ -2837,7 +3398,12 @@ export const useBukuDompetStore = create<BukuDompetState>()(
     }),
     {
       name: "bukudompet-v4-storage",
-      version: 4,
+      version: 5,
+      // Hidrasi dipicu manual lewat <StoreHydrator /> setelah mount, agar render pertama di klien
+      // identik dengan SSR (tanpa galat hidrasi) walau localStorage berisi data berbeda.
+      skipHydration: true,
+      // Versi 4 -> 5 hanya MENAMBAH field opsional dan akun seed baru; data lama dipakai apa adanya.
+      migrate: (persistedState) => persistedState as BukuDompetState,
       // Migrasi ringan & idempoten: katalog aksesori membesar 48 -> 144 tanpa mengubah ID lama,
       // jadi data lama tetap valid. Merge ini hanya membuang ID yang tidak dikenal katalog
       // (data rusak / sisa versi eksperimen) agar tidak muncul sebagai item "?" di lemari.
@@ -2845,8 +3411,29 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         const raw = (persistedState ?? {}) as Partial<BukuDompetState>;
         const merged = { ...currentState, ...raw };
         if (Array.isArray(merged.profiles)) {
-          merged.profiles = merged.profiles.map(sanitizeProfileAccessories);
+          // Versi 5.0: tambahkan akun seed baru (Adik Kecil) bila data lama belum memilikinya.
+          const knownIds = new Set(merged.profiles.map((p) => p.id));
+          const missingSeeds = INITIAL_PROFILES.filter(
+            (p) => p.role === "schoolchild" && !knownIds.has(p.id)
+          );
+          merged.profiles = [...merged.profiles, ...missingSeeds].map(
+            sanitizeProfileAccessories
+          );
+          if (missingSeeds.length > 0 && Array.isArray(merged.supervisorAssignments)) {
+            const seedIds = new Set(missingSeeds.map((p) => p.id));
+            const have = new Set(
+              merged.supervisorAssignments.map((a) => `${a.supervisorId}:${a.userId}`)
+            );
+            merged.supervisorAssignments = [
+              ...merged.supervisorAssignments,
+              ...INITIAL_SUPERVISOR_ASSIGNMENTS.filter(
+                (a) =>
+                  seedIds.has(a.userId) && !have.has(`${a.supervisorId}:${a.userId}`)
+              ),
+            ];
+          }
         }
+        if (!Array.isArray(merged.savedProfileIds)) merged.savedProfileIds = [];
         return merged;
       },
       partialize: (state) => ({
@@ -2867,6 +3454,9 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         isSandboxMode: state.isSandboxMode,
         lastSupervisorCheerDate: state.lastSupervisorCheerDate,
         supervisorCheersCount: state.supervisorCheersCount,
+        isLoggedIn: state.isLoggedIn,
+        supervisorChildChosen: state.supervisorChildChosen,
+        savedProfileIds: state.savedProfileIds,
       }),
     }
   )

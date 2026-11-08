@@ -15,13 +15,27 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "BukuDompet — Jurnal Kas Petualangan & Detektif Dompet",
+  title: {
+    default: "BukuDompet — Jurnal Kas Petualangan Keluarga",
+    template: "%s • BukuDompet",
+  },
+  applicationName: "BukuDompet",
   description:
-    "Catat uang saku gaya petualangan bersama Mochi si Kucing Celengan! 1 Poin = Rp 1, Misi Rinci, dan Detektif Pengeluaran.",
+    "Jurnal kas keluarga bergaya petualangan: catat uang saku, menabung di celengan, rawat pet, kerjakan misi, dan raih medali bersama Beranda Keluarga.",
+  keywords: ["BukuDompet", "jurnal kas", "uang saku", "menabung", "literasi keuangan anak", "gamifikasi"],
+  authors: [{ name: "BukuDompet" }],
+  openGraph: {
+    title: "BukuDompet — Jurnal Kas Petualangan Keluarga",
+    description: "Catat, menabung, dan bertualang bersama pet kesayangan keluarga.",
+    siteName: "BukuDompet",
+    locale: "id_ID",
+    type: "website",
+  },
+  appleWebApp: { capable: true, title: "BukuDompet", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#FFFDF9",
+  themeColor: "#58CC02",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

@@ -54,6 +54,13 @@ export interface TactileButtonProps
   size?: "sm" | "md" | "lg" | "xl";
   fullWidth?: boolean;
   silent?: boolean;
+  /**
+   * Nyalakan overlay loading global SEKETIKA saat diklik (Versi 5.0), tanpa menunggu
+   * halaman/aksi selesai. Dimatikan otomatis oleh rute baru atau timer pengaman.
+   */
+  showLoadingOnClick?: boolean;
+  /** Pengaman: overlay otomatis tertutup setelah sekian ms bila tidak ada navigasi. */
+  loadingAutoHideMs?: number;
 }
 
 export function TactileButton({
@@ -61,6 +68,8 @@ export function TactileButton({
   size = "md",
   fullWidth = false,
   silent = false,
+  showLoadingOnClick = false,
+  loadingAutoHideMs = 900,
   className,
   children,
   onClick,
@@ -81,6 +90,9 @@ export function TactileButton({
       onClick={(e) => {
         if (!silent && !disabled) {
           soundEffects.tactileClick();
+        }
+        if (showLoadingOnClick && !disabled) {
+          useBukuDompetStore.getState().triggerActionLoading(loadingAutoHideMs);
         }
         onClick?.(e);
       }}

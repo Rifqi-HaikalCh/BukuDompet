@@ -1,5 +1,6 @@
 "use client";
 
+import { GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,9 +12,12 @@ import {
   Square,
   Volume2,
   VolumeX,
-} from "lucide-react";
+  ChevronUp,
+  ChevronDown,
+} from "@/components/illustrations/UiGlyphs";
 import {
   useBukuDompetStore,
+  isChildRole,
   type UserRole,
 } from "@/store/useBukuDompetStore";
 import {
@@ -58,10 +62,12 @@ export default function AdminCommandCenterPage() {
     toggleSupervisorAssignment,
     switchRoleDirect,
     resetToDemoSeed,
+    setColdStreakMode,
+    logout,
   } = useBukuDompetStore();
 
   const userProfiles = useMemo(
-    () => profiles.filter((p) => p.role === "user"),
+    () => profiles.filter((p) => isChildRole(p.role)),
     [profiles]
   );
   const supervisorProfiles = useMemo(
@@ -101,6 +107,7 @@ export default function AdminCommandCenterPage() {
   const [newRole, setNewRole] = useState<UserRole>("user");
   const [newBudgetTarget, setNewBudgetTarget] = useState<string>("1500000");
   const [newPetName, setNewPetName] = useState<string>("Mochi");
+  const [newSupervisorId, setNewSupervisorId] = useState<string>("");
   const [registerFeedback, setRegisterFeedback] = useState<{
     success: boolean;
     message: string;
@@ -160,9 +167,13 @@ export default function AdminCommandCenterPage() {
       username: newUsername,
       pinCode: newPinCode,
       role: newRole,
-      monthlyBudgetTarget:
-        newRole === "user" ? Number(newBudgetTarget) || 1500000 : undefined,
-      petCustomName: newRole === "user" ? newPetName : undefined,
+      monthlyBudgetTarget: isChildRole(newRole)
+        ? Number(newBudgetTarget) || (newRole === "schoolchild" ? 150000 : 1500000)
+        : undefined,
+      petCustomName: isChildRole(newRole) ? newPetName : undefined,
+      supervisorId: isChildRole(newRole)
+        ? newSupervisorId || supervisorProfiles[0]?.id
+        : undefined,
     });
     setRegisterFeedback(res);
     if (res.success) {
@@ -202,6 +213,7 @@ export default function AdminCommandCenterPage() {
       soundEffects.tactileClick();
       resetToDemoSeed();
     } else if (pendingAction.type === "exit_login") {
+      logout();
       router.push("/login");
     }
     setPendingAction(null);
@@ -331,7 +343,7 @@ export default function AdminCommandCenterPage() {
               href="/app"
               onClick={() => {
                 soundEffects.tactileClick();
-                switchRoleDirect("user", targetUserProfile.id);
+                switchRoleDirect(targetUserProfile.role, targetUserProfile.id);
               }}
               className="px-3 py-1.5 rounded-xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center gap-1.5 hover:bg-white transition-colors text-[#3D352E]"
             >
@@ -392,8 +404,9 @@ export default function AdminCommandCenterPage() {
                 </span>
                 <span className="text-xs font-display font-extrabold tabular-nums text-[#4A3500] bg-[#FFFBEB] px-2.5 py-0.5 rounded-full border border-[#FDE08D]">
                   Total Akun Terdaftar: {profiles.length} Akun (
-                  {userProfiles.length} User, {supervisorProfiles.length}{" "}
-                  Supervisor)
+                  {profiles.filter((p) => p.role === "user").length} User,{" "}
+                  {profiles.filter((p) => p.role === "schoolchild").length} Anak SD,{" "}
+                  {supervisorProfiles.length} Supervisor)
                 </span>
               </div>
               <h1 className="font-display text-xl font-extrabold text-[#3D352E] truncate">
@@ -422,6 +435,23 @@ export default function AdminCommandCenterPage() {
               onClick={() => setTransactionDrawerOpen(true)}
             >
               <CozyIcon name="plus_record" size={20} /> + Uji Catat Kas
+            </TactileButton>
+
+            <TactileButton
+              variant="sky"
+              size="sm"
+              onClick={() => {
+                soundEffects.tactileClick();
+                setColdStreakMode(
+                  targetUserProfile.id,
+                  !targetUserProfile.isColdStreakMode
+                );
+              }}
+              title="Menyalakan / mematikan mode Streak Padam pada akun yang dipilih"
+            >
+              {targetUserProfile.isColdStreakMode
+                ? <><GlyphInline name="sun" /> Hangatkan Lagi</>
+                : <><GlyphInline name="snowflake" /> Uji Mode Streak Padam (Cold Ambience)</>}
             </TactileButton>
 
             <TactileButton
@@ -518,10 +548,19 @@ export default function AdminCommandCenterPage() {
                     </label>
                     <select
                       value={newRole}
-                      onChange={(e) => setNewRole(e.target.value as UserRole)}
+                      onChange={(e) => {
+                        const next = e.target.value as UserRole;
+                        setNewRole(next);
+                        // Uang saku Anak SD jauh lebih kecil daripada pengguna dewasa.
+                        if (next === "schoolchild") setNewBudgetTarget("150000");
+                        else if (next === "user") setNewBudgetTarget("1500000");
+                      }}
                       className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E] focus:outline-none"
                     >
                       <option value="user">User (Penabung / Anak)</option>
+                      <option value="schoolchild">
+                        Anak SD (Kelas 3 • Jurnal Cerita)
+                      </option>
                       <option value="supervisor">
                         Supervisor (Orang Tua / Wali)
                       </option>
@@ -530,7 +569,7 @@ export default function AdminCommandCenterPage() {
                   </div>
                 </div>
 
-                {newRole === "user" && (
+                {isChildRole(newRole) && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div>
                       <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
@@ -555,6 +594,29 @@ export default function AdminCommandCenterPage() {
                         className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E]"
                       />
                     </div>
+                  </div>
+                )}
+
+                {isChildRole(newRole) && supervisorProfiles.length > 0 && (
+                  <div>
+                    <label
+                      htmlFor="new-account-supervisor"
+                      className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1"
+                    >
+                      Supervisor Pemantau
+                    </label>
+                    <select
+                      id="new-account-supervisor"
+                      value={newSupervisorId || supervisorProfiles[0].id}
+                      onChange={(e) => setNewSupervisorId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E] focus:outline-none"
+                    >
+                      {supervisorProfiles.map((sup) => (
+                        <option key={sup.id} value={sup.id}>
+                          {sup.display_name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
 
@@ -662,6 +724,7 @@ export default function AdminCommandCenterPage() {
                               )}
                               <div className="min-w-0">
                                 <p className="font-display text-xs sm:text-sm font-extrabold text-[#3D352E] truncate">
+                                  {usr.role === "schoolchild" ? <GlyphInline name="backpack" className="mr-1" /> : null}
                                   {usr.display_name}{" "}
                                   <span className="text-[#7A6E65] font-bold">
                                     (@{usr.username})
@@ -849,8 +912,8 @@ export default function AdminCommandCenterPage() {
                   onClick={() => setShowAllHistory((prev) => !prev)}
                 >
                   {showAllHistory
-                    ? "Sembunyikan Sebagian ▴"
-                    : `Lihat Semua (${historyRedemptions.length} Riwayat) ▾`}
+                    ? <>Sembunyikan Sebagian <ChevronUp className="w-4 h-4" aria-hidden="true" /></>
+                    : <>Lihat Semua ({historyRedemptions.length} Riwayat) <ChevronDown className="w-4 h-4" aria-hidden="true" /></>}
                 </TactileButton>
               )}
             </div>

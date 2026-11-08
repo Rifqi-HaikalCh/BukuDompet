@@ -1,10 +1,12 @@
 "use client";
 
+import { ChipScroller } from "@/components/ui/ChipScroller";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Drawer } from "vaul";
 import { motion } from "framer-motion";
-import { Trash2, X } from "lucide-react";
+import { Trash2, X } from "@/components/illustrations/UiGlyphs";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
+import { pickViewedChild } from "@/lib/active-child";
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -32,14 +34,13 @@ export function TransactionDrawer() {
     isTransactionDrawerOpen,
     setTransactionDrawerOpen,
     activeProfileId,
+    currentRole,
+    monitoredUserId,
     profiles,
     addTransaction,
   } = useBukuDompetStore();
 
-  const userProfile =
-    profiles.find((p) => p.id === activeProfileId && p.role === "user") ||
-    profiles.find((p) => p.role === "user") ||
-    profiles[0];
+  const userProfile = pickViewedChild({ currentRole, activeProfileId, monitoredUserId, profiles });
 
   const currentStage = userProfile.currentStage || 1;
   const petName = userProfile.petCustomName || "Mochi";
@@ -204,7 +205,7 @@ export function TransactionDrawer() {
 
   const comboTierLabel =
     comboStatus.validItemsCount >= 2
-      ? `✨ JURNAL RINCI AKTIF! +${comboStatus.pointsPreview} Poin & +${comboStatus.xpPreview} XP`
+      ? `JURNAL RINCI AKTIF! +${comboStatus.pointsPreview} Poin & +${comboStatus.xpPreview} XP`
       : `Rincian ${comboStatus.validItemsCount}/2 menuju Jurnal Rinci (+10 Poin)`;
 
   const livePetMood: PetMood = comboStatus.isValidCombo ? "proud" : "happy";
@@ -228,7 +229,7 @@ export function TransactionDrawer() {
               // Mobile (< 768px): Bottom Sheet max-h-[90dvh]
               "fixed bottom-0 left-0 right-0 rounded-t-[32px] max-h-[90dvh]",
               // Desktop (>= 768px): Centered Cozy Modal 2-Kolom max-w-3xl rounded-3xl
-              "md:inset-x-auto md:left-1/2 md:top-1/2 md:bottom-auto md:-translate-x-1/2 md:-translate-y-1/2 md:w-[94vw] md:max-w-3xl md:rounded-3xl md:max-h-[88dvh] md:shadow-2xl"
+              "md:inset-x-auto md:left-1/2 md:top-1/2 md:bottom-auto md:-translate-x-1/2 md:-translate-y-1/2 md:after:hidden! md:w-[94vw] md:max-w-3xl md:rounded-3xl md:max-h-[88dvh] md:shadow-2xl"
             )}
           >
             {/* Mobile Drag Handle */}
@@ -382,7 +383,7 @@ export function TransactionDrawer() {
                           placeholder="Contoh: Nasi Goreng 18k, Es Teh 5k"
                           className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-[#F7F3EB] text-xs sm:text-sm font-bold text-[#3D352E] focus:outline-none focus:bg-white"
                         />
-                        <div className="flex flex-wrap gap-1.5">
+                        <ChipScroller label="Contoh rincian cepat">
                           {[
                             "Nasi Goreng 18k, Es Teh 5k",
                             "Ayam Bakar 20k, Air Mineral 5k, Kerupuk 3k",
@@ -396,7 +397,7 @@ export function TransactionDrawer() {
                               {preset}
                             </button>
                           ))}
-                        </div>
+                        </ChipScroller>
                       </div>
 
                       {/* Itemized Rows */}
@@ -472,7 +473,7 @@ export function TransactionDrawer() {
                         </div>
 
                         {/* Quick Price Chips for Active Item */}
-                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <ChipScroller label="Tambah nominal cepat barang" className="pt-1">
                           <span className="text-[11px] font-bold text-[#7A6E65]">
                             Tambah ke Barang #{activeRowIdx + 1}:
                           </span>
@@ -488,7 +489,7 @@ export function TransactionDrawer() {
                               +{formatCompactRupiah(chip, { withPrefix: false })}
                             </button>
                           ))}
-                        </div>
+                        </ChipScroller>
                       </div>
                     </div>
                   ) : (
@@ -510,7 +511,7 @@ export function TransactionDrawer() {
                             className="w-full pl-11 pr-4 py-3 rounded-2xl border-2 border-[#E6DFD2] bg-white font-display font-extrabold tabular-nums text-xl text-[#3D352E] focus:outline-none focus:border-[#38B6FF]"
                           />
                         </div>
-                        <div className="flex flex-wrap gap-1.5 mt-2">
+                        <ChipScroller label="Nominal cepat" className="mt-2">
                           {QUICK_PRICE_CHIPS.map((chip) => (
                             <button
                               key={chip}
@@ -523,7 +524,7 @@ export function TransactionDrawer() {
                               +{formatCompactRupiah(chip, { withPrefix: false })}
                             </button>
                           ))}
-                        </div>
+                        </ChipScroller>
                       </div>
 
                       <div>
@@ -550,7 +551,7 @@ export function TransactionDrawer() {
                     <label className="block text-xs font-display font-extrabold uppercase tracking-wider text-[#7A6E65] mb-1.5">
                       Pilih Kategori
                     </label>
-                    <div className="flex flex-wrap gap-1.5">
+                    <ChipScroller label="Pilih kategori" watch={category}>
                       {(txType === "expense"
                         ? EXPENSE_CATEGORIES
                         : INCOME_CATEGORIES
@@ -576,7 +577,7 @@ export function TransactionDrawer() {
                           </button>
                         );
                       })}
-                    </div>
+                    </ChipScroller>
                   </div>
                 </div>
 
