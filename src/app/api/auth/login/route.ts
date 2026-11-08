@@ -1,6 +1,7 @@
 import { cookies } from "next/headers"
 import { rpc } from "@/lib/server/db"
-import { clientIp, json, rateLimited, readJson, sameOriginOk } from "@/lib/server/http"
+import { ConfigError } from "@/lib/server/env"
+import { clientIp, fail, json, rateLimited, readJson, sameOriginOk } from "@/lib/server/http"
 import { SESSION_COOKIE, cookieOptions, createSessionToken } from "@/lib/server/session"
 
 export const dynamic = "force-dynamic"
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
     jar.set(SESSION_COOKIE, createSessionToken(r.id!, r.ver ?? 1), cookieOptions())
     return json({ ok: true, user: { id: r.id, username: r.username, display_name: r.display_name, role: r.role } })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : ""
-    return json({ ok: false, reason: msg.startsWith("SERVER_NOT_CONFIGURED") ? "server_not_configured" : "server_error" }, 500)
+    const notConfigured = e instanceof ConfigError || (e instanceof Error && e.message.startsWith("SERVER_NOT_CONFIGURED"))
+    return fail("auth/login", e, { ok: false, reason: notConfigured ? "server_not_configured" : "server_error" })
   }
 }

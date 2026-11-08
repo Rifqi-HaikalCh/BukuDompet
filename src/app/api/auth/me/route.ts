@@ -1,5 +1,5 @@
 import { SessionInvalidError, rpc } from "@/lib/server/db"
-import { clearSessionCookie, currentSession, json } from "@/lib/server/http"
+import { clearSessionCookie, currentSession, errorCode, json } from "@/lib/server/http"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -21,6 +21,8 @@ export async function GET() {
   } catch (e) {
     if (e instanceof SessionInvalidError) return json({ ok: false }, 401)
     // gangguan sementara ≠ sesi tidak sah: klien tidak boleh menghapus data karenanya
-    return json({ ok: false, error: "server_error" }, 503)
+    const code = errorCode(e)
+    console.error("[api] auth/me gagal", code, e instanceof Error ? e.message : e)
+    return json({ ok: false, error: "server_error", code }, 503)
   }
 }

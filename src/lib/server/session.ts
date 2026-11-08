@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
+import { readSessionSecret } from "./env"
 
 export const SESSION_COOKIE = "bd_session"
 const MAX_AGE_SEC = 60 * 60 * 24 * 30 // 30 hari
@@ -13,8 +14,8 @@ export interface SessionPayload {
 }
 
 function secret(): string {
-  const s = process.env.SESSION_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!s || s.length < 16) throw new Error("SERVER_NOT_CONFIGURED: SESSION_SECRET / SUPABASE_SECRET_KEY belum diatur")
+  const s = readSessionSecret()
+  if (!s) throw new Error("SERVER_NOT_CONFIGURED: SESSION_SECRET / SUPABASE_SECRET_KEY belum diatur")
   return s
 }
 

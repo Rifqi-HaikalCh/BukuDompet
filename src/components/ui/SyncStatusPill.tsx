@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { getEngine, useSyncSnapshot } from "@/lib/sync/client";
+import { getEngine, retryBind, useBindState, useSyncSnapshot, type BindState } from "@/lib/sync/client";
 import { cn } from "@/lib/utils";
 
 /* Glyph SVG kustom (gaya garis membulat, selaras ikon aplikasi) */
@@ -45,7 +45,20 @@ const TONE: Record<Tone, string> = {
   bad: "bg-[#FFF2F0] border-[#FFCDC6] text-[#8F2A1B]",
 };
 
-function describe(s: ReturnType<typeof useSyncSnapshot>): { tone: Tone; label: string; detail: string; glyph: React.ReactNode; spin?: boolean } {
+function describe(s: ReturnType<typeof useSyncSnapshot>, b: BindState): { tone: Tone; label: string; detail: string; glyph: React.ReactNode; spin?: boolean } {
+  if (b.status === "unbound") {
+    return {
+      tone: "bad",
+      label: "Belum tersambung ke server",
+      detail:
+        (b.reason === "offline"
+          ? "Tidak ada koneksi ke server. "
+          : "Server belum bisa memastikan akunmu. ") +
+        "Catatan yang kamu buat SEKARANG baru tersimpan di perangkat ini, belum di database. Jangan hapus data peramban atau ganti perangkat dulu. Aplikasi mencoba menyambung ulang otomatis; semua terkirim begitu tersambung." +
+        (b.code ? ` (kode: ${b.code})` : ""),
+      glyph: <GlyphAlert />,
+    };
+  }
   const issues = s.blocked + s.held;
   if (s.phase === "auth") {
     return { tone: "bad", label: "Sesi berakhir", detail: "Masuk lagi untuk melanjutkan penyimpanan.", glyph: <GlyphAlert /> };
@@ -64,6 +77,14 @@ function describe(s: ReturnType<typeof useSyncSnapshot>): { tone: Tone; label: s
       label: s.pending > 0 ? `Offline • ${s.pending.toLocaleString("id-ID")} menunggu` : "Offline",
       detail: "Tidak ada koneksi. Catatanmu aman di perangkat ini dan otomatis terkirim begitu internet kembali.",
       glyph: <GlyphOffline />,
+    };
+  }
+  if (s.phase === "error" && s.failStreak >= 3) {
+    return {
+      tone: "bad",
+      label: "Belum tersimpan di server",
+      detail: `Server gagal menyimpan ${s.failStreak} kali berturut-turut. Catatanmu aman di perangkat ini dan terus dicoba kirim ulang. Bila berlanjut, beri tahu Admin.`,
+      glyph: <GlyphAlert />,
     };
   }
   if (s.phase === "error") {
@@ -92,6 +113,7 @@ function describe(s: ReturnType<typeof useSyncSnapshot>): { tone: Tone; label: s
  */
 export function SyncStatusPill() {
   const snap = useSyncSnapshot();
+  const bind = useBindState();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -110,8 +132,8 @@ export function SyncStatusPill() {
     };
   }, [open]);
 
-  if (!snap.ready) return null;
-  const d = describe(snap);
+  if (!snap.ready && bind.status !== "unbound") return null;
+  const d = describe(snap, bind);
   const compact = d.tone === "ok" && !open;
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -149,10 +171,10 @@ export function SyncStatusPill() {
             <button
               type="button"
               disabled={busy || snap.phase === "auth"}
-              onClick={() => run(() => getEngine().syncNow())}
+              onClick={() => run(() => (bind.status === "unbound" ? retryBind() : getEngine().syncNow()))}
               className="px-3 py-1.5 rounded-xl bg-[#E3F4FF] border-2 border-[#9AD2FF] border-b-[4px] border-b-[#5DB4F5] text-xs font-display font-extrabold text-[#1565C0] disabled:opacity-60 cursor-pointer"
             >
-              {busy ? "Memproses…" : "Sinkronkan sekarang"}
+              {busy ? "Memproses…" : bind.status === "unbound" ? "Sambungkan sekarang" : "Sinkronkan sekarang"}
             </button>
             {snap.blocked + snap.held > 0 && (
               <button

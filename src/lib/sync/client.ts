@@ -111,7 +111,56 @@ const SERVER_SNAPSHOT: SyncSnapshot = {
   held: 0,
   lastSyncAt: null,
   ready: false,
+  failStreak: 0,
 };
+
+/* ───────────── status sambungan akun ke server ─────────────
+ * "unbound" = aplikasi terbuka tetapi server TIDAK bisa memastikan siapa penggunanya (server galat / offline)
+ * dan perangkat belum punya identitas sinkron. Dalam keadaan ini perubahan hanya tersimpan di perangkat;
+ * UI wajib menampilkannya dengan jujur dan mencoba menyambung ulang sendiri. */
+
+export interface BindState {
+  status: "unknown" | "bound" | "unbound";
+  reason?: "offline" | "server";
+  code?: string;
+}
+const BIND_UNKNOWN: BindState = { status: "unknown" };
+let bind: BindState = BIND_UNKNOWN;
+const bindListeners = new Set<() => void>();
+function setBind(next: BindState): void {
+  if (next.status === bind.status && next.reason === bind.reason && next.code === bind.code) return;
+  bind = next;
+  for (const l of bindListeners) l();
+}
+export function useBindState(): BindState {
+  return useSyncExternalStore(
+    (fn) => {
+      bindListeners.add(fn);
+      return () => bindListeners.delete(fn);
+    },
+    () => bind,
+    () => BIND_UNKNOWN,
+  );
+}
+
+let bootRetryTimer: number | undefined;
+function scheduleBootRetry(): void {
+  if (typeof window === "undefined") return;
+  window.clearTimeout(bootRetryTimer);
+  bootRetryTimer = window.setTimeout(() => {
+    if (!useBukuDompetStore.getState().isLoggedIn || bind.status === "bound") return;
+    lastBootOk = 0;
+    void bootSession();
+  }, 15_000);
+}
+function cancelBootRetry(): void {
+  if (typeof window !== "undefined") window.clearTimeout(bootRetryTimer);
+}
+/** Tombol "Sambungkan sekarang": coba verifikasi sesi lagi tanpa menunggu pengatur waktu. */
+export async function retryBind(): Promise<void> {
+  lastBootOk = 0;
+  await bootSession();
+}
 
 /** Status sinkron untuk UI (pill). */
 export function useSyncSnapshot(): SyncSnapshot {
@@ -201,6 +250,8 @@ export function stopAutoSync(): void {
 
 /** Sesi dicabut server (PIN diganti / akun dinonaktifkan): berhenti sinkron, kembali ke layar masuk. Data lokal tetap utuh. */
 function handleSessionInvalid(): void {
+  cancelBootRetry();
+  setBind(BIND_UNKNOWN);
   stopAutoSync();
   setSessionUser(null);
   try {
@@ -230,10 +281,10 @@ export interface Candidate {
   role: SessionUser["role"];
 }
 
-export async function lookupAccounts(name: string): Promise<{ ok: true; candidates: Candidate[] } | { ok: false; reason: "offline" | "error" }> {
+export async function lookupAccounts(name: string): Promise<{ ok: true; candidates: Candidate[] } | { ok: false; reason: "offline" | "error"; code?: string }> {
   try {
-    const r = await api<{ candidates?: Candidate[] }>("/api/auth/lookup", { name }, 10_000);
-    if (r.status !== 200 || !r.json) return { ok: false, reason: "error" };
+    const r = await api<{ candidates?: Candidate[]; code?: string }>("/api/auth/lookup", { name }, 10_000);
+    if (r.status !== 200 || !r.json) return { ok: false, reason: "error", code: r.json?.code };
     return { ok: true, candidates: r.json.candidates ?? [] };
   } catch {
     return { ok: false, reason: "offline" };
@@ -242,7 +293,7 @@ export async function lookupAccounts(name: string): Promise<{ ok: true; candidat
 
 export type LoginOutcome =
   | { ok: true; user: SessionUser }
-  | { ok: false; reason: "invalid" | "locked" | "rate" | "offline" | "server_not_configured" | "server_error"; attemptsLeft?: number; retryAfter?: number };
+  | { ok: false; reason: "invalid" | "locked" | "rate" | "offline" | "server_not_configured" | "server_error"; attemptsLeft?: number; retryAfter?: number; code?: string };
 
 export async function serverLogin(args: { id?: string; username?: string; pin: string }): Promise<LoginOutcome> {
   try {
@@ -252,13 +303,14 @@ export async function serverLogin(args: { id?: string; username?: string; pin: s
       attempts_left?: number;
       retry_after?: number;
       user?: SessionUser;
+      code?: string;
     }>("/api/auth/login", args, 15_000);
     if (r.json?.ok && r.json.user) return { ok: true, user: r.json.user };
     const reason = r.json?.reason;
     if (reason === "invalid" || reason === "locked" || reason === "rate" || reason === "server_not_configured") {
-      return { ok: false, reason, attemptsLeft: r.json?.attempts_left, retryAfter: r.json?.retry_after };
+      return { ok: false, reason, attemptsLeft: r.json?.attempts_left, retryAfter: r.json?.retry_after, code: r.json?.code };
     }
-    return { ok: false, reason: "server_error" };
+    return { ok: false, reason: "server_error", code: r.json?.code };
   } catch {
     return { ok: false, reason: "offline" };
   }
@@ -290,6 +342,7 @@ export async function startSession(user: SessionUser, opts: { discardOther?: boo
   setSessionUser(user);
   const res = useBukuDompetStore.getState().signInVerifiedUser(user);
   eng.init(user.id, user.role);
+  setBind({ status: "bound" });
   startAutoSync();
   await Promise.race([eng.syncNow(), wait(8_000)]);
   return { ok: true, targetPath: res.targetPath };
@@ -309,15 +362,21 @@ export async function bootSession(): Promise<BootResult> {
   if (getSessionUser() && eng.getSnapshot().ready && Date.now() - lastBootOk < 60_000) return "ok";
 
   let user: SessionUser | null = null;
+  let failure: BindState["reason"] = undefined;
+  let failCode: string | undefined;
   try {
-    const r = await api<{ ok: boolean; user?: SessionUser }>("/api/auth/me", undefined, 6_000);
+    const r = await api<{ ok: boolean; user?: SessionUser; code?: string }>("/api/auth/me", undefined, 6_000);
     if (r.status === 401) {
       handleSessionInvalid();
       return "expired";
     }
     if (r.status === 200 && r.json?.ok && r.json.user) user = r.json.user;
+    else {
+      failure = "server"; // server menjawab tetapi gagal (mis. 503): BUKAN sesi habis
+      failCode = r.json?.code;
+    }
   } catch {
-    /* offline: lanjut dengan identitas tersimpan */
+    failure = "offline"; // offline: lanjut dengan identitas tersimpan bila ada
   }
 
   const persisted = loadPersisted();
@@ -329,6 +388,8 @@ export async function bootSession(): Promise<BootResult> {
     }
     setSessionUser(user);
     eng.init(user.id, user.role);
+    setBind({ status: "bound" });
+    cancelBootRetry();
     startAutoSync();
     lastBootOk = Date.now();
     return "ok";
@@ -342,7 +403,13 @@ export async function bootSession(): Promise<BootResult> {
   if (prof) {
     setSessionUser({ id: prof.id, username: prof.username, display_name: prof.display_name, role: prof.role });
     eng.init(prof.id, persisted?.role ?? prof.role);
+    setBind({ status: "bound" }); // status sinkron selanjutnya dilaporkan jujur oleh mesin (offline/galat/sesi berakhir)
     startAutoSync();
+  } else {
+    // Tidak ada identitas sinkron di perangkat ini dan server belum bisa memastikan sesi: JANGAN diam-diam
+    // menyimpan lokal saja. Tampilkan peringatan merah dan coba menyambung ulang sendiri.
+    setBind({ status: "unbound", reason: failure ?? "server", code: failCode });
+    scheduleBootRetry();
   }
   return "offline";
 }
@@ -378,6 +445,8 @@ export async function logoutSafely(opts: { force?: boolean } = {}): Promise<Logo
   wipeLocalData();
   eng.reset();
   lastBootOk = 0;
+  cancelBootRetry();
+  setBind(BIND_UNKNOWN);
   return { done: true };
 }
 

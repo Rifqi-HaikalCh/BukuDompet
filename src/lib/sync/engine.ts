@@ -119,6 +119,8 @@ export interface SyncSnapshot {
   held: number;
   lastSyncAt: number | null;
   ready: boolean;
+  /** berapa siklus berturut-turut gagal karena server (bukan offline); ≥3 = beri tahu pengguna dengan jujur */
+  failStreak: number;
 }
 
 export interface EngineDeps {
@@ -169,6 +171,7 @@ export class SyncEngine {
     held: 0,
     lastSyncAt: null,
     ready: false,
+    failStreak: 0,
   };
   private listeners = new Set<() => void>();
   private running: Promise<void> | null = null;
@@ -230,7 +233,7 @@ export class SyncEngine {
   reset(): void {
     this.P = emptyPersisted(null);
     this.deps.io.save(this.P);
-    this.set({ ready: false, pending: 0, blocked: 0, foreign: 0, held: 0, phase: "idle", lastSyncAt: null });
+    this.set({ ready: false, pending: 0, blocked: 0, foreign: 0, held: 0, phase: "idle", lastSyncAt: null, failStreak: 0 });
   }
 
   /** Perkiraan jumlah perubahan lokal yang belum terkirim (murah; dipakai pill & konfirmasi keluar). */
@@ -313,7 +316,7 @@ export class SyncEngine {
       await this.pushAll();
       if (this.needFull) await this.pullAll(true);
       this.errorCount = 0;
-      this.set({ phase: "idle", lastSyncAt: (this.deps.now ?? Date.now)() });
+      this.set({ phase: "idle", lastSyncAt: (this.deps.now ?? Date.now)(), failStreak: 0 });
     } catch (e) {
       if (e instanceof SyncHttpError && e.status === 401) {
         this.set({ phase: "auth" });
@@ -321,7 +324,7 @@ export class SyncEngine {
       } else {
         this.errorCount++;
         const offline = !(e instanceof SyncHttpError) || e.status === 0;
-        this.set({ phase: offline ? "offline" : "error" });
+        this.set({ phase: offline ? "offline" : "error", failStreak: offline ? 0 : this.errorCount });
       }
     } finally {
       this.persist();

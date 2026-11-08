@@ -72,7 +72,7 @@ function loginErrorMessage(out: Extract<LoginOutcome, { ok: false }>): string {
     case "server_not_configured":
       return "Server belum dikonfigurasi. Hubungi Admin untuk memeriksa pengaturan penyimpanan.";
     default:
-      return "Server sedang bermasalah. Coba lagi sebentar lagi.";
+      return `Server sedang bermasalah. Coba lagi sebentar lagi.${out.code ? ` (kode: ${out.code})` : ""}`;
   }
 }
 
@@ -156,7 +156,7 @@ export default function LoginPage() {
       setErrorMsg(
         r.reason === "offline"
           ? "Tidak bisa tersambung ke server. Masuk butuh internet — periksa koneksi lalu coba lagi."
-          : "Server sedang bermasalah. Coba lagi sebentar lagi."
+          : `Server sedang bermasalah. Coba lagi sebentar lagi.${r.code ? ` (kode: ${r.code})` : ""}`
       );
       return;
     }

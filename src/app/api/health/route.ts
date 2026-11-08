@@ -1,24 +1,45 @@
 import { rpc } from "@/lib/server/db"
-import { json } from "@/lib/server/http"
+import { errorCode, json } from "@/lib/server/http"
+import { cleanEnv, readServerEnv } from "@/lib/server/env"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-/** Cek cepat setelah deploy: apakah env terpasang dan migrasi 005 sudah dijalankan? Tanpa data sensitif. */
+const HINTS: Record<string, string> = {
+  url_missing: "NEXT_PUBLIC_SUPABASE_URL belum diatur di Vercel (Production).",
+  url_invalid: "NEXT_PUBLIC_SUPABASE_URL bukan alamat yang sah (contoh benar: https://<kode>.supabase.co).",
+  key_missing: "SUPABASE_SECRET_KEY belum diatur di Vercel (Production).",
+  key_is_publishable: "SUPABASE_SECRET_KEY berisi kunci PUBLISHABLE. Pakai kunci 'secret' (sb_secret_…) dari Supabase > Settings > API Keys.",
+  key_bad_chars: "SUPABASE_SECRET_KEY mengandung karakter tak sah (spasi/baris baru). Hapus lalu isi ulang tepat satu baris tanpa spasi, kemudian Redeploy.",
+  key_project_mismatch: "Kunci dan URL milik proyek Supabase yang berbeda. Samakan keduanya dengan proyek BukuDompet.",
+  network: "Server Vercel tidak bisa menjangkau Supabase (jaringan/DNS). Periksa URL proyek dan status proyek Supabase.",
+  bad_header: "SUPABASE_SECRET_KEY tak bisa dipakai sebagai header (ada karakter tersembunyi). Isi ulang di Vercel lalu Redeploy.",
+  invalid_api_key: "Supabase menolak kunci. Salin ulang kunci 'secret' proyek BukuDompet ke SUPABASE_SECRET_KEY lalu Redeploy.",
+  forbidden: "Kunci diterima tetapi tak berhak menjalankan fungsi. Jalankan ulang bagian GRANT di migrasi 005.",
+  function_missing: "Fungsi app_* belum ada di database. Jalankan supabase/migrations/005_v5_5_server_sync.sql di SQL Editor.",
+  db_error: "Database menolak panggilan. Lihat Runtime Logs Vercel (cari '[db] rpc gagal').",
+  unknown: "Galat tak terduga. Lihat Runtime Logs Vercel.",
+}
+
+/** Cek cepat setelah deploy: apakah env terpasang dan database bisa dijangkau? Tanpa data sensitif. */
 export async function GET() {
   const env = {
-    url: !!(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL),
-    secretKey: !!(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
-    sessionSecret: !!process.env.SESSION_SECRET,
+    url: !!cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL),
+    secretKey: !!cleanEnv(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
+    sessionSecret: !!cleanEnv(process.env.SESSION_SECRET),
+  }
+  let host: string | undefined
+  try {
+    host = new URL(readServerEnv().url).host
+  } catch {
+    host = undefined
   }
   try {
     const h = await rpc<{ ok: boolean; accounts: number }>("app_health", {})
-    return json({ ok: true, env, migrated: true, accounts: h.accounts })
+    return json({ ok: true, env, host, migrated: true, accounts: h.accounts })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : ""
-    const hint = msg.startsWith("SERVER_NOT_CONFIGURED")
-      ? "Atur SUPABASE_SECRET_KEY dan NEXT_PUBLIC_SUPABASE_URL di Vercel"
-      : "Jalankan supabase/migrations/005_v5_5_server_sync.sql di SQL Editor"
-    return json({ ok: false, env, migrated: false, hint }, 503)
+    const code = errorCode(e)
+    console.error("[health] gagal", code, e instanceof Error ? e.message : e)
+    return json({ ok: false, env, host, code, hint: HINTS[code] ?? HINTS.unknown }, 503)
   }
 }

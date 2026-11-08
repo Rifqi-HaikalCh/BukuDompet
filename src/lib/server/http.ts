@@ -2,6 +2,8 @@ import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { SESSION_COOKIE, cookieOptions, verifySessionToken, type SessionPayload } from "./session"
 import { SessionInvalidError } from "./db"
+import { DbError } from "./errors"
+import { ConfigError } from "./env"
 
 export const json = (body: unknown, status = 200) =>
   NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } })
@@ -29,6 +31,19 @@ export async function readJson(req: Request, maxBytes: number): Promise<Record<s
   } catch {
     return null
   }
+}
+
+/** Kode penyebab yang aman ditampilkan (tanpa rahasia) untuk galat server. */
+export function errorCode(e: unknown): string {
+  if (e instanceof ConfigError || e instanceof DbError) return e.code
+  return "unknown"
+}
+
+/** Catat galat server ke log Vercel (dengan kode penyebab) dan balas 500 yang membawa kode itu. */
+export function fail(route: string, e: unknown, body: Record<string, unknown> = {}) {
+  const code = errorCode(e)
+  console.error(`[api] ${route} gagal: ${code}`, e instanceof Error ? e.message : e)
+  return json({ ...body, error: "server_error", code }, 500)
 }
 
 export async function currentSession(): Promise<SessionPayload | null> {
@@ -76,8 +91,7 @@ export function authedPost(maxBytes: number, handler: Handler) {
         await clearSessionCookie()
         return json({ error: "session_invalid" }, 401)
       }
-      const msg = e instanceof Error ? e.message : "error"
-      return json({ error: msg.startsWith("SERVER_NOT_CONFIGURED") ? "server_not_configured" : "server_error" }, 500)
+      return fail("authed", e, e instanceof ConfigError ? { error: "server_not_configured" } : {})
     }
   }
 }

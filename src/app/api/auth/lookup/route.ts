@@ -1,5 +1,5 @@
 import { rpc } from "@/lib/server/db"
-import { clientIp, json, rateLimited, readJson, sameOriginOk } from "@/lib/server/http"
+import { clientIp, fail, json, rateLimited, readJson, sameOriginOk } from "@/lib/server/http"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   try {
     const candidates = await rpc<unknown[]>("app_lookup", { p_name: name })
     return json({ candidates })
-  } catch {
-    return json({ error: "server_error" }, 500)
+  } catch (e) {
+    return fail("auth/lookup", e)
   }
 }
