@@ -61,11 +61,12 @@ export interface ServerEnv {
 }
 
 export function readServerEnv(env: Record<string, string | undefined> = process.env): ServerEnv {
-  const rawUrl = cleanEnv(env.NEXT_PUBLIC_SUPABASE_URL) || cleanEnv(env.SUPABASE_URL);
+  // APP_* = nama khusus aplikasi ini: tidak bisa tertimpa integrasi Vercel↔Supabase. Dua lainnya hanya cadangan.
+  const rawUrl = cleanEnv(env.APP_SUPABASE_URL) || cleanEnv(env.NEXT_PUBLIC_SUPABASE_URL) || cleanEnv(env.SUPABASE_URL);
   if (!rawUrl) throw new ConfigError("url_missing");
   const url = normalizeUrl(rawUrl);
 
-  const key = cleanEnv(env.SUPABASE_SECRET_KEY) || cleanEnv(env.SUPABASE_SERVICE_ROLE_KEY);
+  const key = cleanEnv(env.APP_SUPABASE_SECRET_KEY) || cleanEnv(env.SUPABASE_SECRET_KEY) || cleanEnv(env.SUPABASE_SERVICE_ROLE_KEY);
   if (!key) throw new ConfigError("key_missing");
   if (key.startsWith("sb_publishable_")) throw new ConfigError("key_is_publishable");
   if (!/^[A-Za-z0-9._-]+$/.test(key)) throw new ConfigError("key_bad_chars");

@@ -42,6 +42,16 @@ t("JWT proyek yang sama diterima", () =>
 t("NEXT_PUBLIC_SUPABASE_URL didahulukan atas SUPABASE_URL", () =>
   assert.equal(readServerEnv({ NEXT_PUBLIC_SUPABASE_URL: URL_OK, SUPABASE_URL: "https://mtveyrbvszasprbexhqz.supabase.co", SUPABASE_SECRET_KEY: KEY_OK }).url, URL_OK));
 
+t("APP_SUPABASE_URL & APP_SUPABASE_SECRET_KEY didahulukan atas nama lama", () => {
+  const r = readServerEnv({
+    APP_SUPABASE_URL: URL_OK, APP_SUPABASE_SECRET_KEY: KEY_OK,
+    NEXT_PUBLIC_SUPABASE_URL: "https://mtveyrbvszasprbexhqz.supabase.co", SUPABASE_URL: "https://mtveyrbvszasprbexhqz.supabase.co",
+    SUPABASE_SECRET_KEY: SECRET_PREFIX + "zzzzzzzzzzzz", SUPABASE_SERVICE_ROLE_KEY: jwt("mtveyrbvszasprbexhqz"),
+  });
+  assert.equal(r.url, URL_OK);
+  assert.equal(r.key, KEY_OK);
+});
+
 console.log("readSessionSecret");
 t("rahasia sesi dibersihkan & minimal 16 karakter", () => {
   assert.equal(readSessionSecret({ SESSION_SECRET: "x".repeat(20) + "\r\n" }), "x".repeat(20));

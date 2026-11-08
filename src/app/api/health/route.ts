@@ -34,14 +34,28 @@ function hostOf(v: string | undefined): string | null {
 /** Cek cepat setelah deploy: apakah env terpasang dan database bisa dijangkau? Tanpa data sensitif. */
 export async function GET() {
   const env = {
-    url: !!cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL),
-    secretKey: !!cleanEnv(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
-    sessionSecret: !!cleanEnv(process.env.SESSION_SECRET),
+    url: false,
+    secretKey: false,
+    sessionSecret: false,
   }
   // Dibaca lewat objek (bukan literal process.env.X) agar nilai RUNTIME yang terlihat, bukan hasil inline saat build.
   const rt = process.env as Record<string, string | undefined>
-  const sources = { NEXT_PUBLIC_SUPABASE_URL: hostOf(rt["NEXT_PUBLIC_SUPABASE_URL"]), SUPABASE_URL: hostOf(rt["SUPABASE_URL"]) }
-  const conflict = !!sources.NEXT_PUBLIC_SUPABASE_URL && !!sources.SUPABASE_URL && sources.NEXT_PUBLIC_SUPABASE_URL !== sources.SUPABASE_URL
+  const has = (n: string) => !!cleanEnv(rt[n])
+  env.url = has("APP_SUPABASE_URL") || has("NEXT_PUBLIC_SUPABASE_URL") || has("SUPABASE_URL")
+  env.secretKey = has("APP_SUPABASE_SECRET_KEY") || has("SUPABASE_SECRET_KEY") || has("SUPABASE_SERVICE_ROLE_KEY")
+  env.sessionSecret = has("SESSION_SECRET")
+  const sources = {
+    APP_SUPABASE_URL: hostOf(rt["APP_SUPABASE_URL"]),
+    NEXT_PUBLIC_SUPABASE_URL: hostOf(rt["NEXT_PUBLIC_SUPABASE_URL"]),
+    SUPABASE_URL: hostOf(rt["SUPABASE_URL"]),
+  }
+  // Nama variabel yang dipakai (bukan nilainya).
+  const used = {
+    url: ["APP_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL"].find(has) ?? null,
+    key: ["APP_SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"].find(has) ?? null,
+  }
+  const hosts = Object.values(sources).filter((h): h is string => !!h)
+  const conflict = new Set(hosts).size > 1
   let host: string | undefined
   try {
     host = new URL(readServerEnv().url).host
@@ -50,10 +64,10 @@ export async function GET() {
   }
   try {
     const h = await rpc<{ ok: boolean; accounts: number }>("app_health", {})
-    return json({ ok: true, env, host, sources, conflict, migrated: true, accounts: h.accounts })
+    return json({ ok: true, env, host, used, sources, conflict, migrated: true, accounts: h.accounts })
   } catch (e) {
     const code = errorCode(e)
     console.error("[health] gagal", code, e instanceof Error ? e.message : e)
-    return json({ ok: false, env, host, sources, conflict, code, hint: HINTS[code] ?? HINTS.unknown }, 503)
+    return json({ ok: false, env, host, used, sources, conflict, code, hint: HINTS[code] ?? HINTS.unknown }, 503)
   }
 }
