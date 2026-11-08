@@ -3,7 +3,6 @@
 import { GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   UserPlus,
   Users,
@@ -37,6 +36,8 @@ import {
   formatRupiah,
 } from "@/components/ui/CozyPrimitives";
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
+import { useSafeLogout } from "@/components/ui/SafeLogout";
+import { adminCreateAccount, adminSetPin } from "@/lib/sync/client";
 import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { GamificationFX } from "@/components/ui/GamificationFX";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
@@ -44,7 +45,6 @@ import { useCozyBgm } from "@/lib/cozy-bgm";
 import { cn, formatCompactRupiah } from "@/lib/utils";
 
 export default function AdminCommandCenterPage() {
-  const router = useRouter();
   const { isPlaying: isBgmPlaying, toggleBgm } = useCozyBgm();
   const {
     profiles,
@@ -57,8 +57,8 @@ export default function AdminCommandCenterPage() {
     registerNewAccount,
     toggleSupervisorAssignment,
     switchRoleDirect,
-    logout,
   } = useBukuDompetStore();
+  const safeLogout = useSafeLogout();
 
   const userProfiles = useMemo(
     () => profiles.filter((p) => isChildRole(p.role)),
@@ -97,7 +97,7 @@ export default function AdminCommandCenterPage() {
   // 1. Form Tambah Pengguna Baru (Register) State
   const [newDisplayName, setNewDisplayName] = useState<string>("");
   const [newUsername, setNewUsername] = useState<string>("");
-  const [newPinCode, setNewPinCode] = useState<string>("1234");
+  const [newPinCode, setNewPinCode] = useState<string>("");
   const [newRole, setNewRole] = useState<UserRole>("user");
   const [newBudgetTarget, setNewBudgetTarget] = useState<string>("1500000");
   const [newPetName, setNewPetName] = useState<string>("Mochi");
@@ -106,6 +106,13 @@ export default function AdminCommandCenterPage() {
     success: boolean;
     message: string;
   } | null>(null);
+  const [registering, setRegistering] = useState<boolean>(false);
+
+  // Ubah PIN akun (PIN hanya ada di database, ter-hash; Admin tidak pernah bisa melihat PIN lama)
+  const [pinTargetId, setPinTargetId] = useState<string>("");
+  const [pinNew, setPinNew] = useState<string>("");
+  const [pinBusy, setPinBusy] = useState<boolean>(false);
+  const [pinFeedback, setPinFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
   // 2. Matriks Penugasan Supervisor State
   const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>(
@@ -153,12 +160,42 @@ export default function AdminCommandCenterPage() {
     ? historyRedemptions
     : historyRedemptions.slice(0, 5);
 
-  const handleRegisterAccount = (e: React.FormEvent) => {
+  const ACCOUNT_ERRORS: Record<string, string> = {
+    username_taken: "Username sudah dipakai. Gunakan username lain.",
+    bad_username: "Username hanya boleh huruf kecil, angka, dan garis bawah (3–24 karakter).",
+    bad_pin: "PIN harus tepat 4 angka.",
+    bad_name: "Nama tampilan wajib diisi (maks. 40 karakter).",
+    bad_role: "Peran akun tidak valid.",
+    forbidden: "Hanya Admin yang boleh melakukan ini.",
+    session_invalid: "Sesimu berakhir. Masuk lagi sebagai Admin.",
+    offline: "Tidak bisa tersambung ke server. Periksa internet lalu coba lagi.",
+    not_found: "Akun tidak ditemukan.",
+  };
+  const accountError = (reason: string) =>
+    ACCOUNT_ERRORS[reason] ?? "Server sedang bermasalah. Coba lagi sebentar lagi.";
+
+  const handleRegisterAccount = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (registering) return;
+    setRegistering(true);
+    setRegisterFeedback(null);
+    // Akun & PIN dibuat DI SERVER dulu (PIN di-hash di database). Hanya bila berhasil, profil lokal dibuat.
+    const created = await adminCreateAccount({
+      username: newUsername.trim().toLowerCase().replace(/\s+/g, "_"),
+      display_name: newDisplayName.trim(),
+      role: newRole,
+      pin: newPinCode.trim(),
+    });
+    if (!created.ok) {
+      setRegistering(false);
+      soundEffects.detectiveBuzz();
+      setRegisterFeedback({ success: false, message: accountError(created.reason) });
+      return;
+    }
     const res = registerNewAccount({
+      id: created.id,
       displayName: newDisplayName,
       username: newUsername,
-      pinCode: newPinCode,
       role: newRole,
       monthlyBudgetTarget: isChildRole(newRole)
         ? Number(newBudgetTarget) || (newRole === "schoolchild" ? 150000 : 1500000)
@@ -168,15 +205,37 @@ export default function AdminCommandCenterPage() {
         ? newSupervisorId || supervisorProfiles[0]?.id
         : undefined,
     });
+    setRegistering(false);
     setRegisterFeedback(res);
     if (res.success) {
       soundEffects.comboFanfare();
       fireCozyConfetti("combo");
       setNewDisplayName("");
       setNewUsername("");
-      setNewPinCode("1234");
+      setNewPinCode("");
     } else {
       soundEffects.detectiveBuzz();
+    }
+  };
+
+  const handleChangePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinBusy || !pinTargetId) return;
+    setPinBusy(true);
+    setPinFeedback(null);
+    const r = await adminSetPin(pinTargetId, pinNew.trim());
+    setPinBusy(false);
+    if (r.ok) {
+      const who = profiles.find((p) => p.id === pinTargetId);
+      soundEffects.comboFanfare();
+      setPinNew("");
+      setPinFeedback({
+        success: true,
+        message: `PIN ${who ? who.display_name : "akun"} diganti. Semua sesi lama akun itu otomatis berakhir.`,
+      });
+    } else {
+      soundEffects.detectiveBuzz();
+      setPinFeedback({ success: false, message: accountError(r.reason ?? "") });
     }
   };
 
@@ -203,8 +262,7 @@ export default function AdminCommandCenterPage() {
         targetUserProfile.id
       );
     } else if (pendingAction.type === "exit_login") {
-      logout();
-      router.push("/login");
+      void safeLogout.run();
     }
     setPendingAction(null);
   };
@@ -228,6 +286,7 @@ export default function AdminCommandCenterPage() {
   return (
     <div className="min-h-screen text-[#3D352E] pb-16 overflow-x-hidden">
       <PageTransitionLoader />
+      {safeLogout.overlay}
       <GamificationFX />
       <FloatingRewardBanner />
 
@@ -469,14 +528,18 @@ export default function AdminCommandCenterPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
-                      PIN / Password
+                      PIN (4 angka)
                     </label>
                     <input
                       type="text"
                       required
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={4}
+                      pattern="[0-9]{4}"
                       value={newPinCode}
-                      onChange={(e) => setNewPinCode(e.target.value)}
-                      placeholder="Cth: 1414"
+                      onChange={(e) => setNewPinCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      placeholder="4 angka, cth: 1414"
                       className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E] focus:outline-none focus:border-[#38B6FF]"
                     />
                   </div>
@@ -576,9 +639,73 @@ export default function AdminCommandCenterPage() {
                   variant="matcha"
                   size="md"
                   fullWidth
+                  disabled={registering}
                 >
                   <UserPlus className="w-4 h-4" />
-                  Daftarkan Akun Baru Sekarang
+                  {registering ? "Mendaftarkan…" : "Daftarkan Akun Baru Sekarang"}
+                </TactileButton>
+              </form>
+
+              {/* Ubah PIN akun */}
+              <form
+                onSubmit={handleChangePin}
+                className="pt-3.5 border-t-2 border-[#E6DFD2] space-y-2.5"
+                aria-labelledby="ubah-pin-title"
+              >
+                <h4 id="ubah-pin-title" className="font-display text-sm font-extrabold text-[#3D352E]">
+                  Ubah PIN Akun
+                </h4>
+                <p className="text-[11px] font-bold text-[#7A6E65] leading-relaxed">
+                  PIN disimpan terenkripsi di database, jadi PIN lama tidak bisa dilihat. Mengganti PIN langsung
+                  mengeluarkan akun itu dari semua perangkat.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                  <select
+                    value={pinTargetId}
+                    onChange={(e) => {
+                      setPinTargetId(e.target.value);
+                      setPinFeedback(null);
+                    }}
+                    required
+                    aria-label="Pilih akun yang PIN-nya diganti"
+                    className="sm:col-span-3 w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs font-extrabold text-[#3D352E] focus:outline-none min-w-0"
+                  >
+                    <option value="">Pilih akun…</option>
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.display_name} (@{p.username})
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    required
+                    inputMode="numeric"
+                    autoComplete="off"
+                    maxLength={4}
+                    pattern="[0-9]{4}"
+                    value={pinNew}
+                    onChange={(e) => setPinNew(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="PIN baru"
+                    aria-label="PIN baru, 4 angka"
+                    className="sm:col-span-2 w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs font-extrabold text-[#3D352E] focus:outline-none focus:border-[#38B6FF] min-w-0"
+                  />
+                </div>
+                {pinFeedback && (
+                  <div
+                    role="status"
+                    className={cn(
+                      "p-2.5 rounded-xl border text-xs font-extrabold",
+                      pinFeedback.success
+                        ? "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]"
+                        : "bg-[#FFF2F0] border-[#FFCDC6] text-[#C83E2B]"
+                    )}
+                  >
+                    {pinFeedback.message}
+                  </div>
+                )}
+                <TactileButton type="submit" variant="sky" size="md" fullWidth disabled={pinBusy || pinNew.length !== 4 || !pinTargetId}>
+                  {pinBusy ? "Menyimpan…" : "Simpan PIN Baru"}
                 </TactileButton>
               </form>
             </div>
@@ -613,8 +740,7 @@ export default function AdminCommandCenterPage() {
                     >
                       {supervisorProfiles.map((sup) => (
                         <option key={sup.id} value={sup.id}>
-                          {sup.display_name} (Username: @{sup.username} • PIN:{" "}
-                          {sup.pin_code})
+                          {sup.display_name} (Username: @{sup.username})
                         </option>
                       ))}
                     </select>

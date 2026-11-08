@@ -38,7 +38,6 @@ import {
   spendShields,
   type ShieldPackId,
 } from "@/lib/streak-shields";
-import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export type UserRole = "user" | "supervisor" | "admin" | "schoolchild";
 
@@ -69,7 +68,6 @@ export interface ProfileData {
   username: string;
   display_name: string;
   role: UserRole;
-  pin_code: string;
   /**
    * Versi 5.2: tanggal registrasi akun (`YYYY-MM-DD`, lokal). Menjadi "Hari ke-1" Peta Perjalanan.
    * Opsional agar data lama tetap valid; bila kosong, peta memakai catatan paling awal atau hari ini.
@@ -244,12 +242,11 @@ export const INITIAL_SUPERVISOR_ASSIGNMENTS: SupervisorAssignment[] = [
 ];
 
 /** Profil baru yang bersih: Fase 1 (Telur Ajaib), tanpa riwayat apa pun. */
-function buildRealProfile(spec: {
+export function buildRealProfile(spec: {
   id: string;
   username: string;
   display_name: string;
   role: UserRole;
-  pin_code: string;
 }): ProfileData {
   const isKid = spec.role === "schoolchild";
   const isPlayer = spec.role === "user" || isKid;
@@ -260,7 +257,6 @@ function buildRealProfile(spec: {
     username: spec.username,
     display_name: spec.display_name,
     role: spec.role,
-    pin_code: spec.pin_code,
     createdAt: today,
     avatar_theme: spec.role === "admin" ? "mochi-boss" : spec.role === "supervisor" ? "mochi-parent" : "mochi-cat",
     xp: 0,
@@ -298,18 +294,18 @@ function buildRealProfile(spec: {
 }
 
 export const INITIAL_PROFILES: ProfileData[] = [
-  buildRealProfile({ id: ADMIN_ID, username: "ekal_admin", display_name: "Ekal (Admin)", role: "admin", pin_code: "0000" }),
-  buildRealProfile({ id: SUPERVISOR_BUNDA_ID, username: "bunda_sv", display_name: "Bunda (Supervisor)", role: "supervisor", pin_code: "1111" }),
-  buildRealProfile({ id: SUPERVISOR_AYAH_ID, username: "ayah_sv", display_name: "Ayah (Supervisor)", role: "supervisor", pin_code: "1111" }),
-  buildRealProfile({ id: USER_BUNDA_ID, username: "bunda", display_name: "Bunda", role: "user", pin_code: "2222" }),
-  buildRealProfile({ id: USER_AYAH_ID, username: "ayah", display_name: "Ayah", role: "user", pin_code: "2222" }),
-  buildRealProfile({ id: USER_TIARA_ID, username: "tiara", display_name: "Tiara", role: "user", pin_code: "1111" }),
-  buildRealProfile({ id: SCHOOLCHILD_AIRA_ID, username: "aira", display_name: "Aira", role: "schoolchild", pin_code: "1111" }),
-  buildRealProfile({ id: USER_EKAL_ID, username: "ekal", display_name: "Ekal", role: "user", pin_code: "1111" }),
-  buildRealProfile({ id: USER_TANIA_ID, username: "tania", display_name: "Tania", role: "user", pin_code: "1111" }),
-  buildRealProfile({ id: USER_SOFIA_ID, username: "sofia", display_name: "Sofia", role: "user", pin_code: "1111" }),
-  buildRealProfile({ id: SCHOOLCHILD_EKAL_ID, username: "ekal_sd", display_name: "Ekal (Anak SD)", role: "schoolchild", pin_code: "2222" }),
-  buildRealProfile({ id: SUPERVISOR_EKAL_ID, username: "ekal_sv", display_name: "Ekal (Supervisor)", role: "supervisor", pin_code: "3333" }),
+  buildRealProfile({ id: ADMIN_ID, username: "ekal_admin", display_name: "Ekal (Admin)", role: "admin" }),
+  buildRealProfile({ id: SUPERVISOR_BUNDA_ID, username: "bunda_sv", display_name: "Bunda (Supervisor)", role: "supervisor" }),
+  buildRealProfile({ id: SUPERVISOR_AYAH_ID, username: "ayah_sv", display_name: "Ayah (Supervisor)", role: "supervisor" }),
+  buildRealProfile({ id: USER_BUNDA_ID, username: "bunda", display_name: "Bunda", role: "user" }),
+  buildRealProfile({ id: USER_AYAH_ID, username: "ayah", display_name: "Ayah", role: "user" }),
+  buildRealProfile({ id: USER_TIARA_ID, username: "tiara", display_name: "Tiara", role: "user" }),
+  buildRealProfile({ id: SCHOOLCHILD_AIRA_ID, username: "aira", display_name: "Aira", role: "schoolchild" }),
+  buildRealProfile({ id: USER_EKAL_ID, username: "ekal", display_name: "Ekal", role: "user" }),
+  buildRealProfile({ id: USER_TANIA_ID, username: "tania", display_name: "Tania", role: "user" }),
+  buildRealProfile({ id: USER_SOFIA_ID, username: "sofia", display_name: "Sofia", role: "user" }),
+  buildRealProfile({ id: SCHOOLCHILD_EKAL_ID, username: "ekal_sd", display_name: "Ekal (Anak SD)", role: "schoolchild" }),
+  buildRealProfile({ id: SUPERVISOR_EKAL_ID, username: "ekal_sv", display_name: "Ekal (Supervisor)", role: "supervisor" }),
 ];
 
 /* Go live: tidak ada transaksi, misi, lencana, atau penukaran contoh. */
@@ -466,8 +462,6 @@ interface BukuDompetState {
   mysteryBoxCount: number;
   openedCheckpointWeeks: number[];
   isProudComboActive: boolean;
-  lastSupervisorCheerDate: string | null;
-  supervisorCheersCount: number;
 
   // Modals & Drawers
   isTransactionDrawerOpen: boolean;
@@ -483,7 +477,6 @@ interface BukuDompetState {
   particleBurstKey: number;
   particleBurstType: "coin" | "xp" | "both";
   celebrationModal: CelebrationModalState | null;
-  supabaseConnected: boolean;
 
   // Versi 5.0: sesi permanen, kartu profil tersimpan, dan overlay loading global
   /** Sesi permanen: tetap true sampai pengguna menekan Keluar. Disimpan di localStorage. */
@@ -496,19 +489,13 @@ interface BukuDompetState {
   isActionLoading: boolean;
 
   // Auth & Multi-User RBAC Actions
-  loginWithCredentials: (
-    username: string,
-    pin: string
-  ) => {
-    success: boolean;
-    role?: UserRole;
-    targetPath?: string;
-    message?: string;
-  };
-  loginWithPin: (
-    role: UserRole,
-    pin: string
-  ) => { success: boolean; message?: string };
+  /** Setelah server menerima PIN: pasang sesi lokal (profil dibuat bila belum ada). */
+  signInVerifiedUser: (user: {
+    id: string;
+    username: string;
+    display_name: string;
+    role: UserRole;
+  }) => { success: true; role: UserRole; targetPath: string };
   switchRoleDirect: (role: UserRole, profileId?: string) => void;
   setMonitoredUserId: (userId: string) => void;
   /** Versi 5.1: pilih anak yang dipantau dari halaman "Pilih Anak" Supervisor. */
@@ -558,9 +545,10 @@ interface BukuDompetState {
 
   // Admin Account Management & Supervisor Assignment Actions
   registerNewAccount: (payload: {
+    /** Id akun yang sudah dibuat server (/api/admin/accounts). PIN tidak pernah menyentuh store. */
+    id: string;
     displayName: string;
     username: string;
-    pinCode: string;
     role: UserRole;
     monthlyBudgetTarget?: number;
     monthlySavingTarget?: number;
@@ -693,45 +681,10 @@ interface BukuDompetState {
     targetUserId?: string;
   }) => void;
 
-  syncWithSupabaseIfAvailable: () => Promise<void>;
 }
 
 /** Token pemicu overlay loading terakhir (mencegah timer lama mematikan overlay milik klik baru). */
 let loadingToken = 0;
-
-async function trySupabaseInsert(table: string, row: Record<string, unknown>) {
-  try {
-    if (
-      typeof window === "undefined" ||
-      !process.env.NEXT_PUBLIC_SUPABASE_URL
-    ) {
-      return;
-    }
-    const supabase = createSupabaseBrowserClient();
-    await supabase.from(table).insert(row);
-  } catch {
-    // Fallback gracefully to Local/Zustand state
-  }
-}
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Ubah/hapus baris transaksi di Supabase (best-effort). `patch = null` berarti hapus. */
-async function trySupabaseMutate(
-  tx: Pick<TransactionRecord, "id" | "user_id" | "created_at">,
-  patch: Record<string, unknown> | null
-) {
-  try {
-    if (typeof window === "undefined" || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
-    const supabase = createSupabaseBrowserClient();
-    const base = supabase.from("transactions");
-    const q = patch ? base.update(patch) : base.delete();
-    // Baris bawaan server punya UUID; baris buatan lokal dicocokkan lewat pemilik + waktu buat.
-    await (UUID_RE.test(tx.id) ? q.eq("id", tx.id) : q.eq("user_id", tx.user_id).eq("created_at", tx.created_at));
-  } catch {
-    // Tetap lokal bila tabel belum dimigrasi
-  }
-}
 
 function getActiveUserProfile(state: {
   currentRole: UserRole;
@@ -776,6 +729,14 @@ function sanitizeProfileAccessories(p: ProfileData): ProfileData {
   return { ...p, ownedAccessories: owned, equippedAccessories: equipped };
 }
 
+/** Buang sisa `pin_code` dari data lokal versi lama (PIN kini hanya ada di database, ter-hash). */
+function stripLegacyPin<T extends object>(p: T): T {
+  if (!("pin_code" in p)) return p;
+  const { pin_code: _legacy, ...rest } = p as T & { pin_code?: string };
+  void _legacy;
+  return rest as T;
+}
+
 export const useBukuDompetStore = create<BukuDompetState>()(
   persist(
     (set, get) => ({
@@ -790,14 +751,12 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       redemptions: INITIAL_REDEMPTIONS,
       equippedMochiStage: null,
       equippedTitle: "Penabung Cerdas",
-      streakFreezeDates: [getRelativeDateStr(-6), getRelativeDateStr(-9)],
-      zeroSpendDates: [getRelativeDateStr(-7)],
+      streakFreezeDates: [],
+      zeroSpendDates: [],
       mysteryBoxCount: 0,
       openedCheckpointWeeks: [],
       deletedRewardLedger: {},
       isProudComboActive: false,
-      lastSupervisorCheerDate: null,
-      supervisorCheersCount: 1,
       isTransactionDrawerOpen: false,
       isCashoutModalOpen: false,
       isStreakCalendarOpen: false,
@@ -808,46 +767,35 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       particleBurstKey: 0,
       particleBurstType: "both",
       celebrationModal: null,
-      supabaseConnected: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
       isLoggedIn: false,
       supervisorChildChosen: false,
       savedProfileIds: [],
       isActionLoading: false,
 
-      loginWithCredentials: (username, pin) => {
+      signInVerifiedUser: (user) => {
         const state = get();
-        const cleanUser = username.trim().toLowerCase();
-        const cleanPin = pin.trim();
-
-        const profile = state.profiles.find(
-          (p) => p.username.toLowerCase() === cleanUser
-        );
-
+        // Akun sudah diverifikasi server (PIN + sesi bertanda tangan). Profil lokal dibuat bila belum ada.
+        let profiles = state.profiles;
+        let profile = profiles.find((p) => p.id === user.id);
         if (!profile) {
-          return {
-            success: false,
-            message:
-              "Username tidak ditemukan. Periksa ejaannya atau minta Admin mendaftarkan akunmu.",
-          };
-        }
-
-        if (profile.pin_code !== cleanPin) {
-          return {
-            success: false,
-            message: "PIN / Password salah. Silakan periksa kembali.",
-          };
+          profile = buildRealProfile({
+            id: user.id,
+            username: user.username,
+            display_name: user.display_name,
+            role: user.role,
+          });
+          profiles = [...profiles, profile];
+        } else if (profile.role !== user.role || profile.username !== user.username) {
+          profile = { ...profile, role: user.role, username: user.username };
+          profiles = profiles.map((p) => (p.id === user.id ? profile! : p));
         }
 
         let nextMonitoredUserId = state.monitoredUserId;
         if (isChildRole(profile.role)) {
           nextMonitoredUserId = profile.id;
         } else if (profile.role === "supervisor") {
-          const assigned = state.supervisorAssignments.find(
-            (a) => a.supervisorId === profile.id
-          );
-          if (assigned) {
-            nextMonitoredUserId = assigned.userId;
-          }
+          const assigned = state.supervisorAssignments.find((a) => a.supervisorId === profile!.id);
+          if (assigned) nextMonitoredUserId = assigned.userId;
         }
 
         const targetPath =
@@ -858,60 +806,16 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             : "/app";
 
         set({
+          profiles,
           currentRole: profile.role,
           activeProfileId: profile.id,
           monitoredUserId: nextMonitoredUserId,
           isLoggedIn: true,
           supervisorChildChosen: false,
-          savedProfileIds: Array.from(
-            new Set([...state.savedProfileIds, profile.id])
-          ),
+          savedProfileIds: Array.from(new Set([...state.savedProfileIds, profile.id])),
         });
 
-        return {
-          success: true,
-          role: profile.role,
-          targetPath,
-        };
-      },
-
-      loginWithPin: (role, pin) => {
-        const state = get();
-        const profile =
-          state.profiles.find((p) => p.role === role && p.pin_code === pin) ||
-          state.profiles.find((p) => p.role === role);
-
-        if (!profile) {
-          return { success: false, message: "Profil tidak ditemukan." };
-        }
-        if (profile.pin_code !== pin) {
-          return {
-            success: false,
-            message: "PIN salah. Silakan periksa kembali.",
-          };
-        }
-
-        let nextMonitored = state.monitoredUserId;
-        if (isChildRole(profile.role)) {
-          nextMonitored = profile.id;
-        } else if (profile.role === "supervisor") {
-          const assigned = state.supervisorAssignments.find(
-            (a) => a.supervisorId === profile.id
-          );
-          if (assigned) nextMonitored = assigned.userId;
-        }
-
-        set({
-          currentRole: profile.role,
-          activeProfileId: profile.id,
-          monitoredUserId: nextMonitored,
-          isLoggedIn: true,
-          supervisorChildChosen: false,
-          savedProfileIds: Array.from(
-            new Set([...state.savedProfileIds, profile.id])
-          ),
-        });
-        return { success: true };
+        return { success: true as const, role: profile.role, targetPath };
       },
 
       switchRoleDirect: (role, profileId) => {
@@ -1203,19 +1107,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           },
         });
 
-        trySupabaseInsert("transactions", {
-          user_id: prof.id,
-          type: tx.type,
-          category: tx.category,
-          need_or_want: tx.need_or_want,
-          title: tx.title,
-          total_amount: tx.total_amount,
-          is_itemized: false,
-          points_earned: tx.points_earned,
-          xp_earned: tx.xp_earned,
-          transaction_date: tx.transaction_date,
-        });
-
         return {
           success: true,
           message: `Rp${amt.toLocaleString("id-ID")} tersimpan di celengan "${goalName}".`,
@@ -1231,7 +1122,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           .toLowerCase()
           .replace(/\s+/g, "_");
         const cleanDisplayName = payload.displayName.trim();
-        const cleanPin = payload.pinCode.trim() || "1234";
 
         if (!cleanUsername || !cleanDisplayName) {
           return {
@@ -1251,11 +1141,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           };
         }
 
-        // UUID asli agar sinkron ke kolom `profiles.id` (UUID) di Supabase.
-        const newId =
-          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-            ? crypto.randomUUID()
-            : `prof-${Date.now()}`;
+        const newId = payload.id;
         const isKid = payload.role === "schoolchild";
         const budget =
           Number(payload.monthlyBudgetTarget) || (isKid ? 150000 : 1500000);
@@ -1268,7 +1154,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           username: cleanUsername,
           display_name: cleanDisplayName,
           role: payload.role,
-          pin_code: cleanPin,
           createdAt: getRelativeDateStr(0),
           avatar_theme: "mochi-cat",
           xp: 0,
@@ -1389,20 +1274,10 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           rewardToast: {
             id: `toast-${Date.now()}`,
             title: `Akun "${cleanDisplayName}" Berhasil Dibuat!`,
-            subtitle: `Role: ${payload.role.toUpperCase()} • Username: @${cleanUsername} • PIN: ${cleanPin}`,
+            subtitle: `Role: ${payload.role.toUpperCase()} • Username: @${cleanUsername}`,
             points: 0,
             xp: 0,
           },
-        });
-
-        trySupabaseInsert("profiles", {
-          id: newProfile.id,
-          username: newProfile.username,
-          display_name: newProfile.display_name,
-          role: newProfile.role,
-          pin_code: newProfile.pin_code,
-          monthly_budget_target: newProfile.monthly_budget_target,
-          monthly_saving_target: newProfile.monthly_saving_target,
         });
 
         return {
@@ -2217,20 +2092,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           }, 5500);
         }
 
-        trySupabaseInsert("transactions", {
-          user_id: userProf.id,
-          type: newTx.type,
-          category: newTx.category,
-          need_or_want: newTx.need_or_want,
-          title: newTx.title,
-          total_amount: newTx.total_amount,
-          is_itemized: newTx.is_itemized,
-          points_earned: newTx.points_earned,
-          xp_earned: newTx.xp_earned,
-          transaction_date: newTx.transaction_date,
-          created_at: newTx.created_at,
-        });
-
         return {
           pointsEarned: totalPointsEarned,
           xpEarned: totalXpEarned,
@@ -2273,7 +2134,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             t.id === id ? { ...t, title, category: patch.category, need_or_want, total_amount: total } : t
           ),
         });
-        trySupabaseMutate(tx, { title, category: patch.category, need_or_want, total_amount: total });
         return { success: true, message: "Catatan berhasil diperbarui." };
       },
 
@@ -2293,7 +2153,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           transactions: state.transactions.filter((t) => t.id !== id),
           deletedRewardLedger: ledger,
         });
-        trySupabaseMutate(tx, null);
         return { success: true, message: "Catatan dihapus." };
       },
 
@@ -2439,14 +2298,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           },
         });
 
-        trySupabaseInsert("point_redemptions", {
-          user_id: userProf.id,
-          points_redeemed: points,
-          rupiah_value: points,
-          status: "pending",
-          note: newRedemption.note,
-        });
-
         return {
           success: true,
           message:
@@ -2538,8 +2389,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         };
 
         set({
-          lastSupervisorCheerDate: todayStr,
-          supervisorCheersCount: state.supervisorCheersCount + 1,
           particleBurstKey: state.particleBurstKey + 1,
           particleBurstType: "xp",
           profiles: state.profiles.map((p) =>
@@ -2622,43 +2471,23 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           },
         });
       },
-
-      syncWithSupabaseIfAvailable: async () => {
-        try {
-          if (
-            typeof window === "undefined" ||
-            !process.env.NEXT_PUBLIC_SUPABASE_URL
-          ) {
-            return;
-          }
-          const supabase = createSupabaseBrowserClient();
-          const { data: txData, error: txErr } = await supabase
-            .from("transactions")
-            .select("*, items:transaction_items(*)")
-            .order("transaction_date", { ascending: false })
-            .limit(50);
-
-          if (!txErr && txData && txData.length > 0) {
-            set({
-              transactions: txData as unknown as TransactionRecord[],
-              supabaseConnected: true,
-            });
-          }
-        } catch {
-          // Keep rich local state if Supabase tables aren't migrated yet
-        }
-      },
     }),
     {
       name: "bukudompet-v4-storage",
-      version: 6,
+      version: 7,
       // Hidrasi dipicu manual lewat <StoreHydrator /> setelah mount, agar render pertama di klien
       // identik dengan SSR (tanpa galat hidrasi) walau localStorage berisi data berbeda.
       skipHydration: true,
       // Versi 5.4 (GO LIVE): data lokal versi lama berisi akun & catatan DEMO. Semuanya dibuang, lalu
       // aplikasi memakai 12 akun asli dari seed. Penyimpanan versi 6 ke atas dipakai apa adanya.
-      migrate: (persistedState, fromVersion) =>
-        (fromVersion < 6 ? {} : persistedState) as BukuDompetState,
+      // Versi 5.5 (sinkron lewat server): PIN tidak lagi disimpan di sisi klien, jadi `pin_code` lama dibuang
+      // dari profil yang tersimpan; seluruh data lain dipertahankan.
+      migrate: (persistedState, fromVersion) => {
+        if (fromVersion < 6) return {} as BukuDompetState;
+        const st = persistedState as Partial<BukuDompetState>;
+        if (Array.isArray(st.profiles)) st.profiles = st.profiles.map(stripLegacyPin);
+        return st as BukuDompetState;
+      },
       // Merge ringan & idempoten: hanya membuang ID aksesori yang tidak dikenal katalog
       // (data rusak) agar tidak muncul sebagai item "?" di lemari. Tidak ada lagi akun seed
       // yang dihidupkan kembali, jadi akun yang dihapus Admin tetap terhapus.
@@ -2666,7 +2495,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         const raw = (persistedState ?? {}) as Partial<BukuDompetState>;
         const merged = { ...currentState, ...raw };
         if (Array.isArray(merged.profiles)) {
-          merged.profiles = merged.profiles.map(sanitizeProfileAccessories);
+          merged.profiles = merged.profiles.map((p) => sanitizeProfileAccessories(stripLegacyPin(p)));
         }
         if (!Array.isArray(merged.savedProfileIds)) merged.savedProfileIds = [];
         return merged;
@@ -2687,8 +2516,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         streakFreezeDates: state.streakFreezeDates,
         zeroSpendDates: state.zeroSpendDates,
         openedCheckpointWeeks: state.openedCheckpointWeeks,
-        lastSupervisorCheerDate: state.lastSupervisorCheerDate,
-        supervisorCheersCount: state.supervisorCheersCount,
         isLoggedIn: state.isLoggedIn,
         supervisorChildChosen: state.supervisorChildChosen,
         savedProfileIds: state.savedProfileIds,

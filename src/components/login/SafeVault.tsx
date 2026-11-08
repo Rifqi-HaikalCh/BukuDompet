@@ -17,8 +17,8 @@ export interface SafeVaultProps {
   title: string;
   subtitle?: string;
   pinLength?: number;
-  /** Panggil saat PIN lengkap; kembalikan true bila benar. */
-  onComplete: (pin: string) => boolean;
+  /** Panggil saat PIN lengkap; kembalikan true bila benar. Boleh async (menunggu verifikasi server). */
+  onComplete: (pin: string) => boolean | Promise<boolean>;
   /** Dipanggil pada klik yang menyelesaikan PIN benar (nyalakan overlay loading di sini). */
   onBeforeOpen?: () => void;
   /** Dipanggil setelah animasi pintu terbuka selesai. */
@@ -26,7 +26,7 @@ export interface SafeVaultProps {
   disabled?: boolean;
 }
 
-type VaultStatus = "idle" | "open" | "error";
+type VaultStatus = "idle" | "checking" | "open" | "error";
 
 const KEYS: (string | "back" | "ok")[] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "back", "0", "ok"];
 
@@ -62,21 +62,30 @@ export function SafeVault({
 
   const submit = useCallback(
     (value: string) => {
-      const ok = onComplete(value);
-      if (ok) {
-        setStatus("open");
-        soundEffects.comboFanfare();
-        onBeforeOpen?.();
-        later(() => onOpened?.(), 700);
-      } else {
-        setStatus("error");
-        soundEffects.detectiveBuzz();
-        later(() => {
-          pinRef.current = "";
-          setPin("");
-          setStatus("idle");
-        }, 650);
+      const finish = (ok: boolean) => {
+        if (ok) {
+          setStatus("open");
+          soundEffects.comboFanfare();
+          onBeforeOpen?.();
+          later(() => onOpened?.(), 700);
+        } else {
+          setStatus("error");
+          soundEffects.detectiveBuzz();
+          later(() => {
+            pinRef.current = "";
+            setPin("");
+            setStatus("idle");
+          }, 650);
+        }
+      };
+      const result = onComplete(value);
+      if (typeof result === "boolean") {
+        finish(result);
+        return;
       }
+      // Verifikasi server: kunci numpad, lampu emas menyala sampai jawaban datang.
+      setStatus("checking");
+      result.then(finish, () => finish(false));
     },
     [onComplete, onBeforeOpen, onOpened]
   );
@@ -199,7 +208,8 @@ export function SafeVault({
                 <div
                   role="status"
                   aria-live="polite"
-                  aria-label={`PIN terisi ${pin.length} dari ${pinLength} angka`}
+                  aria-busy={status === "checking"}
+                  aria-label={status === "checking" ? "Memeriksa PIN ke server…" : `PIN terisi ${pin.length} dari ${pinLength} angka`}
                   className="flex items-center gap-2 rounded-2xl bg-[#3D352E] px-3 py-2.5 border-2 border-[#2A241F]"
                 >
                   {Array.from({ length: pinLength }).map((_, i) => (

@@ -5,9 +5,20 @@ import { useRouter } from "next/navigation";
 import { Drawer } from "vaul";
 import { ShieldCheck, User, X, UserPlus } from "@/components/illustrations/UiGlyphs";
 import {
+  buildRealProfile,
   useBukuDompetStore,
   type ProfileData,
 } from "@/store/useBukuDompetStore";
+import {
+  consumeSessionEndedFlag,
+  dropServerSession,
+  lookupAccounts,
+  serverLogin,
+  startSession,
+  type Candidate,
+  type LoginOutcome,
+  type SessionUser,
+} from "@/lib/sync/client";
 import {
   CustomizablePetAvatar,
 } from "@/components/illustrations/PetAvatarSystem";
@@ -43,13 +54,34 @@ function shortLabel(display: string): string {
   return display.replace(/\s*\(.*?\)\s*/g, "").trim() || display;
 }
 
+/** Pesan ramah untuk tiap kegagalan masuk (PIN divalidasi server). */
+function loginErrorMessage(out: Extract<LoginOutcome, { ok: false }>): string {
+  switch (out.reason) {
+    case "invalid":
+      return out.attemptsLeft !== undefined && out.attemptsLeft <= 3
+        ? `PIN salah. Sisa ${out.attemptsLeft} percobaan sebelum akun dikunci sementara.`
+        : "PIN salah. Silakan periksa kembali.";
+    case "locked": {
+      const mnt = Math.max(1, Math.ceil((out.retryAfter ?? 600) / 60));
+      return `Terlalu banyak PIN salah. Akun dikunci sementara, coba lagi dalam ±${mnt} menit.`;
+    }
+    case "rate":
+      return "Terlalu sering mencoba. Tunggu sebentar lalu coba lagi.";
+    case "offline":
+      return "Tidak bisa tersambung ke server. Masuk butuh internet — periksa koneksi lalu coba lagi.";
+    case "server_not_configured":
+      return "Server belum dikonfigurasi. Hubungi Admin untuk memeriksa pengaturan penyimpanan.";
+    default:
+      return "Server sedang bermasalah. Coba lagi sebentar lagi.";
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const profiles = useBukuDompetStore((s) => s.profiles);
   const savedProfileIds = useBukuDompetStore((s) => s.savedProfileIds);
   const isLoggedIn = useBukuDompetStore((s) => s.isLoggedIn);
   const currentRole = useBukuDompetStore((s) => s.currentRole);
-  const loginWithCredentials = useBukuDompetStore((s) => s.loginWithCredentials);
   const forgetSavedProfile = useBukuDompetStore((s) => s.forgetSavedProfile);
   const triggerActionLoading = useBukuDompetStore((s) => s.triggerActionLoading);
 
@@ -66,13 +98,33 @@ export default function LoginPage() {
   const [usernameInput, setUsernameInput] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   // Beberapa akun boleh memakai nama yang sama (mis. "Ekal" sebagai User, Anak SD, Supervisor, Admin).
-  const [candidateIds, setCandidateIds] = useState<string[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  // Akun hasil pencarian server yang belum punya profil lokal (mis. baru dibuat Admin di perangkat lain).
+  const [known, setKnown] = useState<Record<string, Candidate>>({});
+  const [lookingUp, setLookingUp] = useState<boolean>(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [sessionEnded, setSessionEnded] = useState<boolean>(false);
+  // Perangkat ini masih menyimpan perubahan akun lain yang belum tersimpan: minta persetujuan sebelum dibuang.
+  const [pendingConfirm, setPendingConfirm] = useState<{ user: SessionUser; unsaved: number } | null>(null);
+  const [confirming, setConfirming] = useState<boolean>(false);
 
   const [isOpening, setIsOpening] = useState<boolean>(false);
   const openingRef = useRef<boolean>(false);
   const targetPathRef = useRef<string>("/app");
 
-  const selected = profiles.find((p) => p.id === selectedId) ?? null;
+  const selected: ProfileData | null = useMemo(() => {
+    if (!selectedId) return null;
+    const local = profiles.find((p) => p.id === selectedId);
+    if (local) return local;
+    const c = known[selectedId];
+    return c
+      ? buildRealProfile({ id: c.id, username: c.username, display_name: c.display_name, role: c.role })
+      : null;
+  }, [selectedId, profiles, known]);
+
+  useEffect(() => {
+    setSessionEnded(consumeSessionEndedFlag());
+  }, []);
 
   // Sesi permanen: sudah masuk -> langsung ke rumah perannya (kecuali sedang animasi buka brankas).
   useEffect(() => {
@@ -85,52 +137,97 @@ export default function LoginPage() {
     soundEffects.tactileClick();
     setSelectedId(id);
     setErrorMsg(null);
-    setCandidateIds([]);
+    setPinError(null);
+    setCandidates([]);
     setShowUsernameForm(false);
   };
 
-  const handleUsernameSubmit = (e: React.FormEvent) => {
+  const handleUsernameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const clean = usernameInput.trim().toLowerCase();
-    // Cocok dengan username ATAU nama depan tampilan, agar cukup mengetik "Ekal".
-    const found = profiles.filter(
-      (p) => p.username.toLowerCase() === clean || shortLabel(p.display_name).toLowerCase() === clean
-    );
+    if (!clean || lookingUp) return;
+    setLookingUp(true);
+    setErrorMsg(null);
+    // Pencarian akun dilakukan di server (daftar akun asli ada di database, bukan di perangkat).
+    const r = await lookupAccounts(clean);
+    setLookingUp(false);
+    if (!r.ok) {
+      soundEffects.detectiveBuzz();
+      setErrorMsg(
+        r.reason === "offline"
+          ? "Tidak bisa tersambung ke server. Masuk butuh internet — periksa koneksi lalu coba lagi."
+          : "Server sedang bermasalah. Coba lagi sebentar lagi."
+      );
+      return;
+    }
+    const found = r.candidates;
     if (found.length === 0) {
       soundEffects.detectiveBuzz();
-      setCandidateIds([]);
+      setCandidates([]);
       setErrorMsg("Nama tidak ditemukan. Periksa ejaannya atau minta Admin mendaftarkan akunmu.");
       return;
     }
-    setErrorMsg(null);
+    setKnown((prev) => ({ ...prev, ...Object.fromEntries(found.map((c) => [c.id, c])) }));
     setUsernameInput("");
     if (found.length === 1) {
-      setCandidateIds([]);
+      setCandidates([]);
+      setPinError(null);
       setSelectedId(found[0].id);
       setShowUsernameForm(false);
       return;
     }
     // Nama kembar: minta pilih peran dulu, baru PIN.
-    setCandidateIds(found.map((p) => p.id));
+    setCandidates(found);
   };
 
   const handlePinComplete = useCallback(
-    (pin: string): boolean => {
+    async (pin: string): Promise<boolean> => {
       if (!selected) return false;
       // Cegah efek "sudah masuk" menimpa animasi pintu terbuka.
       openingRef.current = true;
-      const res = loginWithCredentials(selected.username, pin);
-      if (res.success && res.targetPath) {
-        cozyBgm.start(); // gestur pengguna: musik latar dimulai saat login berhasil
-        targetPathRef.current = res.targetPath;
-        setIsOpening(true);
-        return true;
+      setPinError(null);
+      const out = await serverLogin({ id: selected.id, pin });
+      if (!out.ok) {
+        openingRef.current = false;
+        setPinError(loginErrorMessage(out));
+        return false;
       }
-      openingRef.current = false;
-      return false;
+      const started = await startSession(out.user);
+      if (!started.ok) {
+        // Jangan biarkan cookie menggantung bila pengguna batal.
+        openingRef.current = false;
+        setSelectedId(null);
+        setPendingConfirm({ user: out.user, unsaved: started.unsaved });
+        return false;
+      }
+      cozyBgm.start(); // musik latar dimulai saat login berhasil
+      targetPathRef.current = started.targetPath;
+      setIsOpening(true);
+      return true;
     },
-    [selected, loginWithCredentials]
+    [selected]
   );
+
+  const cancelPending = useCallback(() => {
+    setPendingConfirm(null);
+    void dropServerSession();
+  }, []);
+
+  const confirmDiscard = useCallback(async () => {
+    if (!pendingConfirm) return;
+    setConfirming(true);
+    openingRef.current = true;
+    triggerActionLoading(8000);
+    const started = await startSession(pendingConfirm.user, { discardOther: true });
+    setConfirming(false);
+    setPendingConfirm(null);
+    if (started.ok) {
+      cozyBgm.start();
+      router.push(started.targetPath);
+    } else {
+      openingRef.current = false;
+    }
+  }, [pendingConfirm, router, triggerActionLoading]);
 
   const handleOpened = useCallback(() => {
     router.push(targetPathRef.current);
@@ -171,7 +268,7 @@ export default function LoginPage() {
             <div className="space-y-1">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00]">
                 <CozyIcon name="coin_rupiah" size={16} />
-                Versi 5.4 • Beranda Keluarga
+                Versi 5.5 • Tersimpan di Server
               </span>
               <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E]">
                 Jurnal Kas & Petualangan Finansial
@@ -198,6 +295,42 @@ export default function LoginPage() {
                 Sekali masuk, kamu tidak perlu login lagi di perangkat ini.
               </p>
             </div>
+
+            {sessionEnded && !pendingConfirm && (
+              <div
+                role="status"
+                className="p-3 rounded-2xl bg-[#FFFBEB] border-2 border-[#FDE08D] text-xs font-bold text-[#4A3500]"
+              >
+                Sesimu berakhir (mis. PIN diganti Admin). Masuk lagi untuk melanjutkan — catatan di perangkat ini
+                tetap aman dan akan disimpan ke server setelah kamu masuk.
+              </div>
+            )}
+
+            {pendingConfirm && (
+              <div
+                role="alertdialog"
+                aria-labelledby="pending-title"
+                className="p-3.5 rounded-2xl bg-[#FFF2F0] border-2 border-[#FFCDC6] space-y-2.5"
+              >
+                <p id="pending-title" className="font-display text-sm font-extrabold text-[#8F2A1B]">
+                  Ada data akun lain yang belum tersimpan
+                </p>
+                <p className="text-xs font-bold text-[#3D352E]/85 leading-relaxed">
+                  Perangkat ini masih memegang {pendingConfirm.unsaved.toLocaleString("id-ID")} perubahan milik akun
+                  sebelumnya yang belum sampai ke server. Bila kamu lanjut masuk sebagai{" "}
+                  {shortLabel(pendingConfirm.user.display_name)}, perubahan itu akan dihapus dari perangkat ini.
+                  Untuk menyelamatkannya, batalkan dulu lalu masuk lagi sebagai akun sebelumnya (atau Admin) saat online.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <TactileButton type="button" variant="sky" size="md" onClick={cancelPending} disabled={confirming}>
+                    Batal
+                  </TactileButton>
+                  <TactileButton type="button" variant="peach" size="md" onClick={confirmDiscard} disabled={confirming}>
+                    {confirming ? "Memproses…" : "Hapus & Masuk"}
+                  </TactileButton>
+                </div>
+              </div>
+            )}
 
             {/* Kartu Profil Tersimpan */}
             {savedProfiles.length > 0 && (
@@ -303,8 +436,8 @@ export default function LoginPage() {
                       className="w-full pl-10 pr-3 py-3 rounded-2xl border-2 border-[#E6DFD2] bg-white focus:border-[#38B6FF] focus:outline-none font-display font-extrabold text-sm text-[#3D352E]"
                     />
                   </div>
-                  <TactileButton type="submit" variant="sky" size="md" className="shrink-0">
-                    Lanjut
+                  <TactileButton type="submit" variant="sky" size="md" className="shrink-0" disabled={lookingUp}>
+                    {lookingUp ? "Mencari…" : "Lanjut"}
                   </TactileButton>
                 </div>
                 {errorMsg && (
@@ -319,41 +452,38 @@ export default function LoginPage() {
               </form>
             )}
 
-            {candidateIds.length > 0 && !selected && (
+            {candidates.length > 0 && !selected && (
               <div className="space-y-2" role="group" aria-label="Pilih peran akun">
                 <p className="text-xs font-display font-extrabold text-[#3D352E]">
                   Ada beberapa akun dengan nama itu. Masuk sebagai siapa?
                 </p>
                 <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {candidateIds
-                    .map((id) => profiles.find((p) => p.id === id))
-                    .filter((p): p is ProfileData => Boolean(p))
-                    .map((acc) => {
-                      const badge = getRoleBadge(acc.role);
-                      return (
-                        <li key={acc.id} className="min-w-0">
-                          <button
-                            type="button"
-                            onClick={() => handleSelectProfile(acc.id)}
-                            className="w-full flex items-center gap-3 p-2.5 rounded-2xl border-2 border-b-[4px] border-[#E6DFD2] border-b-[#D4C9B4] bg-[#F7F3EB] hover:bg-white text-left min-w-0 cursor-pointer focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[#38B6FF]"
-                          >
-                            <span className="min-w-0">
-                              <span className="block font-display text-sm font-extrabold text-[#3D352E] truncate">
-                                {shortLabel(acc.display_name)}
-                              </span>
-                              <span
-                                className={cn(
-                                  "inline-block mt-0.5 px-2 py-0.5 rounded-lg border text-[10px] font-display font-extrabold",
-                                  badge.cls
-                                )}
-                              >
-                                {badge.label}
-                              </span>
+                  {candidates.map((acc) => {
+                    const badge = getRoleBadge(acc.role);
+                    return (
+                      <li key={acc.id} className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectProfile(acc.id)}
+                          className="w-full flex items-center gap-3 p-2.5 rounded-2xl border-2 border-b-[4px] border-[#E6DFD2] border-b-[#D4C9B4] bg-[#F7F3EB] hover:bg-white text-left min-w-0 cursor-pointer focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[#38B6FF]"
+                        >
+                          <span className="min-w-0">
+                            <span className="block font-display text-sm font-extrabold text-[#3D352E] truncate">
+                              {shortLabel(acc.display_name)}
                             </span>
-                          </button>
-                        </li>
-                      );
-                    })}
+                            <span
+                              className={cn(
+                                "inline-block mt-0.5 px-2 py-0.5 rounded-lg border text-[10px] font-display font-extrabold",
+                                badge.cls
+                              )}
+                            >
+                              {badge.label}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -435,6 +565,15 @@ export default function LoginPage() {
                   onBeforeOpen={() => triggerActionLoading(8000)}
                   onOpened={handleOpened}
                 />
+              )}
+              {selected && pinError && (
+                <div
+                  role="alert"
+                  className="p-2.5 rounded-xl bg-[#FFF2F0] border-2 border-[#FFCDC6] text-xs font-extrabold text-[#8F2A1B] flex items-center gap-2"
+                >
+                  <CozyIcon name="warning_siren" size={16} />
+                  <span>{pinError}</span>
+                </div>
               )}
             </div>
           </Drawer.Content>

@@ -54,8 +54,6 @@ export default function SupervisorDashboardPage() {
     transactions,
     streakFreezeDates,
     zeroSpendDates,
-    lastSupervisorCheerDate,
-    supervisorCheersCount,
     setMonitoredUserId,
     sendSupervisorCheer,
   } = useBukuDompetStore();
@@ -136,7 +134,12 @@ export default function SupervisorDashboardPage() {
     petCustomName: petName,
   });
 
-  const alreadyCheeredToday = lastSupervisorCheerDate === todayStr;
+  // Dihitung dari stiker yang tersimpan di profil anak (ikut tersinkron), bukan variabel lokal perangkat.
+  const myCheers = (inspectedUser.supervisorCheers ?? []).filter(
+    (c) => c.fromSupervisorName === activeSupervisor?.display_name
+  );
+  const alreadyCheeredToday = myCheers.some((c) => c.sentAt === todayStr);
+  const supervisorCheersCount = myCheers.length;
 
   const executeSendCheer = () => {
     const res = sendSupervisorCheer(customCheerNote);
