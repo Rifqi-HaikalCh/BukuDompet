@@ -25,8 +25,9 @@ import {
   AccessoryPreviewIcon,
   GROWTH_STAGE_META,
   getSpeciesInfo,
-  ACCESSORY_CATALOG,
+  ACCESSORY_BY_ID,
 } from "@/components/illustrations/PetAvatarSystem";
+import { previewPathDrops } from "@/lib/path-drop";
 import {
   BIOME_MONTHS,
   BiomeMapSection,
@@ -70,10 +71,6 @@ function diffDaysBetween(startDateStr: string, endDateStr: string): number {
   const end = new Date(endDateStr + "T12:00:00").getTime();
   return Math.round((end - start) / 86400000);
 }
-
-const PATH_DROP_ITEMS = ACCESSORY_CATALOG.filter(
-  (it) => it.source === "path_drop"
-);
 
 export default function UserHomePage() {
   const {
@@ -256,6 +253,24 @@ export default function UserHomePage() {
 
     return nodes;
   }, [userTransactions, todayStr, report.dssl]);
+
+  // Prakiraan item untuk setiap Peti Harta yang belum diklaim (sama dengan logika klaim di store)
+  const pathDropPreview = useMemo(() => {
+    const claimed = userProfile.claimedPathMilestones || [];
+    const unclaimedDays = continuousJourneyNodes
+      .filter((n) => n.isMilestoneDay && !claimed.includes(n.dayIndex))
+      .map((n) => n.dayIndex);
+    return previewPathDrops(
+      userProfile.ownedAccessories,
+      userProfile.currentStage,
+      unclaimedDays
+    );
+  }, [
+    continuousJourneyNodes,
+    userProfile.claimedPathMilestones,
+    userProfile.ownedAccessories,
+    userProfile.currentStage,
+  ]);
 
   // Count unique recorded days for the Biome Resource Growth Engine
   const completedDaysCount = useMemo(() => {
@@ -619,16 +634,18 @@ export default function UserHomePage() {
                       const isToday = node.dateStr === todayStr;
                       const isFuture = node.dateStr > todayStr;
 
-                      // Tentukan item preview untuk peti milestone (kelipatan 7 hari)
-                      const dropIdx =
-                        Math.floor((node.dayIndex / 7 - 1) % PATH_DROP_ITEMS.length);
-                      const milestonePreviewItem =
-                        PATH_DROP_ITEMS[Math.max(0, dropIdx)] ||
-                        PATH_DROP_ITEMS[0];
-
+                      // Peti terbuka -> item yang benar-benar dijatuhkan (tercatat saat klaim).
+                      // Peti tertutup -> prakiraan item berikutnya (siluet misterius).
                       const isMilestoneClaimed = (
                         userProfile.claimedPathMilestones || []
                       ).includes(node.dayIndex);
+                      const recordedDropId =
+                        userProfile.pathMilestoneDrops?.[node.dayIndex];
+                      const milestonePreviewItem = isMilestoneClaimed
+                        ? recordedDropId
+                          ? ACCESSORY_BY_ID[recordedDropId]
+                          : undefined
+                        : pathDropPreview[node.dayIndex];
 
                       const chestState: ChestState = isMilestoneClaimed
                         ? "opened"
@@ -702,11 +719,19 @@ export default function UserHomePage() {
                           </div>
 
                           {/* Milestone Checkpoint Treasure Chest (Setiap Kelipatan 7 Hari) */}
-                          {node.isMilestoneDay && milestonePreviewItem && (
+                          {node.isMilestoneDay && (
                             <div className="py-2 flex flex-col items-center max-w-full px-2">
                               <div className="w-1 h-5 bg-[#D4C9B4] rounded-full mb-1" />
                               <button
                                 type="button"
+                                aria-disabled={isFuture}
+                                aria-label={
+                                  isMilestoneClaimed
+                                    ? `Peti Harta Hari ke-${node.dayIndex}, sudah dibuka`
+                                    : isFuture
+                                    ? `Peti Harta Hari ke-${node.dayIndex}, terkunci sampai harinya tiba`
+                                    : `Buka Peti Harta Hari ke-${node.dayIndex}`
+                                }
                                 onClick={() =>
                                   handleOpenMilestoneChest(
                                     node.dayIndex,
@@ -725,13 +750,15 @@ export default function UserHomePage() {
                                     state={chestState}
                                     className="w-16 h-16"
                                   />
-                                  <div className="w-10 h-10 rounded-xl bg-white border border-[#E6DFD2] flex items-center justify-center -ml-3 shadow-xs">
-                                    <AccessoryPreviewIcon
-                                      accessoryId={milestonePreviewItem.id}
-                                      isMysteryLocked={!isMilestoneClaimed}
-                                      className="w-8 h-8"
-                                    />
-                                  </div>
+                                  {milestonePreviewItem && (
+                                    <div className="w-10 h-10 rounded-xl bg-white border border-[#E6DFD2] flex items-center justify-center -ml-3 shadow-xs">
+                                      <AccessoryPreviewIcon
+                                        accessoryId={milestonePreviewItem.id}
+                                        isMysteryLocked={!isMilestoneClaimed}
+                                        className="w-8 h-8"
+                                      />
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -752,7 +779,9 @@ export default function UserHomePage() {
                                   </p>
                                   <p className="text-xs font-bold text-[#7A6E65] leading-snug break-words">
                                     {isMilestoneClaimed
-                                      ? "Sudah tersimpan di Lemari Kostum Pet kamu."
+                                      ? milestonePreviewItem
+                                        ? `${milestonePreviewItem.name} sudah tersimpan di Lemari Kostum Pet kamu.`
+                                        : "Sudah tersimpan di Lemari Kostum Pet kamu."
                                       : "Berisi 1 Aksesoris Eksklusif Jalur Kas + 10 Poin & 15 Stage XP!"}
                                   </p>
                                 </div>

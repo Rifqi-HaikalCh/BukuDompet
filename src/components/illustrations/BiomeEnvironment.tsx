@@ -8,6 +8,14 @@
 import React from "react";
 import { MotionConfig, motion } from "framer-motion";
 
+/**
+ * Reset origin transformasi untuk elemen SVG yang memakai atribut `transform="rotate/scale/..."`.
+ * Tanpa ini, CSS global `svg g, svg path { transform-box: fill-box }` memindahkan titik asal
+ * transformasi ke pojok bbox elemen sehingga bagian tubuh/ikon bergeser dan berantakan.
+ */
+const SVG_ATTR_ORIGIN = { transformBox: "view-box", transformOrigin: "0 0" } as const;
+
+
 export type WeatherType =
   | "sparkle_dew"
   | "warm_mist"
@@ -351,7 +359,7 @@ function GrowingResourceTree({
   foliageLight: string;
 }) {
   return (
-    <g transform={`translate(${x} ${y}) scale(${scale})`}>
+    <g transform={`translate(${x} ${y}) scale(${scale})`} style={SVG_ATTR_ORIGIN}>
       {/* Ground shadow */}
       <ellipse cx={0} cy={4} rx={28} ry={7} fill={INK} opacity={0.12} />
 
@@ -535,7 +543,7 @@ function GrowingResourceTree({
             [18, -34],
             [0, -38],
           ].map(([cx, cy], idx) => (
-            <g key={idx} transform={`translate(${cx} ${cy})`}>
+            <g key={idx} transform={`translate(${cx} ${cy})`} style={SVG_ATTR_ORIGIN}>
               <circle
                 r={6.5}
                 fill="#FFC800"
@@ -648,6 +656,7 @@ function WeatherOverlay({ weatherType }: { weatherType: WeatherType }) {
             fill="#FFC800"
             stroke={INK}
             strokeWidth={1.5}
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
             animate={{
               scale: [0.6, 1.2, 0.6],
               opacity: [0.35, 0.95, 0.35],

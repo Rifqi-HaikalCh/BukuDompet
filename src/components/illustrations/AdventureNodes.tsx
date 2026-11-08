@@ -13,6 +13,14 @@
 import { useId } from "react";
 import { MotionConfig, motion, type Transition } from "framer-motion";
 
+/**
+ * Reset origin transformasi untuk elemen SVG yang memakai atribut `transform="rotate/scale/..."`.
+ * Tanpa ini, CSS global `svg g, svg path { transform-box: fill-box }` memindahkan titik asal
+ * transformasi ke pojok bbox elemen sehingga bagian tubuh/ikon bergeser dan berantakan.
+ */
+const SVG_ATTR_ORIGIN = { transformBox: "view-box", transformOrigin: "0 0" } as const;
+
+
 /* ───────────────────────── Types ───────────────────────── */
 
 export type StoneStatus = "completed_safe" | "completed_warn" | "missed_frozen" | "active_today";
@@ -62,6 +70,9 @@ const loop = (duration: number, extra: Transition = {}): Transition =>
 
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
+/** Bulatkan 2 desimal: hasil sin/cos bisa beda di digit terakhir antara server & klien (mismatch hidrasi). */
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
 const starPoints = (cx: number, cy: number, outer: number, inner: number, n = 5): string => {
   const pts: string[] = [];
   for (let i = 0; i < n * 2; i++) {
@@ -89,11 +100,11 @@ function Sparkle({
   delay?: number;
 }) {
   return (
-    <g transform={`translate(${x} ${y})`}>
+    <g transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}>
       <motion.path
         d={sparklePath(size)}
         fill={color}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: [0, 1, 0], rotate: [0, 90, 180], opacity: [0, 1, 0] }}
         transition={{ duration: 1.8, repeat: Infinity, delay, ease: "easeInOut" }}
@@ -177,17 +188,17 @@ function Flower({
   delay?: number;
 }) {
   return (
-    <g transform={`translate(${x} ${y})`}>
+    <g transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}>
       <motion.g
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ rotate: [-7, 7, -7] }}
         transition={loop(2.8, { delay })}
       >
         {[0, 72, 144, 216, 288].map((a) => (
           <circle
             key={a}
-            cx={Math.cos(rad(a)) * r * 1.05}
-            cy={Math.sin(rad(a)) * r * 1.05}
+            cx={r2(Math.cos(rad(a)) * r * 1.05)}
+            cy={r2(Math.sin(rad(a)) * r * 1.05)}
             r={r}
             fill={petal}
             {...line25}
@@ -202,7 +213,7 @@ function Flower({
 function GrassTuft({ x, y, color }: { x: number; y: number; color: string }) {
   return (
     <path
-      transform={`translate(${x} ${y})`}
+      transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}
       d="M0 0 L-4 -10 M0 0 L1 -12 M0 0 L6 -9"
       fill="none"
       stroke={color}
@@ -218,7 +229,7 @@ function SafeDecor() {
       <GrassTuft x={38} y={96} color={MATCHA_DARK} />
       <GrassTuft x={124} y={98} color={MATCHA_DARK} />
       {/* daun kecil */}
-      <path transform="translate(-18 4)" d="M68 92 Q60 84 66 78 Q74 82 72 92Z" fill={MATCHA_SOFT} {...line25} />
+      <path transform="translate(-18 4)" style={SVG_ATTR_ORIGIN} d="M68 92 Q60 84 66 78 Q74 82 72 92Z" fill={MATCHA_SOFT} {...line25} />
       <path d="M92 70 Q100 62 106 68 Q100 76 92 74Z" fill={MATCHA_SOFT} {...line25} />
       <Flower x={56} y={82} petal={C.peach} delay={0} />
       <Flower x={99} y={78} petal={C.cream} r={4.5} delay={0.5} />
@@ -247,12 +258,12 @@ function WarnDecor() {
         animate={{ y: [0, 20, 20], opacity: [0, 1, 0] }}
         transition={{ duration: 2, repeat: Infinity, ease: "easeIn", times: [0, 0.7, 1] }}
       >
-        <g transform="translate(42 66)">
+        <g transform="translate(42 66)" style={SVG_ATTR_ORIGIN}>
           <path d="M0 -9 Q8 2 0 8 Q-8 2 0 -9Z" fill={C.sky} {...line25} />
         </g>
       </motion.g>
-      <motion.g animate={{ y: [0, -4, 0], rotate: [-6, 6, -6] }} transition={loop(1.2)} style={{ originX: 0.5, originY: 1 }}>
-        <g transform="translate(120 50)">
+      <motion.g animate={{ y: [0, -4, 0], rotate: [-6, 6, -6] }} transition={loop(1.2)} style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}>
+        <g transform="translate(120 50)" style={SVG_ATTR_ORIGIN}>
           <circle r={14} fill={C.peach} {...line} />
           <rect x={-2.2} y={-8.5} width={4.4} height={11} rx={2.2} fill={C.cream} />
           <circle cy={7} r={2.6} fill={C.cream} />
@@ -294,9 +305,9 @@ function FrozenDecor() {
       <motion.g
         animate={{ y: [0, 20], x: [0, -6], opacity: [0, 1, 0], rotate: [0, 120] }}
         transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
       >
-        <g transform="translate(138 76)" stroke={C.sky} strokeWidth={3} strokeLinecap="round">
+        <g transform="translate(138 76)" style={SVG_ATTR_ORIGIN} stroke={C.sky} strokeWidth={3} strokeLinecap="round">
           <path d="M0 -7 L0 7 M-6 -3.5 L6 3.5 M-6 3.5 L6 -3.5" />
         </g>
       </motion.g>
@@ -309,9 +320,9 @@ function Crown() {
     <motion.g
       animate={{ y: [0, -5, 0], rotate: [-4, 4, -4] }}
       transition={loop(1.4)}
-      style={{ originX: 0.5, originY: 1 }}
+      style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
     >
-      <g transform="translate(0 -4)">
+      <g transform="translate(0 -4)" style={SVG_ATTR_ORIGIN}>
         <path
           d="M58 52 L54 24 L69 36 L80 14 L91 36 L106 24 L102 52 Q80 60 58 52Z"
           fill={HONEY_SOFT}
@@ -338,7 +349,7 @@ function ActiveHalo() {
         rx={68}
         ry={44}
         fill={C.honey}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ scale: [1, 1.14, 1], opacity: [0.35, 0.1, 0.35] }}
         transition={loop(1.8)}
       />
@@ -352,7 +363,7 @@ function ActiveHalo() {
           fill="none"
           stroke={C.honey}
           strokeWidth={3}
-          style={{ originX: 0.5, originY: 0.5 }}
+          style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
           animate={{ scale: [1, 1.38], opacity: [0.8, 0] }}
           transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut", delay: d }}
         />
@@ -381,7 +392,7 @@ export function SteppingStoneNode({ status, label, className, title }: SteppingS
         {active && <ActiveHalo />}
 
         <motion.g
-          style={{ originX: 0.5, originY: 1 }}
+          style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
           animate={
             active
               ? { y: [0, -4, 0], scaleY: [1, 1.03, 1] }
@@ -501,7 +512,7 @@ function LockPlate({ w, glow = false }: { w: Wood; glow?: boolean }) {
           cy={124}
           r={8}
           fill={C.cream}
-          style={{ originX: 0.5, originY: 0.5 }}
+          style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
           animate={{ scale: [1, 1.5, 1], opacity: [0.9, 0.3, 0.9] }}
           transition={loop(0.8)}
         />
@@ -525,7 +536,7 @@ function Chains({ w }: { w: Wood }) {
       {links.map((l, i) => {
         const h = l.k % 2 === 0 ? 9 : 4.5;
         return (
-          <g key={i} transform={`translate(${l.x.toFixed(1)} ${l.y.toFixed(1)}) rotate(${l.a.toFixed(1)})`}>
+          <g key={i} transform={`translate(${l.x.toFixed(1)} ${l.y.toFixed(1)}) rotate(${l.a.toFixed(1)})`} style={SVG_ATTR_ORIGIN}>
             <rect x={-8} y={-h / 2} width={16} height={h} rx={h / 2} fill="none" stroke={INK} strokeWidth={6.5} />
             <rect x={-8} y={-h / 2} width={16} height={h} rx={h / 2} fill="none" stroke={w.band} strokeWidth={2.5} />
           </g>
@@ -538,7 +549,7 @@ function Chains({ w }: { w: Wood }) {
 function Padlock({ w }: { w: Wood }) {
   return (
     <motion.g
-      style={{ originX: 0.5, originY: 0.1 }}
+      style={{ transformBox: "fill-box", originX: 0.5, originY: 0.1 }}
       animate={{ rotate: [-3, 3, -3] }}
       transition={loop(2.4)}
     >
@@ -558,7 +569,7 @@ function LockedChest({ uid }: { uid: string }) {
   const w = WOOD.locked;
   return (
     <motion.g
-      style={{ originX: 0.5, originY: 1 }}
+      style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
       animate={{ scaleY: [1, 1.012, 1] }}
       transition={loop(3)}
     >
@@ -594,7 +605,7 @@ function ReadyChest({ uid }: { uid: string }) {
       </motion.g>
 
       <motion.g
-        style={{ originX: 0.5, originY: 1 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
         animate={{ rotate: [0, -4, 4, -3, 3, -1, 0], x: [0, -1, 1, -1, 1, 0, 0] }}
         transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 0.5, ease: "easeInOut" }}
       >
@@ -666,18 +677,18 @@ function OpenedChest({ uid }: { uid: string }) {
         cy={90}
         r={92}
         fill={`url(#${glow})`}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ scale: [1, 1.08, 1], opacity: [0.85, 1, 0.85] }}
         transition={loop(2)}
       />
       <motion.g
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ rotate: 360 }}
         transition={{ duration: 16, repeat: Infinity, ease: "linear" }}
       >
-        <g transform="translate(100 90)" fill={C.honey} opacity={0.28}>
+        <g transform="translate(100 90)" style={SVG_ATTR_ORIGIN} fill={C.honey} opacity={0.28}>
           {Array.from({ length: 8 }).map((_, i) => (
-            <path key={i} d="M0 0 L-9 -88 L9 -88Z" transform={`rotate(${i * 45})`} />
+            <path key={i} d="M0 0 L-9 -88 L9 -88Z" transform={`rotate(${i * 45})`} style={SVG_ATTR_ORIGIN} />
           ))}
         </g>
       </motion.g>
@@ -700,13 +711,13 @@ function OpenedChest({ uid }: { uid: string }) {
         {[...MOUND_COINS]
           .sort((a, b) => a[1] - b[1])
           .map(([x, y, r], i) => (
-            <g key={i} transform={`translate(${x} ${y})`}>
+            <g key={i} transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}>
               <Coin r={r} />
             </g>
           ))}
       </g>
       <path d="M50 112 Q52 80 100 72 Q148 80 150 112" fill="none" {...line} />
-      <g transform="translate(124 84)">
+      <g transform="translate(124 84)" style={SVG_ATTR_ORIGIN}>
         <polygon points="-9,-2 -5,-8 5,-8 9,-2 0,9" fill={C.sky} {...line25} />
       </g>
       <circle cx={80} cy={92} r={4.5} fill={C.peach} {...line25} />
@@ -718,28 +729,29 @@ function OpenedChest({ uid }: { uid: string }) {
       <LockPlate w={w} />
 
       {/* koin tumpah */}
-      <g transform="translate(66 116)">
+      <g transform="translate(66 116)" style={SVG_ATTR_ORIGIN}>
         <Coin r={9} />
       </g>
-      <g transform="translate(136 114)">
+      <g transform="translate(136 114)" style={SVG_ATTR_ORIGIN}>
         <Coin r={8} />
       </g>
-      <g transform="translate(34 190)">
+      <g transform="translate(34 190)" style={SVG_ATTR_ORIGIN}>
         <Coin r={9} />
       </g>
-      <g transform="translate(166 188)">
+      <g transform="translate(166 188)" style={SVG_ATTR_ORIGIN}>
         <Coin r={8} />
       </g>
-      <g transform="translate(152 198)">
+      <g transform="translate(152 198)" style={SVG_ATTR_ORIGIN}>
         <Coin r={6} />
       </g>
 
       {/* koin melompat keluar */}
-      <g transform="translate(100 80)">
+      <g transform="translate(100 80)" style={SVG_ATTR_ORIGIN}>
         {POPPERS.map((p, i) => (
           <motion.g
             key={i}
             initial={{ opacity: 0 }}
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
             animate={{ x: [0, p.dx * 0.7, p.dx], y: [0, -70, 30], opacity: [0, 1, 1, 0], rotate: [0, 180, 360] }}
             transition={{
               duration: 1.8,
@@ -757,16 +769,16 @@ function OpenedChest({ uid }: { uid: string }) {
       </g>
 
       {/* bintang naik */}
-      <g transform="translate(100 62)">
+      <g transform="translate(100 62)" style={SVG_ATTR_ORIGIN}>
         {RISING_STARS.map((s, i) => (
           <motion.g
             key={i}
             initial={{ opacity: 0 }}
             animate={{ y: [0, -46], scale: [0.3, 1.1, 0.8], rotate: [0, 160], opacity: [0, 1, 0] }}
             transition={{ duration: 1.8, delay: s.delay, repeat: Infinity, ease: "easeOut" }}
-            style={{ originX: 0.5, originY: 0.5 }}
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
           >
-            <g transform={`translate(${s.x} 0)`}>
+            <g transform={`translate(${s.x} 0)`} style={SVG_ATTR_ORIGIN}>
               <polygon points={starPoints(0, 0, s.size, s.size * 0.45)} fill={C.honey} {...line3} />
               <circle cx={-s.size * 0.25} cy={-s.size * 0.25} r={2} fill={C.cream} />
             </g>

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CozyIcons — 28 ikon duotone kustom BukuDompet (pengganti Lucide / emoji OS).
+ * CozyIcons — 31 ikon duotone kustom BukuDompet (pengganti Lucide / emoji OS).
  * Gaya: Duolingo × Finch Cozy Pastel. Teknik: Duotone Layered Vector
  *   warna dasar pastel → layer bayangan dalam → highlight kilap krem (#FFFDF7),
  *   semua dibungkus garis tepi hangat #3D352E (round cap & round join).
@@ -63,6 +63,9 @@ export const ICON_NAMES = [
   "lock_cozy",
   "warning_siren",
   "check_badge",
+  "wardrobe_costume",
+  "boutique_shop",
+  "egg_nest",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];
@@ -74,6 +77,13 @@ export interface CozyIconComponentProps extends CozyIconProps {
 /* ───────────────────────── Tokens ───────────────────────── */
 
 const INK = "#3D352E";
+
+/**
+ * Atribut SVG `transform="..."` memakai titik asal viewBox. Style ini membuatnya kebal
+ * terhadap aturan CSS global `svg g, svg path { transform-box: fill-box }` (yang dulu
+ * membuat jari kaki / ornamen bergeser ke pojok kiri-atas bounding box masing-masing).
+ */
+const SVG_ATTR_ORIGIN = { transformBox: "view-box", transformOrigin: "0 0" } as const;
 
 const C = {
   cream: "#FFFDF7",
@@ -204,7 +214,7 @@ function Spark({
 }) {
   return (
     <path
-      transform={`translate(${x} ${y})`}
+      transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}
       d={sparklePath(s)}
       fill={fill}
       stroke={outline ? INK : undefined}
@@ -292,7 +302,11 @@ function Live({
   const spec = LIVE[kind];
   return (
     <motion.g
-      style={{ originX: 0.5, originY: origin === "bottom" ? 1 : origin === "top" ? 0 : 0.5 }}
+      style={{
+        transformBox: "fill-box",
+        originX: 0.5,
+        originY: origin === "bottom" ? 1 : origin === "top" ? 0 : 0.5,
+      }}
       animate={spec.animate}
       transition={{ duration: spec.d, repeat: Infinity, ease: "easeInOut", delay }}
     >
@@ -440,7 +454,7 @@ export function CalendarStreakIcon(props: CozyIconProps) {
       <Hl d="M12 13.6 H21" w={2} o={0.8} />
       <Duo d="M11.5 30 L16.5 35 L25 24.5" inner={C.matcha} ow={7.6} iw={4.4} />
       <Live on={props.animated} kind="flicker" origin="bottom">
-        <g transform="translate(29.6 25.4) scale(1.05)">
+        <g transform="translate(29.6 25.4) scale(1.05)" style={SVG_ATTR_ORIGIN}>
           <path d={MINI_FLAME} fill={C.flame} {...O2} />
           <path d="M5 6.4 C5.8 8 7 8.4 7 9.8 C7 11 6 11.6 5 11.6 C4 11.6 3 11 3 9.8 C3 8.4 4.2 8 5 6.4Z" fill={C.honey} />
         </g>
@@ -523,34 +537,42 @@ export function DetectiveRadarIcon(props: CozyIconProps) {
   );
 }
 
-/** 9. Jejak kaki Mochi — peach & emas. */
+/** 9. Jejak kaki Mochi — bantalan peach & 4 jari emas (tanpa rotasi, rapi di semua ukuran). */
 export function PetPawIcon(props: CozyIconProps) {
+  const PAD =
+    "M24 24.6 C17.6 24.6 11.6 29.6 12.4 35.4 C13.2 40.6 18.6 42 24 40 C29.4 42 34.8 40.6 35.6 35.4 C36.4 29.6 30.4 24.6 24 24.6Z";
+  /* jari: bentuk kacang tegak, sedikit miring lewat kurva (bukan transform) */
+  const TOES = [
+    "M7.4 21.2 C5.4 19.2 5.8 15.2 8.6 14 C11.4 12.8 13.8 15.4 13.4 19 C13.2 21.6 10 24 7.4 21.2Z",
+    "M15.6 12.4 C14 9.2 15.4 4.8 18.6 4.4 C21.8 4 23.4 7.6 22.6 10.8 C21.8 13.8 17.4 15.4 15.6 12.4Z",
+    "M32.4 12.4 C34 9.2 32.6 4.8 29.4 4.4 C26.2 4 24.6 7.6 25.4 10.8 C26.2 13.8 30.6 15.4 32.4 12.4Z",
+    "M40.6 21.2 C42.6 19.2 42.2 15.2 39.4 14 C36.6 12.8 34.2 15.4 34.6 19 C34.8 21.6 38 24 40.6 21.2Z",
+  ];
   return (
     <IconBase {...props}>
+      <path d={PAD} fill={C.peach} />
+      <path d="M35.6 35.4 C34.8 40.6 29.4 42 24 40 C30 37 32.4 31.4 31 26 C34.6 27.2 36.2 31.2 35.6 35.4Z" fill={C.peachDark} />
+      <path d={PAD} fill="none" {...O3} />
+      <Hl d="M16.6 32.6 Q18 29.6 21.4 28.2" />
+      {/* hati kecil di bantalan */}
       <path
-        d="M24 25 C16.5 25 10.5 31 11.5 37.2 C12.4 42.4 18.6 43.6 24 41.4 C29.4 43.6 35.6 42.4 36.5 37.2 C37.5 31 31.5 25 24 25Z"
-        fill={C.peach}
-        {...O3}
+        d="M24 37.2 C20.6 35 20.4 32.2 22.2 31.6 C23.2 31.3 24 32 24 32.6 C24 32 24.8 31.3 25.8 31.6 C27.6 32.2 27.4 35 24 37.2Z"
+        fill={C.cream}
+        opacity={0.9}
       />
-      <path d="M36.5 37.2 C35.6 42.4 29.4 43.6 24 41.4 C30 38 32.5 31 31 26.4 C35 27.6 37.4 32 36.5 37.2Z" fill={C.peachDark} />
-      <path
-        d="M24 25 C16.5 25 10.5 31 11.5 37.2 C12.4 42.4 18.6 43.6 24 41.4 C29.4 43.6 35.6 42.4 36.5 37.2 C37.5 31 31.5 25 24 25Z"
-        fill="none"
-        {...O3}
-      />
-      <Hl d="M15.6 32.4 Q17.4 29.4 21 28.2" />
-      <g {...O3} fill={C.honey}>
-        <ellipse cx={9.6} cy={22} rx={4.4} ry={5.6} transform="rotate(-22 9.6 22)" />
-        <ellipse cx={18.4} cy={12.6} rx={4.6} ry={6} transform="rotate(-8 18.4 12.6)" />
-        <ellipse cx={29.6} cy={12.6} rx={4.6} ry={6} transform="rotate(8 29.6 12.6)" />
-        <ellipse cx={38.4} cy={22} rx={4.4} ry={5.6} transform="rotate(22 38.4 22)" />
+      <g fill={C.honey} {...O3}>
+        {TOES.map((d, i) => (
+          <path key={i} d={d} />
+        ))}
       </g>
-      <g stroke={C.honeySoft} strokeWidth={1.8} strokeLinecap="round" fill="none">
-        <path d="M8.4 20 Q8.8 18.6 9.8 18" />
-        <path d="M17.2 10 Q17.6 8.6 18.8 8" />
+      <g fill="none" stroke={C.honeySoft} strokeWidth={1.8} strokeLinecap="round">
+        <path d="M8.2 18.8 Q8.4 17.2 9.6 16.4" />
+        <path d="M17.4 8.4 Q17.8 6.8 19.4 6.4" />
+        <path d="M30.6 8.4 Q30.2 6.8 28.6 6.4" />
+        <path d="M39.8 18.8 Q39.6 17.2 38.4 16.4" />
       </g>
       <Live on={props.animated} kind="twinkle">
-        <Spark x={40.5} y={8} s={3.8} />
+        <Spark x={42} y={6} s={3.4} />
       </Live>
     </IconBase>
   );
@@ -562,7 +584,7 @@ export function RewardsTicketIcon(props: CozyIconProps) {
     "M9 12 H39 a4 4 0 0 1 4 4 V20.5 a3.5 3.5 0 0 0 0 7 V32 a4 4 0 0 1 -4 4 H9 a4 4 0 0 1 -4 -4 V27.5 a3.5 3.5 0 0 0 0 -7 V16 a4 4 0 0 1 4 -4Z";
   return (
     <IconBase {...props}>
-      <g transform="rotate(-9 24 24)">
+      <g transform="rotate(-9 24 24)" style={SVG_ATTR_ORIGIN}>
         <path d={ticket} fill={C.honey} />
         <path d="M5 30 H43 V32 a4 4 0 0 1 -4 4 H9 a4 4 0 0 1 -4 -4Z" fill={C.honeyDark} />
         <path d="M9 12 H17 V36 H9 a4 4 0 0 1 -4 -4 V27.5 a3.5 3.5 0 0 0 0 -7 V16 a4 4 0 0 1 4 -4Z" fill={C.peach} />
@@ -625,7 +647,7 @@ export function CatFoodIcon(props: CozyIconProps) {
       <g stroke={INK} strokeWidth={1.8} strokeLinecap="round" opacity={0.3}>
         <path d="M25 18.4 l2.4 1.2 M30 21.6 l2 1.4 M22.4 23 l2.2 -0.6 M29 25 l2.2 0.4" />
       </g>
-      <g transform="rotate(-14 17.6 20.6)">
+      <g transform="rotate(-14 17.6 20.6)" style={SVG_ATTR_ORIGIN}>
         <ellipse cx={17.6} cy={20.6} rx={6} ry={4.4} fill={C.cream} {...O2} />
         <circle cx={17.6} cy={20.6} r={2.4} fill={C.honey} stroke={C.honeyDark} strokeWidth={1.2} />
       </g>
@@ -646,15 +668,15 @@ export function CatSnackIcon(props: CozyIconProps) {
   const cup = "M13 16 L35 16 L32.2 41.2 Q32 43.6 29.6 43.6 H18.4 Q16 43.6 15.8 41.2Z";
   return (
     <IconBase {...props}>
-      <g transform="translate(-3 0)">
+      <g transform="translate(-3 0)" style={SVG_ATTR_ORIGIN}>
         <path d={cup} fill={C.cream} fillOpacity={0.7} />
         <path d="M13.22 18 H34.78 L33.78 27 H14.22Z" fill={C.fur} />
         <path d="M14.22 27 H33.78 L32.2 41.2 H15.8Z" fill="#C9915C" />
         <path d="M14.22 27 Q19 29.4 24 27 Q29 24.6 33.78 27 V29.4 H14.22Z" fill="#C9915C" />
         <path d="M27 30 H33.4 L32.2 41.2 H25Z" fill="#A9743F" opacity={0.55} />
         <g fill={C.cream} stroke={INK} strokeWidth={1.7} strokeLinejoin="round" opacity={0.95}>
-          <rect x={16.4} y={19.6} width={6} height={5.4} rx={1.6} transform="rotate(-10 19.4 22.3)" />
-          <rect x={26} y={19} width={6} height={5.4} rx={1.6} transform="rotate(12 29 21.7)" />
+          <rect x={16.4} y={19.6} width={6} height={5.4} rx={1.6} transform="rotate(-10 19.4 22.3)" style={SVG_ATTR_ORIGIN} />
+          <rect x={26} y={19} width={6} height={5.4} rx={1.6} transform="rotate(12 29 21.7)" style={SVG_ATTR_ORIGIN} />
         </g>
         <g fill="#4A3B30">
           <circle cx={19.4} cy={37.4} r={1.9} />
@@ -759,7 +781,7 @@ export function CatStudyIcon(props: CozyIconProps) {
       <Book x={6.4} y={22} w={30} h={10} color={C.matcha} shade={C.matchaDark} />
       <Book x={8} y={12.4} w={26} h={9.6} color={C.sky} shade={C.skyDark} />
       <Live on={props.animated} kind="wiggle" origin="bottom">
-        <g transform="translate(39.6 22.6) rotate(20)">
+        <g transform="translate(39.6 22.6) rotate(20)" style={SVG_ATTR_ORIGIN}>
           <rect x={-3} y={-17} width={6} height={4.6} rx={1.8} fill={C.peach} {...O2} />
           <rect x={-3} y={-12.6} width={6} height={3.2} fill={C.steel} {...O2} strokeWidth={1.8} />
           <rect x={-3} y={-9.6} width={6} height={16} fill={C.honey} {...O2} />
@@ -871,12 +893,12 @@ export function CatIncomeIcon(props: CozyIconProps) {
     <IconBase {...props}>
       <path d="M6 22 Q6 17.4 10.6 17.4 H37.4 Q42 17.4 42 22 V38 Q42 42.4 37.4 42.4 H10.6 Q6 42.4 6 38Z" fill={C.matchaDark} {...O3} />
       <Live on={props.animated} kind="bob">
-        <g transform="translate(17.6 21) rotate(-14)">
+        <g transform="translate(17.6 21) rotate(-14)" style={SVG_ATTR_ORIGIN}>
           <rect x={-8} y={-17} width={16} height={22} rx={2.6} fill={C.matchaSoft} {...O2} />
           <circle cx={0} cy={-6.4} r={3.4} fill={C.cream} {...O2} strokeWidth={1.8} />
           <path d="M-4.8 -13 H-2 M2 -13 H4.8" stroke={INK} strokeWidth={1.6} strokeLinecap="round" opacity={0.4} />
         </g>
-        <g transform="translate(29.6 21) rotate(10)">
+        <g transform="translate(29.6 21) rotate(10)" style={SVG_ATTR_ORIGIN}>
           <rect x={-8} y={-18} width={16} height={22} rx={2.6} fill={C.cream} {...O2} />
           <circle cx={0} cy={-7.4} r={3.4} fill={C.honey} {...O2} strokeWidth={1.8} />
           <path d="M-4.8 -14 H-2 M2 -14 H4.8" stroke={INK} strokeWidth={1.6} strokeLinecap="round" opacity={0.4} />
@@ -965,7 +987,7 @@ export function ZeroSpendIcon(props: CozyIconProps) {
       />
       <Live on={props.animated} kind="pulse">
         <g
-          transform="translate(24 24.6) scale(0.9) translate(-24 -24)"
+          transform="translate(24 24.6) scale(0.9) translate(-24 -24)" style={SVG_ATTR_ORIGIN}
           fill="none"
           stroke={INK}
           strokeWidth={2.6}
@@ -1029,7 +1051,7 @@ export function ParentHeartIcon(props: CozyIconProps) {
         <g>
           <path d={WING_PATH} fill={C.cream} {...O3} />
           <path d="M14 26.4 C10.4 23.4 7.4 22.4 5.6 22.6 M13.6 29.6 C10.6 28.4 8 28.6 6.4 29" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" opacity={0.35} />
-          <g transform="translate(48 0) scale(-1 1)">
+          <g transform="translate(48 0) scale(-1 1)" style={SVG_ATTR_ORIGIN}>
             <path d={WING_PATH} fill={C.cream} {...O3} />
             <path d="M14 26.4 C10.4 23.4 7.4 22.4 5.6 22.6 M13.6 29.6 C10.6 28.4 8 28.6 6.4 29" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" opacity={0.35} />
           </g>
@@ -1151,6 +1173,121 @@ export function CheckBadgeIcon(props: CozyIconProps) {
 }
 
 /* ═════════════════════════════════════════════════════════════
+ *  29–31  Dunia Pet & Butik (pengganti ikon Lucide + emoji pada tab)
+ * ═════════════════════════════════════════════════════════════ */
+
+/** 29. Lemari Kostum — kaos peach tergantung pada gantungan emas. */
+export function WardrobeCostumeIcon(props: CozyIconProps) {
+  const TEE =
+    "M17 14 L8.4 17.6 Q6.6 18.4 7 20.4 L8.6 27 Q9 28.4 10.6 28 L13.4 27.2 V41 Q13.4 43 15.4 43 H32.6 Q34.6 43 34.6 41 V27.2 L37.4 28 Q39 28.4 39.4 27 L41 20.4 Q41.4 18.4 39.6 17.6 L31 14 Q28 18.2 24 18.2 Q20 18.2 17 14Z";
+  return (
+    <IconBase {...props}>
+      <Live on={props.animated} kind="wiggle" origin="top">
+        {/* kait gantungan (kecil, di atas kerah) */}
+        <Duo d="M24 15 V11.4 Q24 7.2 27.4 7.2 Q30.4 7.2 30.4 10" inner={C.honey} ow={5.4} iw={2.8} />
+        {/* kaos */}
+        <path d={TEE} fill={C.peach} />
+        <path d="M34.6 27.2 L37.4 28 Q39 28.4 39.4 27 L41 20.4 Q41.4 18.4 39.6 17.6 L31 14 Q33 19 34.6 24Z" fill={C.peachDark} />
+        <path d="M34.6 27.2 V41 Q34.6 43 32.6 43 H27 Q31 38 31 31 Q31.4 28 34.6 27.2Z" fill={C.peachDark} opacity={0.55} />
+        <path d={TEE} fill="none" {...O3} />
+        {/* kerah rib */}
+        <path d="M17.4 14.4 Q20.4 19.4 24 19.4 Q27.6 19.4 30.6 14.4" fill="none" stroke={INK} strokeWidth={5} strokeLinecap="round" />
+        <path d="M17.4 14.4 Q20.4 19.4 24 19.4 Q27.6 19.4 30.6 14.4" fill="none" stroke={C.honeySoft} strokeWidth={2.4} strokeLinecap="round" />
+        {/* bintang di dada */}
+        <Star cx={24} cy={31} R={4.6} fill={C.honey} shade={C.honeyDark} sw={2} />
+        <Hl d="M14.4 31 Q14.4 36 15.4 39" w={2.2} o={0.75} />
+        <Hl d="M12.2 20.6 L9.4 22" w={2} o={0.8} />
+      </Live>
+      <Live on={props.animated} kind="twinkle" delay={0.3}>
+        <Spark x={41.6} y={9} s={3.6} fill={C.taroSoft} />
+      </Live>
+    </IconBase>
+  );
+}
+
+/** 30. Butik — toko mungil dengan kanopi belang peach & krem. */
+export function BoutiqueShopIcon(props: CozyIconProps) {
+  const W = 38 / 6;
+  const seg = (i: number): [number, number] => [5 + i * W, 5 + (i + 1) * W];
+  const stripe = (i: number): string => {
+    const [x, x2] = seg(i);
+    return `M${f(x)} 12 H${f(x2)} V20 Q${f((x + x2) / 2)} 25.4 ${f(x)} 20Z`;
+  };
+  let AWN = "M5 20 V9 Q5 6 8 6 H40 Q43 6 43 9 V20";
+  for (let i = 5; i >= 0; i--) {
+    const [x, x2] = seg(i);
+    AWN += ` Q${f((x + x2) / 2)} 25.4 ${f(x)} 20`;
+  }
+  AWN += "Z";
+  return (
+    <IconBase {...props}>
+      {/* badan toko */}
+      <rect x={8.4} y={20} width={31.2} height={22.6} rx={3.2} fill={C.cream} />
+      <path d="M31 20 H36.4 Q39.6 20 39.6 23.2 V39.4 Q39.6 42.6 36.4 42.6 H31Z" fill={C.fur} />
+      <rect x={8.4} y={20} width={31.2} height={22.6} rx={3.2} fill="none" {...O3} />
+      {/* jendela */}
+      <rect x={11.6} y={27.4} width={11.6} height={9.8} rx={2.4} fill={C.skySoft} {...O} />
+      <Hl d="M13.6 30.6 L16.4 29" w={2} />
+      <Hl d="M13.6 33.8 L18.2 31.2" w={1.6} o={0.7} />
+      {/* pintu */}
+      <path d="M26.6 42.6 V30.6 Q26.6 28 29.2 28 H31 Q33.6 28 33.6 30.6 V42.6Z" fill={C.honey} {...O} />
+      <path d="M31 28 Q33.6 28 33.6 30.6 V42.6 H31Z" fill={C.honeyDark} opacity={0.5} />
+      <circle cx={31.8} cy={36} r={1.1} fill={C.cream} />
+      {/* kanopi belang */}
+      <path d={AWN} fill={C.cream} />
+      <path d="M5 12 V9 Q5 6 8 6 H40 Q43 6 43 9 V12Z" fill={C.peach} />
+      {[0, 2, 4].map((i) => (
+        <path key={i} d={stripe(i)} fill={C.peach} />
+      ))}
+      <path d={AWN} fill="none" {...O3} />
+      <Hl d="M9.6 9.4 H17" w={2.2} />
+      <Live on={props.animated} kind="twinkle" delay={0.4}>
+        <Spark x={44} y={32} s={3.6} />
+      </Live>
+      <Live on={props.animated} kind="bob">
+        <Spark x={5} y={32} s={2.6} fill={C.taroSoft} />
+      </Live>
+    </IconBase>
+  );
+}
+
+/** 31. Kandang & Adopsi — telur bercak dalam sarang jerami. */
+export function EggNestIcon(props: CozyIconProps) {
+  const EGG = "M24 4.6 C31.6 4.6 36.6 15 36.6 23.2 C36.6 31 31 36.4 24 36.4 C17 36.4 11.4 31 11.4 23.2 C11.4 15 16.4 4.6 24 4.6Z";
+  const NEST = "M4.6 28.6 Q5 43.2 24 43.4 Q43 43.2 43.4 28.6 Q36.4 35 24 35 Q11.6 35 4.6 28.6Z";
+  return (
+    <IconBase {...props}>
+      <Live on={props.animated} kind="wiggle" origin="bottom">
+        <path d={EGG} fill={C.cream} />
+        <path d="M36.6 23.2 C36.6 31 31 36.4 24 36.4 C28.4 33 30.6 27.6 29.6 20.6 C29 15.6 26.6 9.6 22.6 5.2 C23 4.8 23.5 4.6 24 4.6 C31.6 4.6 36.6 15 36.6 23.2Z" fill={C.fur} />
+        <circle cx={19.4} cy={17.4} r={3} fill={C.taroSoft} stroke={C.taro} strokeWidth={1.6} />
+        <circle cx={29.4} cy={24.4} r={3.6} fill={C.peachSoft} stroke={C.peach} strokeWidth={1.6} />
+        <circle cx={19.8} cy={28.6} r={2.2} fill={C.skySoft} stroke={C.sky} strokeWidth={1.4} />
+        <circle cx={26} cy={12.2} r={1.8} fill={C.honeySoft} stroke={C.honey} strokeWidth={1.2} />
+        <path d={EGG} fill="none" {...O3} />
+        <Hl d="M16.2 22.4 Q15.8 16.2 20 10.6" w={2.6} />
+      </Live>
+      {/* sarang */}
+      <path d={NEST} fill={C.tan} />
+      <path d="M4.6 28.6 Q11.6 35 24 35 Q36.4 35 43.4 28.6 Q43.6 31 43.2 33 Q36 37.4 24 37.4 Q12 37.4 4.8 33 Q4.4 31 4.6 28.6Z" fill={C.tanLight} />
+      <path d="M8 38 Q24 44.6 40 38 Q38.6 42.6 24 43.4 Q9.4 42.6 8 38Z" fill={C.tanDark} opacity={0.65} />
+      <path d={NEST} fill="none" {...O3} />
+      <g fill="none" stroke={C.tanDark} strokeWidth={1.8} strokeLinecap="round">
+        <path d="M10 33 Q16 35.6 21 35.4" />
+        <path d="M27 35.4 Q33 35.6 38 33" />
+        <path d="M13 40 Q24 42.6 35 40" />
+      </g>
+      <Live on={props.animated} kind="twinkle">
+        <Spark x={41} y={9} s={4} />
+      </Live>
+      <Live on={props.animated} kind="twinkle" delay={0.6}>
+        <Spark x={7} y={14} s={2.8} fill={C.taroSoft} />
+      </Live>
+    </IconBase>
+  );
+}
+
+/* ═════════════════════════════════════════════════════════════
  *  Dispatcher & helper
  * ═════════════════════════════════════════════════════════════ */
 
@@ -1183,6 +1320,9 @@ export const COZY_ICON_COMPONENTS: Record<IconName, ComponentType<CozyIconProps>
   lock_cozy: LockCozyIcon,
   warning_siren: WarningSirenIcon,
   check_badge: CheckBadgeIcon,
+  wardrobe_costume: WardrobeCostumeIcon,
+  boutique_shop: BoutiqueShopIcon,
+  egg_nest: EggNestIcon,
 };
 
 /** Nama bahasa Indonesia tiap ikon — berguna untuk `title` / tooltip. */
@@ -1215,6 +1355,9 @@ export const ICON_LABEL: Record<IconName, string> = {
   lock_cozy: "Terkunci",
   warning_siren: "Peringatan boros",
   check_badge: "Selesai",
+  wardrobe_costume: "Lemari kostum",
+  boutique_shop: "Butik",
+  egg_nest: "Kandang dan adopsi telur",
 };
 
 /** Ikon dinamis berdasarkan nama. */

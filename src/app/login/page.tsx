@@ -103,9 +103,10 @@ export default function LoginPage() {
                 mood="happy"
                 customName="Mochi"
                 equippedAccessories={{
-                  head: "head_sprout_leaf",
-                  face: "face_blush_hearts",
-                  neck: "neck_pastel_bib",
+                  head: "head_flower_crown",
+                  face: "face_blush_stickers",
+                  neck: "neck_bandana",
+                  outfit: "outfit_knit_sweater",
                 }}
                 className="w-40 h-40"
               />

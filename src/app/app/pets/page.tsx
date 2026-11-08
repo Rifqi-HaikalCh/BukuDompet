@@ -1,20 +1,9 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, Suspense } from "react";
+import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import {
-  Pencil,
-  Check,
-  X,
-  Lock,
-  Sparkles,
-  ShoppingBag,
-  Shirt,
-  Egg,
-  MessageCircleHeart,
-  RefreshCw,
-} from "lucide-react";
+import { Pencil, Check, X, MessageCircleHeart, RefreshCw } from "lucide-react";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import {
   analyzeSpendingDetective,
@@ -23,7 +12,6 @@ import {
 } from "@/lib/spending-detective";
 import {
   CustomizablePetAvatar,
-  AccessoryPreviewIcon,
   GROWTH_STAGE_META,
   GROWTH_STAGES,
   PET_SPECIES_CATALOG,
@@ -31,7 +19,10 @@ import {
   ACCESSORY_BY_ID,
   ACCESSORY_SLOTS,
   SLOT_LABEL,
+  ACCESSORY_GENDER_LABEL,
   getSpeciesInfo,
+  isHairAccessory,
+  type AccessoryGender,
   type PetSpecies,
   type GrowthStage,
   type AccessorySlot,
@@ -44,10 +35,134 @@ import {
   formatRupiah,
 } from "@/components/ui/CozyPrimitives";
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
+import { LazyAccessoryPreview } from "@/components/user/LazyAccessoryPreview";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 import { cn } from "@/lib/utils";
 
 type PetBoutiqueTab = "wardrobe" | "shop" | "kandang";
+
+/** Filter gender: "female"/"male" juga menampilkan item netral (unisex). */
+type GenderFilter = "all" | AccessoryGender;
+const GENDER_FILTERS: readonly GenderFilter[] = ["all", "female", "male", "unisex"];
+const GENDER_FILTER_LABEL: Record<GenderFilter, string> = {
+  all: "Semua Gaya",
+  female: ACCESSORY_GENDER_LABEL.female,
+  male: ACCESSORY_GENDER_LABEL.male,
+  unisex: ACCESSORY_GENDER_LABEL.unisex,
+};
+function matchesGender(itemGender: AccessoryGender, f: GenderFilter): boolean {
+  if (f === "all") return true;
+  if (f === "unisex") return itemGender === "unisex";
+  return itemGender === f || itemGender === "unisex";
+}
+
+/* ───────────────────────── Chip filter & tab aksesibel ───────────────────────── */
+
+type ChipTone = "sky" | "taro" | "peach";
+
+/** Teks gelap (INK) di atas warna terang agar kontras ≥ 4,5:1 (putih di atas sky/peach hanya ±2,3:1). */
+const CHIP_ACTIVE: Record<ChipTone, string> = {
+  sky: "bg-[#38B6FF] text-[#3D352E] border-[#1E88E5] border-b-[3px]",
+  taro: "bg-[#CE82FF] text-[#3D352E] border-[#A552DB] border-b-[3px]",
+  peach: "bg-[#FF8B7B] text-[#3D352E] border-[#E5614F] border-b-[3px]",
+};
+
+const FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3D352E] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FFFDF9]";
+
+function FilterChip({
+  active,
+  onClick,
+  tone = "sky",
+  size = "md",
+  dashed = false,
+  label,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  tone?: ChipTone;
+  size?: "md" | "sm";
+  /** Garis putus-putus untuk fase yang masih terkunci. */
+  dashed?: boolean;
+  label?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={label}
+      onClick={() => {
+        soundEffects.tactileClick();
+        onClick();
+      }}
+      className={cn(
+        "rounded-xl font-display font-extrabold border cursor-pointer transition-all inline-flex items-center justify-center gap-1 min-h-8",
+        size === "md" ? "px-3 py-1.5 text-xs" : "px-2.5 py-1 text-[11px]",
+        FOCUS_RING,
+        active
+          ? CHIP_ACTIVE[tone]
+          : cn(
+              "bg-[#F7F3EB] text-[#3D352E] border-[#E6DFD2] hover:bg-white",
+              dashed && "bg-white text-[#7A6E65] border-dashed"
+            )
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function GenderChips({
+  value,
+  onChange,
+}: {
+  value: GenderFilter;
+  onChange: (g: GenderFilter) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Filter gaya item"
+      className="flex flex-wrap items-center gap-1.5"
+    >
+      <span className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">
+        Gaya:
+      </span>
+      {GENDER_FILTERS.map((g) => (
+        <FilterChip
+          key={g}
+          size="sm"
+          tone="peach"
+          active={value === g}
+          onClick={() => onChange(g)}
+        >
+          {GENDER_FILTER_LABEL[g]}
+        </FilterChip>
+      ))}
+    </div>
+  );
+}
+
+/** Lencana petunjuk: rambut/hijab belum tampil di Fase 1 (telur). */
+function HatchFirstBadge() {
+  return (
+    <span className="px-2.5 py-0.5 rounded-lg bg-[#FFFBEB] border border-[#FDE08D] text-[10px] font-display font-extrabold text-[#4A3500] inline-flex items-center gap-1">
+      <CozyIcon name="egg_nest" size={14} /> Menetas dulu (Fase 2+)
+    </span>
+  );
+}
+
+const TAB_DEFS: readonly { id: PetBoutiqueTab; icon: "wardrobe_costume" | "boutique_shop" | "egg_nest" }[] = [
+  { id: "wardrobe", icon: "wardrobe_costume" },
+  { id: "shop", icon: "boutique_shop" },
+  { id: "kandang", icon: "egg_nest" },
+];
+
+/** Jumlah item yang dijual di Butik / jatuh dari Peti Harta (dihitung dari katalog, bukan hard-code). */
+const SHOP_ITEM_COUNT = ACCESSORY_CATALOG.filter((a) => a.source === "shop").length;
+const PATH_DROP_COUNT = ACCESSORY_CATALOG.length - SHOP_ITEM_COUNT;
 
 function PetsAndBoutiqueContent() {
   const searchParams = useSearchParams();
@@ -85,15 +200,27 @@ function PetsAndBoutiqueContent() {
   const petName = userProfile.petCustomName || speciesInfo.defaultName;
   const levelInfo = getLevelFromXp(userProfile.xp);
 
-  const report = analyzeSpendingDetective({
-    transactions: userTransactions,
-    monthlyBudgetTarget: userProfile.monthly_budget_target,
-    monthlySavingTarget: userProfile.monthly_saving_target,
-    userLevel: levelInfo.level,
-    currentStage,
-    petCustomName: petName,
-    isProudComboActive,
-  });
+  const report = useMemo(
+    () =>
+      analyzeSpendingDetective({
+        transactions: userTransactions,
+        monthlyBudgetTarget: userProfile.monthly_budget_target,
+        monthlySavingTarget: userProfile.monthly_saving_target,
+        userLevel: levelInfo.level,
+        currentStage,
+        petCustomName: petName,
+        isProudComboActive,
+      }),
+    [
+      userTransactions,
+      userProfile.monthly_budget_target,
+      userProfile.monthly_saving_target,
+      levelInfo.level,
+      currentStage,
+      petName,
+      isProudComboActive,
+    ]
+  );
 
   // Main Sub-Tab State
   const [activeTab, setActiveTab] = useState<PetBoutiqueTab>(() => {
@@ -120,6 +247,7 @@ function PetsAndBoutiqueContent() {
   const [shopSlotFilter, setShopSlotFilter] = useState<"all" | AccessorySlot>(
     "all"
   );
+  const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
 
   // Sync shop stage filter when active pet changes
   useEffect(() => {
@@ -139,6 +267,25 @@ function PetsAndBoutiqueContent() {
   useEffect(() => {
     setPreviewStage(currentStage);
   }, [currentStage, activeSpecies]);
+
+  // Navigasi tab dengan papan ketik (←/→/Home/End) sesuai pola WAI-ARIA
+  const tabRefs = useRef<Partial<Record<PetBoutiqueTab, HTMLButtonElement | null>>>({});
+  const onTabKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const idx = TAB_DEFS.findIndex((t) => t.id === activeTab);
+    let next = idx;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (idx + 1) % TAB_DEFS.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (idx - 1 + TAB_DEFS.length) % TAB_DEFS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = TAB_DEFS.length - 1;
+    else return;
+    e.preventDefault();
+    const target = TAB_DEFS[next].id;
+    setActiveTab(target);
+    tabRefs.current[target]?.focus();
+  };
+
+  // Umpan balik aksi (beli gagal, dll.) — dibacakan pembaca layar lewat role="status"
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Confirmation Modal States
   const [confirmBuyItemId, setConfirmBuyItemId] = useState<string | null>(null);
@@ -161,17 +308,17 @@ function PetsAndBoutiqueContent() {
 
     const list: string[] = [
       report.mochiSpeech,
-      `📊 Kabar Dompet Hari Ini: Sisa jatah aman harianmu ${formatRupiah(
+      `Kabar Dompet Hari Ini: Sisa jatah aman harianmu ${formatRupiah(
         report.remainingDailySafeSpend
       )} dari batas ${formatRupiah(report.dssl)} (Status: ${
         report.walletStatus
       }).`,
       currentStage < 8
-        ? `🌱 Progres Pertumbuhan ${petName}: Saat ini di Fase ${currentStage}/8 (${stageMeta.name}). Butuh ${remXp} Stage XP & ${remDays} hari mencatat lagi untuk tumbuh ke Fase ${
+        ? `Progres Pertumbuhan ${petName}: Saat ini di Fase ${currentStage}/8 (${stageMeta.name}). Butuh ${remXp} Stage XP & ${remDays} hari mencatat lagi untuk tumbuh ke Fase ${
             currentStage + 1
           } (${nextStageName})!`
-        : `👑 ${petName} sudah mencapai Fase 8 (Sepuh Bijaksana)! Terima kasih sudah konsisten merawat dan mencatat kas setiap hari!`,
-      `🔥 Konsistensi Api Streak: Kamu sudah mencatat kas ${userProfile.current_streak} hari berturut-turut dan punya ${userProfile.streak_freeze_count} Perisai Es pelindung!`,
+        : `${petName} sudah mencapai Fase 8 (Sepuh Bijaksana)! Terima kasih sudah konsisten merawat dan mencatat kas setiap hari!`,
+      `Konsistensi Api Streak: Kamu sudah mencatat kas ${userProfile.current_streak} hari berturut-turut dan punya ${userProfile.streak_freeze_count} Perisai Es pelindung!`,
     ];
 
     if (report.microLeaks.length > 0) {
@@ -219,9 +366,10 @@ function PetsAndBoutiqueContent() {
       if (wardrobeSlotFilter !== "all" && item.slot !== wardrobeSlotFilter) {
         return false;
       }
+      if (!matchesGender(item.gender, genderFilter)) return false;
       return true;
     });
-  }, [userProfile.ownedAccessories, wardrobeSlotFilter]);
+  }, [userProfile.ownedAccessories, wardrobeSlotFilter, genderFilter]);
 
   // Boutique Shop Items (STRICTLY source === "shop" per Tugas 6)
   const shopAccessoryItems = useMemo(() => {
@@ -236,9 +384,10 @@ function PetsAndBoutiqueContent() {
       if (shopSlotFilter !== "all" && item.slot !== shopSlotFilter) {
         return false;
       }
+      if (!matchesGender(item.gender, genderFilter)) return false;
       return true;
     });
-  }, [shopStageFilter, shopSlotFilter]);
+  }, [shopStageFilter, shopSlotFilter, genderFilter]);
 
   const pendingBuyItem = confirmBuyItemId
     ? ACCESSORY_BY_ID[confirmBuyItemId]
@@ -307,7 +456,7 @@ function PetsAndBoutiqueContent() {
         }}
         title={
           pendingAdoptInfo
-            ? `Adopsi Telur ${pendingAdoptInfo.name}? 🥚`
+            ? `Adopsi Telur ${pendingAdoptInfo.name}?`
             : "Adopsi Telur Pet?"
         }
         description={
@@ -336,7 +485,7 @@ function PetsAndBoutiqueContent() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1 min-w-0">
             <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#F8F0FF] border border-[#E2C6FF] text-xs font-display font-extrabold text-[#A552DB]">
-              <Sparkles className="w-3.5 h-3.5" /> Dunia Pet & Butik Terpadu
+              <CozyIcon name="combo_sparkle" size={16} /> Dunia Pet & Butik Terpadu
             </div>
             <h1 className="font-display text-xl sm:text-2xl font-extrabold text-[#3D352E] leading-snug break-words">
               Panggung Pet, Lemari 7 Slot & Butik 8 Fase Hidup
@@ -446,9 +595,16 @@ function PetsAndBoutiqueContent() {
             >
               {previewStage !== currentStage && (
                 <div className="mb-2 px-3 py-1 rounded-full bg-[#FFFBEB] border border-[#FDE08D] text-[11px] font-display font-extrabold text-[#4A3500]">
-                  {previewStage > currentStage
-                    ? `🔒 Siluet Rahasia Fase ${previewStage}: ${GROWTH_STAGE_META[previewStage].name}`
-                    : `👀 Pratinjau Wujud Fase ${previewStage}: ${GROWTH_STAGE_META[previewStage].name}`}
+                  {previewStage > currentStage ? (
+                    <span className="inline-flex items-center gap-1">
+                      <CozyIcon name="lock_cozy" size={16} /> Siluet Rahasia Fase {previewStage}:{" "}
+                      {GROWTH_STAGE_META[previewStage].name}
+                    </span>
+                  ) : (
+                    <>
+                      Pratinjau Wujud Fase {previewStage}: {GROWTH_STAGE_META[previewStage].name}
+                    </>
+                  )}
                 </div>
               )}
 
@@ -471,9 +627,13 @@ function PetsAndBoutiqueContent() {
               </motion.div>
 
               {previewStage === 1 && (
-                <span className="mt-1 px-3 py-1 rounded-xl bg-[#FFFBEB] border border-[#FDE08D] text-[11px] font-bold text-[#4A3500] text-center leading-snug">
-                  🥚 Catatan: Saat masih Fase 1 (Telur Ajaib), hanya Topi,
-                  Properti Alas, Aura, dan Latar yang terlihat!
+                <span className="mt-1 px-3 py-1 rounded-xl bg-[#FFFBEB] border border-[#FDE08D] text-[11px] font-bold text-[#4A3500] text-center leading-snug inline-flex items-start gap-1.5">
+                  <CozyIcon name="egg_nest" size={18} className="shrink-0" />
+                  <span>
+                    Catatan: Saat masih Fase 1 (Telur Ajaib), hanya Topi,
+                    Properti Alas, Aura, dan Latar yang terlihat. Rambut dan
+                    hijab baru tampil setelah menetas (Fase 2+).
+                  </span>
                 </span>
               )}
             </div>
@@ -483,7 +643,7 @@ function PetsAndBoutiqueContent() {
               <div className="bg-[#F7F3EB] border-2 border-[#E6DFD2] rounded-2xl p-3.5 text-xs sm:text-sm font-bold text-[#3D352E] leading-relaxed break-words">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#2E6F00]">
-                    💬 Mood & Diagnosis Finansial {petName}:
+                    Mood & Diagnosis Finansial {petName}:
                   </span>
                   <span className="text-[10px] font-bold text-[#7A6E65]">
                     Pesan {(dialogueIndex % smartDialogues.length) + 1}/
@@ -532,21 +692,29 @@ function PetsAndBoutiqueContent() {
                     <button
                       key={st}
                       type="button"
+                      aria-pressed={isPreview}
+                      aria-label={
+                        unlocked
+                          ? `Pratinjau Fase ${st}: ${meta.name}`
+                          : `Pratinjau Fase ${st}, terkunci`
+                      }
                       onClick={() => {
                         soundEffects.tactileClick();
                         setPreviewStage(st);
                       }}
                       className={cn(
                         "p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-0.5",
+                        FOCUS_RING,
                         isPreview
                           ? "bg-[#EEF8FF] border-2 border-[#38B6FF] border-b-[3px] border-b-[#1E88E5] text-[#1565C0]"
                           : unlocked
                           ? "bg-[#F7F3EB] border-[#E6DFD2] text-[#3D352E] hover:bg-white"
-                          : "bg-[#F5EFE6] border-[#E6DFD2] text-[#7A6E65] opacity-80"
+                          : "bg-[#F5EFE6] border-[#E6DFD2] text-[#6B5F56]"
                       )}
                     >
-                      <span className="font-display text-xs font-extrabold">
-                        {unlocked ? `Fase ${st}` : `🔒 Fase ${st}`}
+                      <span className="font-display text-xs font-extrabold inline-flex items-center gap-1">
+                        {!unlocked && <CozyIcon name="lock_cozy" size={14} />}
+                        Fase {st}
                       </span>
                       <span className="text-[10px] font-bold leading-tight break-words">
                         {unlocked ? meta.name : "???"}
@@ -581,7 +749,9 @@ function PetsAndBoutiqueContent() {
               </div>
             ) : (
               <div className="p-3.5 rounded-2xl bg-[#EFFBE6] border-2 border-[#C3EFA4] text-center font-display text-xs font-extrabold text-[#2E6F00]">
-                👑 Fase Puncak (Stage 8: Sepuh Bijaksana) Telah Tercapai!
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <CozyIcon name="crown_sultan" size={20} /> Fase Puncak (Stage 8: Sepuh Bijaksana) Telah Tercapai!
+                </span>
               </div>
             )}
 
@@ -629,68 +799,83 @@ function PetsAndBoutiqueContent() {
 
         {/* ================= RIGHT COLUMN (lg:col-span-7 — 3 Sub-Tabs: Lemari, Butik Shop, Kandang) ================= */}
         <div className="lg:col-span-7 space-y-4 min-w-0">
-          {/* 3 Main Sub-Tabs Switcher */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-[#F7F3EB] p-1.5 rounded-2xl border-2 border-[#E6DFD2]">
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.tactileClick();
-                setActiveTab("wardrobe");
-              }}
-              className={cn(
-                "py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all",
-                activeTab === "wardrobe"
-                  ? "bg-[#38B6FF] text-white border-b-[3px] border-b-[#1E88E5]"
-                  : "bg-white text-[#3D352E] border border-[#E6DFD2] hover:bg-[#FFFDF9]"
-              )}
-            >
-              <Shirt className="w-4 h-4 shrink-0" />
-              <span>👗 Lemari Kostum ({userProfile.ownedAccessories.length})</span>
-            </button>
+          {/* Tab utama: Lemari / Butik / Kandang (WAI-ARIA tablist + navigasi panah) */}
+          <div
+            role="tablist"
+            aria-label="Bagian Dunia Pet"
+            className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-[#F7F3EB] p-1.5 rounded-2xl border-2 border-[#E6DFD2]"
+            onKeyDown={onTabKeyDown}
+          >
+            {TAB_DEFS.map((t) => {
+              const selected = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  ref={(el) => {
+                    tabRefs.current[t.id] = el;
+                  }}
+                  type="button"
+                  role="tab"
+                  id={`tab-${t.id}`}
+                  aria-selected={selected}
+                  aria-controls={`panel-${t.id}`}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => {
+                    soundEffects.tactileClick();
+                    setNotice(null);
+                    setActiveTab(t.id);
+                  }}
+                  className={cn(
+                    "py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all",
+                    FOCUS_RING,
+                    selected
+                      ? "bg-[#38B6FF] text-[#3D352E] border-b-[3px] border-b-[#1E88E5]"
+                      : "bg-white text-[#3D352E] border border-[#E6DFD2] hover:bg-[#FFFDF9]"
+                  )}
+                >
+                  <CozyIcon name={t.icon} size={22} className="shrink-0" />
+                  <span>
+                    {t.id === "wardrobe"
+                      ? `Lemari Kostum (${userProfile.ownedAccessories.length})`
+                      : t.id === "shop"
+                      ? "Butik Shop"
+                      : `Kandang & Adopsi (${userProfile.unlockedSpecies.length}/${PET_SPECIES_CATALOG.length})`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.tactileClick();
-                setActiveTab("shop");
-              }}
-              className={cn(
-                "py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all",
-                activeTab === "shop"
-                  ? "bg-[#38B6FF] text-white border-b-[3px] border-b-[#1E88E5]"
-                  : "bg-white text-[#3D352E] border border-[#E6DFD2] hover:bg-[#FFFDF9]"
-              )}
-            >
-              <ShoppingBag className="w-4 h-4 shrink-0" />
-              <span>🛍️ Butik Shop</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.tactileClick();
-                setActiveTab("kandang");
-              }}
-              className={cn(
-                "py-2.5 px-3 rounded-xl font-display text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all",
-                activeTab === "kandang"
-                  ? "bg-[#38B6FF] text-white border-b-[3px] border-b-[#1E88E5]"
-                  : "bg-white text-[#3D352E] border border-[#E6DFD2] hover:bg-[#FFFDF9]"
-              )}
-            >
-              <Egg className="w-4 h-4 shrink-0" />
-              <span>
-                🥚 Kandang & Adopsi ({userProfile.unlockedSpecies.length}/8)
-              </span>
-            </button>
+          {/* Pesan status (beli gagal, dll.) — dibacakan pembaca layar */}
+          <div role="status" aria-live="polite" className={notice ? "" : "sr-only"}>
+            {notice && (
+              <div className="px-4 py-2.5 rounded-2xl bg-[#FFF2F0] border-2 border-[#FFCDC6] text-xs sm:text-sm font-bold text-[#8F2A1B] flex items-start gap-2">
+                <span className="flex-1 leading-snug break-words">{notice}</span>
+                <button
+                  type="button"
+                  aria-label="Tutup pesan"
+                  onClick={() => setNotice(null)}
+                  className={cn("rounded-lg p-0.5 cursor-pointer", FOCUS_RING)}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ================= TAB 1: 👗 LEMARI KOSTUM (WARDROBE) ================= */}
           {activeTab === "wardrobe" && (
-            <CozyCard tone="white" className="p-4 sm:p-5 space-y-4">
+            <CozyCard
+              tone="white"
+              className="p-4 sm:p-5 space-y-4"
+              role="tabpanel"
+              id="panel-wardrobe"
+              aria-labelledby="tab-wardrobe"
+            >
               <div className="space-y-1">
-                <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
-                  👗 Lemari Koleksi Kostum & Properti ({ownedAccessoryItems.length} Item)
+                <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words flex items-center gap-2">
+                  <CozyIcon name="wardrobe_costume" size={28} className="shrink-0" />
+                  <span>Lemari Koleksi Kostum & Properti ({ownedAccessoryItems.length} Item)</span>
                 </h2>
                 <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
                   Pilih slot kategori di bawah untuk memadu-padankan pakaian,
@@ -699,42 +884,27 @@ function PetsAndBoutiqueContent() {
                 </p>
               </div>
 
-              {/* 7 Slot Category Filter Pills */}
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEffects.tactileClick();
-                    setWardrobeSlotFilter("all");
-                  }}
-                  className={cn(
-                    "px-3 py-1.5 rounded-xl font-display text-xs font-extrabold border cursor-pointer transition-all",
-                    wardrobeSlotFilter === "all"
-                      ? "bg-[#38B6FF] text-white border-[#1E88E5] border-b-[3px]"
-                      : "bg-[#F7F3EB] text-[#3D352E] border-[#E6DFD2] hover:bg-white"
-                  )}
+              {/* Filter slot */}
+              <div role="group" aria-label="Filter slot lemari" className="flex flex-wrap gap-1.5">
+                <FilterChip
+                  active={wardrobeSlotFilter === "all"}
+                  onClick={() => setWardrobeSlotFilter("all")}
                 >
                   Semua Slot ({userProfile.ownedAccessories.length})
-                </button>
+                </FilterChip>
                 {ACCESSORY_SLOTS.map((slot) => (
-                  <button
+                  <FilterChip
                     key={slot}
-                    type="button"
-                    onClick={() => {
-                      soundEffects.tactileClick();
-                      setWardrobeSlotFilter(slot);
-                    }}
-                    className={cn(
-                      "px-3 py-1.5 rounded-xl font-display text-xs font-extrabold border cursor-pointer transition-all",
-                      wardrobeSlotFilter === slot
-                        ? "bg-[#38B6FF] text-white border-[#1E88E5] border-b-[3px]"
-                        : "bg-[#F7F3EB] text-[#3D352E] border-[#E6DFD2] hover:bg-white"
-                    )}
+                    active={wardrobeSlotFilter === slot}
+                    onClick={() => setWardrobeSlotFilter(slot)}
                   >
                     {SLOT_LABEL[slot]}
-                  </button>
+                  </FilterChip>
                 ))}
               </div>
+
+              {/* Filter gaya: Perempuan / Laki-laki / Netral */}
+              <GenderChips value={genderFilter} onChange={setGenderFilter} />
 
               {ownedAccessoryItems.length === 0 ? (
                 <div className="p-8 rounded-3xl bg-[#F7F3EB] border-2 border-dashed border-[#D4C9B4] text-center space-y-3">
@@ -750,7 +920,7 @@ function PetsAndBoutiqueContent() {
                     size="sm"
                     onClick={() => setActiveTab("shop")}
                   >
-                    <ShoppingBag className="w-4 h-4" /> Buka Butik Shop Sekarang
+                    <CozyIcon name="boutique_shop" size={20} /> Buka Butik Shop Sekarang
                   </TactileButton>
                 </div>
               ) : (
@@ -777,7 +947,7 @@ function PetsAndBoutiqueContent() {
                       >
                         {/* 1. Large Vector Preview Icon on Top */}
                         <div className="w-24 h-24 rounded-2xl bg-[#FFFDF9] border-2 border-[#E6DFD2] flex items-center justify-center p-2 shrink-0">
-                          <AccessoryPreviewIcon
+                          <LazyAccessoryPreview
                             accessoryId={item.id}
                             className="w-20 h-20"
                           />
@@ -790,16 +960,19 @@ function PetsAndBoutiqueContent() {
 
                         {/* 3. Slot & Stage Metadata Badges */}
                         <div className="flex flex-wrap items-center justify-center gap-1.5">
-                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#A552DB]">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#3D352E]">
                             Slot: {SLOT_LABEL[item.slot]}
                           </span>
-                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F7F3EB] border border-[#E6DFD2] text-[11px] font-display font-extrabold text-[#7A6E65]">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F7F3EB] border border-[#E6DFD2] text-[11px] font-display font-extrabold text-[#6B5F56]">
                             Fase {item.stageRequirement}
                           </span>
                           {item.source === "path_drop" && (
-                            <span className="px-2.5 py-0.5 rounded-lg bg-[#FFFBEB] border border-[#FDE08D] text-[10px] font-display font-extrabold text-[#4A3500]">
-                              🎁 Eksklusif Jalur Kas
+                            <span className="px-2.5 py-0.5 rounded-lg bg-[#FFFBEB] border border-[#FDE08D] text-[10px] font-display font-extrabold text-[#4A3500] inline-flex items-center gap-1">
+                              <CozyIcon name="mystery_box" size={14} /> Eksklusif Jalur Kas
                             </span>
+                          )}
+                          {previewStage === 1 && isHairAccessory(item.id) && (
+                            <HatchFirstBadge />
                           )}
                         </div>
 
@@ -839,7 +1012,9 @@ function PetsAndBoutiqueContent() {
                                 {SLOT_LABEL[item.slot]}
                               </>
                             ) : (
-                              <>✨ Pasang ke Pet</>
+                              <>
+                                <CozyIcon name="combo_sparkle" size={18} /> Pasang ke Pet
+                              </>
                             )}
                           </TactileButton>
                         </div>
@@ -853,11 +1028,18 @@ function PetsAndBoutiqueContent() {
 
           {/* ================= TAB 2: 🛍️ BUTIK SHOP (BELI KOSTUM & AURA) ================= */}
           {activeTab === "shop" && (
-            <CozyCard tone="white" className="p-4 sm:p-5 space-y-4">
+            <CozyCard
+              tone="white"
+              className="p-4 sm:p-5 space-y-4"
+              role="tabpanel"
+              id="panel-shop"
+              aria-labelledby="tab-shop"
+            >
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
-                    🛍️ Butik Kostum, Properti & Latar (32 Item Shop)
+                  <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words flex items-center gap-2">
+                    <CozyIcon name="boutique_shop" size={28} className="shrink-0" />
+                    <span>Butik Kostum, Properti & Latar ({SHOP_ITEM_COUNT} Item Shop)</span>
                   </h2>
                   <span className="px-2.5 py-0.5 rounded-full bg-[#EFFBE6] border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00]">
                     Fase Aktif {petName}: Fase {currentStage}/8
@@ -866,94 +1048,66 @@ function PetsAndBoutiqueContent() {
                 <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
                   Beli kostum sesuai Fase Pertumbuhan {petName}. Item dari Fase
                   di atas Fase {currentStage} masih terkunci dalam Siluet
-                  Rahasia. (16 Item Eksklusif Jalur Kas tidak dijual di sini —
+                  Rahasia. ({PATH_DROP_COUNT} Item Eksklusif Jalur Kas tidak dijual di sini —
                   dapatkan gratis dari Peti Harta Peta Jalur Kas!)
                 </p>
               </div>
 
-              {/* Filter by Growth Stage (Fase 1..8) */}
+              {/* Filter fase pertumbuhan (1..8) */}
               <div className="space-y-1.5">
                 <span className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">
                   Filter Berdasarkan Fase Pertumbuhan:
                 </span>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEffects.tactileClick();
-                      setShopStageFilter("all");
-                    }}
-                    className={cn(
-                      "px-3 py-1.5 rounded-xl font-display text-xs font-extrabold border cursor-pointer transition-all",
-                      shopStageFilter === "all"
-                        ? "bg-[#38B6FF] text-white border-[#1E88E5] border-b-[3px]"
-                        : "bg-[#F7F3EB] text-[#3D352E] border-[#E6DFD2] hover:bg-white"
-                    )}
+                <div role="group" aria-label="Filter fase Butik" className="flex flex-wrap gap-1.5">
+                  <FilterChip
+                    active={shopStageFilter === "all"}
+                    onClick={() => setShopStageFilter("all")}
                   >
-                    Semua Fase (32)
-                  </button>
+                    Semua Fase ({SHOP_ITEM_COUNT})
+                  </FilterChip>
                   {GROWTH_STAGES.map((st) => {
                     const isUnlocked = st <= currentStage;
                     return (
-                      <button
+                      <FilterChip
                         key={st}
-                        type="button"
-                        onClick={() => {
-                          soundEffects.tactileClick();
-                          setShopStageFilter(st);
-                        }}
-                        className={cn(
-                          "px-2.5 py-1.5 rounded-xl font-display text-xs font-extrabold border cursor-pointer transition-all",
-                          shopStageFilter === st
-                            ? "bg-[#38B6FF] text-white border-[#1E88E5] border-b-[3px]"
-                            : isUnlocked
-                            ? "bg-[#F7F3EB] text-[#3D352E] border-[#E6DFD2] hover:bg-white"
-                            : "bg-[#F5EFE6] text-[#7A6E65] border-[#E6DFD2]"
-                        )}
+                        dashed={!isUnlocked}
+                        active={shopStageFilter === st}
+                        label={isUnlocked ? `Fase ${st}` : `Fase ${st}, terkunci`}
+                        onClick={() => setShopStageFilter(st)}
                       >
-                        {isUnlocked ? `Fase ${st}` : `🔒 Fase ${st}`}
-                      </button>
+                        {!isUnlocked && <CozyIcon name="lock_cozy" size={14} />}
+                        Fase {st}
+                      </FilterChip>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Filter by Slot */}
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEffects.tactileClick();
-                    setShopSlotFilter("all");
-                  }}
-                  className={cn(
-                    "px-2.5 py-1 rounded-xl font-display text-[11px] font-extrabold border cursor-pointer transition-all",
-                    shopSlotFilter === "all"
-                      ? "bg-[#A552DB] text-white border-[#7E3AF2]"
-                      : "bg-white text-[#7A6E65] border-[#E6DFD2]"
-                  )}
+              {/* Filter slot */}
+              <div role="group" aria-label="Filter slot Butik" className="flex flex-wrap gap-1.5">
+                <FilterChip
+                  size="sm"
+                  tone="taro"
+                  active={shopSlotFilter === "all"}
+                  onClick={() => setShopSlotFilter("all")}
                 >
                   Semua Slot
-                </button>
+                </FilterChip>
                 {ACCESSORY_SLOTS.map((slot) => (
-                  <button
+                  <FilterChip
                     key={slot}
-                    type="button"
-                    onClick={() => {
-                      soundEffects.tactileClick();
-                      setShopSlotFilter(slot);
-                    }}
-                    className={cn(
-                      "px-2.5 py-1 rounded-xl font-display text-[11px] font-extrabold border cursor-pointer transition-all",
-                      shopSlotFilter === slot
-                        ? "bg-[#A552DB] text-white border-[#7E3AF2]"
-                        : "bg-white text-[#7A6E65] border-[#E6DFD2]"
-                    )}
+                    size="sm"
+                    tone="taro"
+                    active={shopSlotFilter === slot}
+                    onClick={() => setShopSlotFilter(slot)}
                   >
                     {SLOT_LABEL[slot]}
-                  </button>
+                  </FilterChip>
                 ))}
               </div>
+
+              {/* Filter gaya: Perempuan / Laki-laki / Netral */}
+              <GenderChips value={genderFilter} onChange={setGenderFilter} />
 
               {/* Shop Item Cards Grid — Vertical Layout (`flex-col items-center text-center p-4 gap-2`) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -979,7 +1133,7 @@ function PetsAndBoutiqueContent() {
                     >
                       {/* 1. Vector Icon or Mystery Locked Silhouette */}
                       <div className="w-24 h-24 rounded-2xl bg-[#FFFDF9] border-2 border-[#E6DFD2] flex items-center justify-center p-2 shrink-0">
-                        <AccessoryPreviewIcon
+                        <LazyAccessoryPreview
                           accessoryId={item.id}
                           isMysteryLocked={isMysteryLocked}
                           className="w-20 h-20"
@@ -995,20 +1149,23 @@ function PetsAndBoutiqueContent() {
 
                       {/* 3. Slot & Stage Requirement Badges */}
                       <div className="flex flex-wrap items-center justify-center gap-1.5">
-                        <span className="px-2.5 py-0.5 rounded-lg bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#A552DB]">
+                        <span className="px-2.5 py-0.5 rounded-lg bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#3D352E]">
                           Slot: {SLOT_LABEL[item.slot]}
                         </span>
                         <span
                           className={cn(
                             "px-2.5 py-0.5 rounded-lg border text-[11px] font-display font-extrabold",
                             isMysteryLocked
-                              ? "bg-[#FFF2F0] border-[#FFCDC6] text-[#C83E2B]"
+                              ? "bg-[#FFF2F0] border-[#FFCDC6] text-[#8F2A1B]"
                               : "bg-[#EEF8FF] border-[#BCE3FF] text-[#1565C0]"
                           )}
                         >
                           Fase {item.stageRequirement}:{" "}
                           {GROWTH_STAGE_META[item.stageRequirement].name}
                         </span>
+                        {!isMysteryLocked && previewStage === 1 && isHairAccessory(item.id) && (
+                          <HatchFirstBadge />
+                        )}
                       </div>
 
                       {/* Description */}
@@ -1040,7 +1197,7 @@ function PetsAndBoutiqueContent() {
                               setActiveTab("wardrobe");
                             }}
                           >
-                            ✅ Sudah di Lemari (Buka Lemari)
+                            <CozyIcon name="check_badge" size={18} /> Sudah di Lemari (Buka Lemari)
                           </TactileButton>
                         ) : isMysteryLocked ? (
                           <TactileButton
@@ -1050,7 +1207,7 @@ function PetsAndBoutiqueContent() {
                             disabled
                             className="opacity-75 cursor-not-allowed"
                           >
-                            <Lock className="w-3.5 h-3.5" /> Buka Fase Stage #
+                            <CozyIcon name="lock_cozy" size={16} /> Buka Fase Stage #
                             {item.stageRequirement} Dulu
                           </TactileButton>
                         ) : (
@@ -1063,7 +1220,8 @@ function PetsAndBoutiqueContent() {
                               if (canAfford) {
                                 setConfirmBuyItemId(item.id);
                               } else {
-                                buyAccessory(item.id);
+                                const res = buyAccessory(item.id);
+                                setNotice(res.success ? null : res.message);
                               }
                             }}
                           >
@@ -1086,11 +1244,16 @@ function PetsAndBoutiqueContent() {
 
           {/* ================= TAB 3: 🥚 KANDANG & ADOPSI TELUR PET (8 SPESIES KAWAII) ================= */}
           {activeTab === "kandang" && (
-            <div className="space-y-4">
+            <div
+              className="space-y-4"
+              role="tabpanel"
+              id="panel-kandang"
+              aria-labelledby="tab-kandang"
+            >
               <CozyCard tone="white" className="p-4 sm:p-5 space-y-4">
                 <div className="space-y-1">
                   <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
-                    🥚 Kandang Pet & Adopsi Telur Baru (8 Spesies Kawaii)
+                    Kandang Pet & Adopsi Telur Baru ({PET_SPECIES_CATALOG.length} Spesies Kawaii)
                   </h2>
                   <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
                     Setiap spesies Pet yang kamu adopsi dimulai dari{" "}
@@ -1155,8 +1318,8 @@ function PetsAndBoutiqueContent() {
                             </span>
                           </div>
                         ) : (
-                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#A552DB]">
-                            🥚 Diadopsi Mulai Fase 1: Telur Ajaib
+                          <span className="px-2.5 py-0.5 rounded-lg bg-[#F8F0FF] border border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#3D352E] inline-flex items-center gap-1">
+                            <CozyIcon name="egg_nest" size={14} /> Diadopsi Mulai Fase 1: Telur Ajaib
                           </span>
                         )}
 
@@ -1185,7 +1348,7 @@ function PetsAndBoutiqueContent() {
                               fullWidth
                               disabled
                             >
-                              ✨ Sedang Aktif di Panggung
+                              <CozyIcon name="check_badge" size={18} /> Sedang Aktif di Panggung
                             </TactileButton>
                           ) : isUnlocked ? (
                             <TactileButton
@@ -1209,11 +1372,12 @@ function PetsAndBoutiqueContent() {
                                 if (canAfford) {
                                   setConfirmAdoptSpecies(sp.id);
                                 } else {
-                                  buyPetSpecies(sp.id);
+                                  const res = buyPetSpecies(sp.id);
+                                  setNotice(res.success ? null : res.message);
                                 }
                               }}
                             >
-                              🥚 Adopsi Telur (
+                              <CozyIcon name="egg_nest" size={18} /> Adopsi Telur (
                               {sp.pricePoints.toLocaleString("id-ID")} Poin)
                             </TactileButton>
                           )}
@@ -1254,8 +1418,10 @@ function PetsAndBoutiqueContent() {
                       const res = buyStreakFreezeShield();
                       if (res.success) {
                         soundEffects.coinChime();
+                        setNotice(null);
                       } else {
                         soundEffects.tactileClick();
+                        setNotice(res.message);
                       }
                     }}
                     className="shrink-0 w-full sm:w-auto"

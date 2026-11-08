@@ -12,7 +12,6 @@ import {
   type AccessoryItem,
   GROWTH_STAGE_META,
   ACCESSORY_BY_ID,
-  ACCESSORY_CATALOG,
   getSpeciesInfo,
 } from "@/components/illustrations/PetAvatarSystem";
 import {
@@ -23,6 +22,7 @@ import {
   GROWTH_STAGE_TARGETS,
   PET_SPECIES_SHOP_PRICES,
 } from "@/lib/spending-detective";
+import { pickPathDropItem } from "@/lib/path-drop";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export type UserRole = "user" | "supervisor" | "admin";
@@ -64,6 +64,8 @@ export interface ProfileData {
   ownedAccessories: string[];
   equippedAccessories: Partial<Record<AccessorySlot, string>>;
   claimedPathMilestones: number[]; // [7, 14, 21, 28, 35, ...]
+  /** Item yang dijatuhkan tiap peti (hari -> id). Opsional: klaim lama sebelum fitur ini tidak punya catatan. */
+  pathMilestoneDrops?: Record<number, string>;
   supervisorCheers: SupervisorCheerSticker[];
   // Economy & Streak
   points_balance: number; // 1 Poin = Rp 1
@@ -1385,6 +1387,26 @@ function getActiveUserProfile(state: {
   );
 }
 
+/**
+ * Bersihkan daftar kepemilikan & pemasangan aksesori dari ID yang tidak ada di katalog.
+ * Aman dijalankan berulang (idempoten) dan tidak pernah mengubah ID yang valid.
+ */
+function sanitizeProfileAccessories(p: ProfileData): ProfileData {
+  const owned = Array.from(
+    new Set(
+      (Array.isArray(p.ownedAccessories) ? p.ownedAccessories : []).filter(
+        (id) => typeof id === "string" && Boolean(ACCESSORY_BY_ID[id])
+      )
+    )
+  );
+  const equipped: Partial<Record<AccessorySlot, string>> = {};
+  for (const [slot, id] of Object.entries(p.equippedAccessories ?? {})) {
+    const item = typeof id === "string" ? ACCESSORY_BY_ID[id] : undefined;
+    if (item && item.slot === slot) equipped[item.slot] = id as string;
+  }
+  return { ...p, ownedAccessories: owned, equippedAccessories: equipped };
+}
+
 export const useBukuDompetStore = create<BukuDompetState>()(
   persist(
     (set, get) => ({
@@ -2075,24 +2097,11 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           };
         }
 
-        // Prioritaskan item eksklusif `source === "path_drop"` yang belum dimiliki
-        const unownedPathDrops = ACCESSORY_CATALOG.filter(
-          (it) =>
-            it.source === "path_drop" &&
-            !targetUser.ownedAccessories.includes(it.id)
+        // Pemilihan item memakai fungsi murni bersama (juga dipakai pratinjau peti di UI)
+        const droppedItem = pickPathDropItem(
+          targetUser.ownedAccessories,
+          targetUser.currentStage
         );
-
-        const stageMatchedDrop = unownedPathDrops.find(
-          (it) => it.stageRequirement <= Math.max(targetUser.currentStage, 3)
-        );
-
-        const droppedItem =
-          stageMatchedDrop ||
-          unownedPathDrops[0] ||
-          ACCESSORY_CATALOG.find(
-            (it) => !targetUser.ownedAccessories.includes(it.id)
-          ) ||
-          ACCESSORY_BY_ID["aura_floating_leaves"];
 
         const rewardPoints = 10;
         const rewardStageXp = 15;
@@ -2103,11 +2112,9 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           0
         );
 
-        const nextOwned = droppedItem
-          ? Array.from(
-              new Set([...targetUser.ownedAccessories, droppedItem.id])
-            )
-          : targetUser.ownedAccessories;
+        const nextOwned = Array.from(
+          new Set([...targetUser.ownedAccessories, droppedItem.id])
+        );
 
         set({
           openedCheckpointWeeks: Array.from(
@@ -2132,21 +2139,23 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                     ...p.claimedPathMilestones,
                     milestoneDay,
                   ],
+                  pathMilestoneDrops: {
+                    ...(p.pathMilestoneDrops ?? {}),
+                    [milestoneDay]: droppedItem.id,
+                  },
                 }
               : p
           ),
           // Buka Modal Unboxing Khusus (TUGAS 3)
-          unboxedAccessoryDrop: droppedItem
-            ? {
-                item: droppedItem,
-                milestoneDay,
-                points: rewardPoints,
-                xp: rewardStageXp,
-              }
-            : null,
+          unboxedAccessoryDrop: {
+            item: droppedItem,
+            milestoneDay,
+            points: rewardPoints,
+            xp: rewardStageXp,
+          },
           rewardToast: {
             id: `toast-${Date.now()}`,
-            title: `🎁 Item Eksklusif Ditemukan: ${droppedItem?.name}!`,
+            title: `🎁 Item Eksklusif Ditemukan: ${droppedItem.name}!`,
             subtitle: `Hadiah Peti Hari ke-${milestoneDay} (+${rewardPoints} Poin & +${rewardStageXp} Stage XP)`,
             points: rewardPoints,
             xp: rewardStageXp,
@@ -2157,10 +2166,10 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         return {
           success: true,
           droppedItem,
-          droppedAccessoryName: droppedItem?.name,
+          droppedAccessoryName: droppedItem.name,
           points: rewardPoints,
           xp: rewardStageXp,
-          message: `Berhasil mengklaim ${droppedItem?.name}!`,
+          message: `Berhasil mengklaim ${droppedItem.name}!`,
         };
       },
 
@@ -2829,6 +2838,17 @@ export const useBukuDompetStore = create<BukuDompetState>()(
     {
       name: "bukudompet-v4-storage",
       version: 4,
+      // Migrasi ringan & idempoten: katalog aksesori membesar 48 -> 144 tanpa mengubah ID lama,
+      // jadi data lama tetap valid. Merge ini hanya membuang ID yang tidak dikenal katalog
+      // (data rusak / sisa versi eksperimen) agar tidak muncul sebagai item "?" di lemari.
+      merge: (persistedState, currentState) => {
+        const raw = (persistedState ?? {}) as Partial<BukuDompetState>;
+        const merged = { ...currentState, ...raw };
+        if (Array.isArray(merged.profiles)) {
+          merged.profiles = merged.profiles.map(sanitizeProfileAccessories);
+        }
+        return merged;
+      },
       partialize: (state) => ({
         currentRole: state.currentRole,
         activeProfileId: state.activeProfileId,

@@ -43,10 +43,16 @@
   --font-sans: var(--font-sans), system-ui, sans-serif;
 }
 
-/* WAJIB: Perbaikan CSS SVG Transform-Box agar animasi Framer Motion berputar tepat pada engselnya */
-svg g, svg path, svg rect, svg circle, svg ellipse, svg polygon {
-  transform-box: fill-box;
-}
+/*
+ * CATATAN (sebelumnya: "svg g, svg path, ... { transform-box: fill-box }"):
+ * aturan global itu DIHAPUS karena membuat atribut SVG `transform="rotate(...)"`,
+ * `scale(...)`, dst. berputar/menskala di pojok kiri-atas bounding box tiap elemen
+ * (bukan di titik viewBox) -> telinga, surai, jari kaki, mata, dan ikon bergeser
+ * serta berantakan. Framer Motion sudah otomatis memberi
+ * `transform-box: fill-box; transform-origin: 50% 50%` pada elemen SVG yang dianimasikan,
+ * jadi aturan global tidak diperlukan. Komponen ilustrasi juga sudah menyetel
+ * `transformBox: "view-box"` pada elemen SVG biasa yang memakai atribut `transform`.
+ */
 
 body {
   background-color: #FFFDF9;

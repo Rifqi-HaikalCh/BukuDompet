@@ -15,6 +15,14 @@
 import { useId, type ReactNode } from "react";
 import { MotionConfig, motion, type Transition } from "framer-motion";
 
+/**
+ * Reset origin transformasi untuk elemen SVG yang memakai atribut `transform="rotate/scale/..."`.
+ * Tanpa ini, CSS global `svg g, svg path { transform-box: fill-box }` memindahkan titik asal
+ * transformasi ke pojok bbox elemen sehingga bagian tubuh/ikon bergeser dan berantakan.
+ */
+const SVG_ATTR_ORIGIN = { transformBox: "view-box", transformOrigin: "0 0" } as const;
+
+
 /* ───────────────────────── Types & metadata ───────────────────────── */
 
 export type BadgeId =
@@ -102,6 +110,9 @@ const loop = (duration: number, extra: Transition = {}): Transition =>
 
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
+/** Bulatkan 2 desimal: hasil sin/cos bisa beda di digit terakhir antara server & klien (mismatch hidrasi). */
+const r2 = (n: number): number => Math.round(n * 100) / 100;
+
 const starPoints = (cx: number, cy: number, outer: number, inner: number, n = 5): string => {
   const pts: string[] = [];
   for (let i = 0; i < n * 2; i++) {
@@ -129,11 +140,11 @@ function Sparkle({
   delay?: number;
 }) {
   return (
-    <g transform={`translate(${x} ${y})`}>
+    <g transform={`translate(${x} ${y})`} style={SVG_ATTR_ORIGIN}>
       <motion.path
         d={sparklePath(size)}
         fill={color}
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: [0, 1, 0], rotate: [0, 90, 180], opacity: [0, 1, 0] }}
         transition={{ duration: 1.8, repeat: Infinity, delay, ease: "easeInOut" }}
@@ -224,8 +235,8 @@ function MedalFrame({
       {Array.from({ length: 20 }).map((_, i) => (
         <circle
           key={i}
-          cx={100 + 59.5 * Math.cos(rad(i * 18))}
-          cy={112 + 59.5 * Math.sin(rad(i * 18))}
+          cx={r2(100 + 59.5 * Math.cos(rad(i * 18)))}
+          cy={r2(112 + 59.5 * Math.sin(rad(i * 18)))}
           r={2.4}
           fill={C.cream}
           opacity={0.85}
@@ -257,7 +268,7 @@ function MedalFrame({
       {earned && (
         <>
           <g clipPath={`url(#${clip})`}>
-            <g transform="rotate(25 100 112)">
+            <g transform="rotate(25 100 112)" style={SVG_ATTR_ORIGIN}>
               <motion.rect
                 x={-70}
                 y={20}
@@ -289,21 +300,21 @@ function TorchEmblem() {
         return (
           <motion.circle
             key={i}
-            cx={100 + 44 * Math.cos(a)}
-            cy={112 + 44 * Math.sin(a)}
+            cx={r2(100 + 44 * Math.cos(a))}
+            cy={r2(112 + 44 * Math.sin(a))}
             r={3.6}
             fill={C.honey}
             stroke={INK}
             strokeWidth={2}
-            style={{ originX: 0.5, originY: 0.5 }}
+            style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
             animate={{ scale: [1, 1.5, 1] }}
             transition={loop(1.4, { delay: i * 0.15 })}
           />
         );
       })}
-      <g transform="translate(0 8)">
+      <g transform="translate(0 8)" style={SVG_ATTR_ORIGIN}>
         <motion.g
-          style={{ originX: 0.5, originY: 1 }}
+          style={{ transformBox: "fill-box", originX: 0.5, originY: 1 }}
           animate={{ scaleY: [1, 1.1, 0.95, 1.06, 1], skewX: [-3, 3, -2, 2, -3] }}
           transition={loop(1.2)}
         >
@@ -334,7 +345,7 @@ function ReceiptEmblem() {
   const bottom = Array.from({ length: 9 }, (_, i) => `L${(102 - i * 4.75).toFixed(2)} ${i % 2 ? 140 : 146}`).join(" ");
   return (
     <g>
-      <g transform="rotate(-8 83 108)">
+      <g transform="rotate(-8 83 108)" style={SVG_ATTR_ORIGIN}>
         <path d={`M64 72 L102 72 ${bottom} Z`} fill={C.cream} {...line} />
         <path
           d="M70 82 L96 82 M70 92 L84 92 M90 92 L96 92 M70 100 L82 100 M90 100 L96 100 M70 134 L96 134"
@@ -347,7 +358,7 @@ function ReceiptEmblem() {
         <polygon points={starPoints(83, 117, 11, 5)} fill={C.honey} {...line3} />
       </g>
       <motion.g
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ rotate: [-6, 6, -6] }}
         transition={loop(2.2)}
       >
@@ -369,7 +380,7 @@ function ShieldEmblem({ uid }: { uid: string }) {
   const clip = `${uid}-shield`;
   return (
     <motion.g
-      style={{ originX: 0.5, originY: 0.5 }}
+      style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
       animate={{ scale: [1, 1.04, 1] }}
       transition={loop(2.4)}
     >
@@ -400,7 +411,7 @@ function ShieldEmblem({ uid }: { uid: string }) {
         strokeLinejoin="round"
       />
       <path d={outline} fill="none" {...line} />
-      <g transform="translate(100 112)">
+      <g transform="translate(100 112)" style={SVG_ATTR_ORIGIN}>
         <circle r={16} fill={C.honey} {...line3} />
         <circle r={11.5} fill={HONEY_SOFT} stroke={GOLD_DARK} strokeWidth={2} />
         <path
@@ -422,7 +433,7 @@ const WING_D =
 function Wing() {
   return (
     <motion.g
-      style={{ originX: 1, originY: 0.6 }}
+      style={{ transformBox: "fill-box", originX: 1, originY: 0.6 }}
       animate={{ rotate: [0, -14, 0] }}
       transition={loop(1.1)}
     >
@@ -442,10 +453,10 @@ function Wing() {
 function WingedCoinEmblem() {
   return (
     <g>
-      <g transform="translate(84 108) scale(0.58)">
+      <g transform="translate(84 108) scale(0.58)" style={SVG_ATTR_ORIGIN}>
         <Wing />
       </g>
-      <g transform="translate(116 108) scale(-0.58 0.58)">
+      <g transform="translate(116 108) scale(-0.58 0.58)" style={SVG_ATTR_ORIGIN}>
         <Wing />
       </g>
 
@@ -462,7 +473,7 @@ function WingedCoinEmblem() {
       <circle cx={112} cy={117} r={3.2} fill={C.peach} opacity={0.75} />
 
       {/* kue dicoret = puasa jajan */}
-      <g transform="translate(122 138)">
+      <g transform="translate(122 138)" style={SVG_ATTR_ORIGIN}>
         <circle r={9} fill={TAN} {...line25} />
         <circle cx={-3} cy={-2} r={1.8} fill={INK} />
         <circle cx={3} cy={-3} r={1.8} fill={INK} />
@@ -480,11 +491,11 @@ function WingedCoinEmblem() {
 function DetectiveEmblem() {
   const tips = Array.from({ length: 5 }).map((_, k) => {
     const a = rad(-90 + k * 72);
-    return { x: 100 + 22 * Math.cos(a), y: 140 + 22 * Math.sin(a) };
+    return { x: r2(100 + 22 * Math.cos(a)), y: r2(140 + 22 * Math.sin(a)) };
   });
   return (
     <g>
-      <g transform="translate(100 90) scale(0.9) translate(-100 -90)">
+      <g transform="translate(100 90) scale(0.9) translate(-100 -90)" style={SVG_ATTR_ORIGIN}>
         <path d="M62 86 Q48 94 56 112 Q68 112 70 98Z" fill={TAN_LIGHT} {...line} />
         <path d="M138 86 Q152 94 144 112 Q132 112 130 98Z" fill={TAN_LIGHT} {...line} />
         <path d="M64 102 Q66 70 100 68 Q134 70 136 102 Q100 112 64 102Z" fill={TAN} {...line} />
@@ -497,13 +508,13 @@ function DetectiveEmblem() {
           opacity={0.65}
         />
         <path d="M76 104 Q100 118 124 104 L128 112 Q100 128 72 112Z" fill={TAN_DARK} {...line} />
-        <ellipse cx={92} cy={65} rx={7} ry={4.5} fill={TAN_LIGHT} {...line25} transform="rotate(-20 92 65)" />
-        <ellipse cx={108} cy={65} rx={7} ry={4.5} fill={TAN_LIGHT} {...line25} transform="rotate(20 108 65)" />
+        <ellipse cx={92} cy={65} rx={7} ry={4.5} fill={TAN_LIGHT} {...line25} transform="rotate(-20 92 65)" style={SVG_ATTR_ORIGIN} />
+        <ellipse cx={108} cy={65} rx={7} ry={4.5} fill={TAN_LIGHT} {...line25} transform="rotate(20 108 65)" style={SVG_ATTR_ORIGIN} />
         <circle cx={100} cy={67} r={4} fill={TAN_DARK} {...line25} />
       </g>
 
       <motion.g
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ rotate: [-4, 4, -4] }}
         transition={loop(2)}
       >
@@ -523,7 +534,7 @@ function DetectiveEmblem() {
 /* 6 ─ Kandidat Jutawan: piala bermahkota berlian */
 function TrophyEmblem() {
   return (
-    <g transform="translate(100 108) scale(0.9) translate(-100 -108)">
+    <g transform="translate(100 108) scale(0.9) translate(-100 -108)" style={SVG_ATTR_ORIGIN}>
       {/* gagang */}
       <path d="M74 94 Q54 92 56 108 Q58 122 78 118" fill="none" stroke={INK} strokeWidth={8} strokeLinecap="round" />
       <path d="M74 94 Q54 92 56 108 Q58 122 78 118" fill="none" stroke={C.honey} strokeWidth={4} strokeLinecap="round" />
@@ -538,11 +549,11 @@ function TrophyEmblem() {
       <path d="M82 96 L84 114" stroke={C.cream} strokeWidth={4.5} strokeLinecap="round" opacity={0.65} />
       {/* berlian */}
       <motion.g
-        style={{ originX: 0.5, originY: 0.5 }}
+        style={{ transformBox: "fill-box", originX: 0.5, originY: 0.5 }}
         animate={{ scale: [1, 1.12, 1] }}
         transition={loop(1.6)}
       >
-        <g transform="translate(100 108)">
+        <g transform="translate(100 108)" style={SVG_ATTR_ORIGIN}>
           <polygon points="-12,-3 -6.6,-9.6 6.6,-9.6 12,-3 0,12" fill={C.sky} {...line3} />
           <path
             d="M-12 -3 L12 -3 M-6.6 -9.6 L-3 -3 L0 12 M6.6 -9.6 L3 -3 L0 12"

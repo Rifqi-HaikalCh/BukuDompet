@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useId, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import {
@@ -11,10 +11,30 @@ import {
 import { TactileButton } from "@/components/ui/CozyPrimitives";
 import { Sparkles, Archive } from "lucide-react";
 
+const SVG_ATTR_ORIGIN = {
+  transformBox: "view-box" as const,
+  transformOrigin: "0 0",
+};
+
 export function AccessoryDropModal() {
+  const rawUid = useId();
+  const uid = rawUid.replace(/:/g, "");
   const unboxed = useBukuDompetStore((s) => s.unboxedAccessoryDrop);
   const closeUnboxed = useBukuDompetStore((s) => s.closeUnboxedAccessoryModal);
   const equipDirect = useBukuDompetStore((s) => s.equipAccessoryDirect);
+  const actionsRef = useRef<HTMLDivElement | null>(null);
+  const isOpen = unboxed !== null;
+
+  // Aksesibilitas dialog: fokus awal ke tombol aman, Esc menutup (item sudah tersimpan di lemari)
+  useEffect(() => {
+    if (!isOpen) return;
+    actionsRef.current?.querySelector("button")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeUnboxed();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, closeUnboxed]);
 
   if (!unboxed) return null;
 
@@ -31,6 +51,9 @@ export function AccessoryDropModal() {
     <AnimatePresence>
       <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-[#3D352E]/65 backdrop-blur-sm">
         <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${uid}-drop-title`}
           initial={{ opacity: 0, scale: 0.86, y: 24 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 16 }}
@@ -46,13 +69,13 @@ export function AccessoryDropModal() {
               transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
             >
               <defs>
-                <radialGradient id="unbox-sunburst-grad" cx="50%" cy="50%" r="50%">
+                <radialGradient id={`${uid}-unbox-sunburst-grad`} cx="50%" cy="50%" r="50%">
                   <stop offset="0%" stopColor="#FFE27A" stopOpacity="0.85" />
                   <stop offset="55%" stopColor="#E3B6FF" stopOpacity="0.45" />
                   <stop offset="100%" stopColor="#FFFDF7" stopOpacity="0" />
                 </radialGradient>
               </defs>
-              <circle cx="100" cy="100" r="94" fill="url(#unbox-sunburst-grad)" />
+              <circle cx="100" cy="100" r="94" fill={`url(#${uid}-unbox-sunburst-grad)`} />
               {Array.from({ length: 12 }).map((_, idx) => {
                 const angle = idx * 30;
                 return (
@@ -62,6 +85,7 @@ export function AccessoryDropModal() {
                     fill={idx % 2 === 0 ? "#FFC800" : "#CE82FF"}
                     opacity={idx % 2 === 0 ? 0.28 : 0.22}
                     transform={`rotate(${angle} 100 100)`}
+                    style={SVG_ATTR_ORIGIN}
                   />
                 );
               })}
@@ -82,7 +106,7 @@ export function AccessoryDropModal() {
           </div>
 
           {/* Exclusive Path Drop Badge */}
-          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#FFF9E6] border-2 border-[#E5A400] text-[#9E6D00] text-xs font-extrabold tracking-wide mb-3">
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#FFF9E6] border-2 border-[#E5A400] text-[#4A3500] text-xs font-extrabold tracking-wide mb-3">
             🎁 ITEM EKSKLUSIF JALUR KAS DITEMUKAN!
           </div>
 
@@ -91,7 +115,10 @@ export function AccessoryDropModal() {
           </p>
 
           {/* Item Name — Full, Never Truncated */}
-          <h2 className="font-display text-2xl font-extrabold text-[#3D352E] leading-snug break-words mb-2">
+          <h2
+            id={`${uid}-drop-title`}
+            className="font-display text-2xl font-extrabold text-[#3D352E] leading-snug break-words mb-2"
+          >
             {droppedItem.name}
           </h2>
 
@@ -103,7 +130,7 @@ export function AccessoryDropModal() {
             <span className="px-3 py-1 rounded-xl bg-[#EFFBE6] border border-[#BCE89C] text-[#2F6A00] text-xs font-extrabold">
               Fase {droppedItem.stageRequirement}: {stageMeta?.name || "Spesial"}
             </span>
-            <span className="px-3 py-1 rounded-xl bg-[#FFF9E6] border border-[#F5D97E] text-[#9E6D00] text-xs font-extrabold">
+            <span className="px-3 py-1 rounded-xl bg-[#FFF9E6] border border-[#F5D97E] text-[#4A3500] text-xs font-extrabold">
               +{points} Poin & +{xp} Stage XP
             </span>
           </div>
@@ -114,7 +141,7 @@ export function AccessoryDropModal() {
           </p>
 
           {/* Two Direct Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-2.5">
+          <div ref={actionsRef} className="flex flex-col sm:flex-row gap-2.5">
             <TactileButton
               variant="cream"
               size="md"
@@ -132,7 +159,7 @@ export function AccessoryDropModal() {
               onClick={handleEquipNow}
             >
               <Sparkles className="w-4 h-4 mr-1.5 shrink-0" />
-              <span>Pasang Langsung ke Pet! ✨</span>
+              <span>Pasang Langsung ke Pet!</span>
             </TactileButton>
           </div>
         </motion.div>
