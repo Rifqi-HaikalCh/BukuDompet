@@ -1,5 +1,6 @@
 "use client";
 
+import { TitleBadge } from "@/components/badges/TitleBadge";
 import { GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useEffect, useId, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -40,6 +41,8 @@ export function AccessoryDropModal() {
   if (!unboxed) return null;
 
   const { item: droppedItem, milestoneDay, points, xp } = unboxed;
+  const newTitleIds = unboxed.newTitleIds ?? [];
+  const newBgIds = unboxed.newBgIds ?? [];
   const slotLabel = SLOT_LABEL[droppedItem.slot] || droppedItem.slot;
   const stageMeta = GROWTH_STAGE_META[droppedItem.stageRequirement];
 
@@ -125,10 +128,10 @@ export function AccessoryDropModal() {
 
           {/* Slot & Growth Stage Metadata Pills */}
           <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
-            <span className="px-3 py-1 rounded-xl bg-[#F3E8FF] border border-[#D8B4FE] text-[#6B21A8] text-xs font-extrabold">
+            <span className="px-3 py-1 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] text-[#3D352E] text-xs font-extrabold">
               Slot: {slotLabel}
             </span>
-            <span className="px-3 py-1 rounded-xl bg-[#EFFBE6] border border-[#BCE89C] text-[#2F6A00] text-xs font-extrabold">
+            <span className="px-3 py-1 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] text-[#3D352E] text-xs font-extrabold">
               Fase {droppedItem.stageRequirement}: {stageMeta?.name || "Spesial"}
             </span>
             <span className="px-3 py-1 rounded-xl bg-[#FFF9E6] border border-[#F5D97E] text-[#4A3500] text-xs font-extrabold">
@@ -140,6 +143,21 @@ export function AccessoryDropModal() {
           <p className="text-sm font-semibold text-[#5C5248] bg-[#FAF6EE] border border-[#E6DFD2] rounded-2xl p-3.5 leading-relaxed mb-5">
             {droppedItem.description}
           </p>
+
+          {(newTitleIds.length > 0 || newBgIds.length > 0) && (
+            <div className="mb-5 rounded-2xl border-2 border-[#E6DFD2] bg-white p-3 space-y-2">
+              <p className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">Bonus Badge Baru</p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {newTitleIds.map((id) => (
+                  <TitleBadge key={id} titleId={id} size="md" />
+                ))}
+                {newBgIds.map((id) => (
+                  <TitleBadge key={id} bgId={id} titleId="t_penabung_cerdas" size="md" />
+                ))}
+              </div>
+              <p className="text-[11px] font-bold text-[#7A6E65] leading-snug">Pasang dari Koleksi Badge di halaman Pet, lalu pamerkan di Beranda Keluarga.</p>
+            </div>
+          )}
 
           {/* Two Direct Action Buttons */}
           <div ref={actionsRef} className="flex flex-col sm:flex-row gap-2.5">

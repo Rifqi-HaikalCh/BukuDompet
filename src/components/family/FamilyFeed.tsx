@@ -2,28 +2,33 @@
 
 /**
  * Beranda Keluarga (feed ala Threads/X):
- * - Composer teks + foto (otomatis dikompres ke WebP).
+ * - Composer teks + foto (dikompres ke WebP diam-diam di latar; bukan informasi untuk pengguna).
  * - Siaran otomatis (streak, pet baru/naik fase, cerita) tersimpan sebagai postingan.
  * - Siaran "belum mencatat hari ini" dihitung langsung dari data (tidak disimpan) + tombol Ingatkan.
  * - Like, komentar, dan hadiah Poin (+5/+10) pada setiap postingan.
  * Seluruh feed direset otomatis tiap 7 hari tanpa menyentuh poin, medali, cerita, atau tabungan.
  */
-import { GlyphInline } from "@/components/illustrations/GlyphIcons";
+import { GlyphIcon, GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useMemo, useRef, useState } from "react";
-import { Heart, MessageCircle, Gift, ImagePlus, X, Send } from "@/components/illustrations/UiGlyphs";
+import { Heart, MessageCircle, ImagePlus, X, Send } from "@/components/illustrations/UiGlyphs";
 import { useBukuDompetStore, isChildRole, type ProfileData } from "@/store/useBukuDompetStore";
 import { useFamilyStore, shortName, feedCycleInfo } from "@/store/useFamilyStore";
 import type { FeedPost } from "@/lib/family-types";
 import { CustomizablePetAvatar, type GrowthStage } from "@/components/illustrations/PetAvatarSystem";
+import { GROWTH_STAGE_META } from "@/components/illustrations/PetAvatarSystem";
+import { TitleBadge } from "@/components/badges/TitleBadge";
 import { EmotionWheelIcon } from "@/components/illustrations/DetectiveAndStoryAssets";
 import { CozyIcon, type IconName } from "@/components/illustrations/CozyIcons";
 import { CozyCard, TactileButton } from "@/components/ui/CozyPrimitives";
 import { PointTransferModal } from "@/components/ui/PointTransferModal";
 import { FamilyAvatar, ROLE_LABEL } from "@/components/family/FamilyAvatar";
-import { convertImageToWebp, WEBP_INDICATOR_TEXT } from "@/lib/webp-converter";
+import { convertImageToWebp } from "@/lib/webp-converter";
 import { localDateStr, longDateLabel } from "@/lib/dates";
 import { soundEffects } from "@/lib/sound-effects";
+import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
+import { AnimatePresence, motion } from "framer-motion";
+import { STORY_CATEGORY_BY_ID } from "@/lib/story-utils";
 
 /* ───────────────────────── Util ───────────────────────── */
 
@@ -45,6 +50,7 @@ const KIND_META: Record<FeedPost["kind"], { label: string; icon: IconName | null
   story: { label: "Cerita Baru", icon: "missions_scroll", tone: "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]" },
   pride: { label: "Bangga", icon: "parent_heart", tone: "bg-[#FFF2F0] border-[#FFCDC6] text-[#8F2A1B]" },
   saving: { label: "Menabung", icon: "cat_saving", tone: "bg-[#EEF8FF] border-[#BCE3FF] text-[#1565C0]" },
+  arcade: { label: "Arcade Sekolah", icon: "combo_sparkle", tone: "bg-[#FFFBEB] border-[#FDE08D] text-[#4A3500]" },
 };
 
 /* ───────────────────────── Lencana siklus 7 hari ───────────────────────── */
@@ -66,7 +72,6 @@ function Composer({ viewer }: { viewer: ProfileData }) {
   const [text, setText] = useState<string>("");
   const [image, setImage] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,12 +79,11 @@ function Composer({ viewer }: { viewer: ProfileData }) {
     e.target.value = "";
     if (!file) return;
     setBusy(true);
-    setNotice(null);
     try {
       const res = await convertImageToWebp(file);
       setImage(res.dataUrl);
     } catch (err) {
-      setNotice({ ok: false, text: err instanceof Error ? err.message : "Foto gagal diproses." });
+      notify.warn("Foto belum bisa dipakai", err instanceof Error ? err.message : "Foto gagal diproses.");
     } finally {
       setBusy(false);
     }
@@ -87,7 +91,7 @@ function Composer({ viewer }: { viewer: ProfileData }) {
 
   const submit = () => {
     const res = addFeedPost({ authorId: viewer.id, text, imageDataUrl: image ?? undefined });
-    setNotice({ ok: res.success, text: res.message });
+    notify.result(res, "Postingan terkirim", "Belum terkirim");
     if (res.success) {
       soundEffects.coinChime();
       setText("");
@@ -123,12 +127,6 @@ function Composer({ viewer }: { viewer: ProfileData }) {
               </button>
             </div>
           )}
-          <p className="text-[11px] font-bold text-[#2E6F00]">{WEBP_INDICATOR_TEXT}</p>
-          {notice && (
-            <p role="status" className={cn("text-xs font-bold leading-snug", notice.ok ? "text-[#2E6F00]" : "text-[#C83E2B]")}>
-              {notice.text}
-            </p>
-          )}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <input ref={fileRef} type="file" accept="image/*" className="sr-only" onChange={onPick} aria-label="Pilih foto" />
@@ -161,7 +159,6 @@ function PendingBroadcasts({ viewer }: { viewer: ProfileData }) {
   const stories = useFamilyStore((s) => s.stories);
   const reminders = useFamilyStore((s) => s.reminders);
   const sendReminder = useFamilyStore((s) => s.sendReminder);
-  const [notice, setNotice] = useState<string>("");
   const today = localDateStr();
 
   const pending = useMemo(
@@ -192,7 +189,7 @@ function PendingBroadcasts({ viewer }: { viewer: ProfileData }) {
               disabled={already}
               onClick={() => {
                 const res = sendReminder(viewer.id, p.id);
-                setNotice(res.message);
+                notify.result(res, "Pengingat terkirim", "Belum terkirim");
                 if (res.success) soundEffects.coinChime();
                 else soundEffects.tactileClick();
               }}
@@ -203,11 +200,6 @@ function PendingBroadcasts({ viewer }: { viewer: ProfileData }) {
           </div>
         );
       })}
-      {notice && (
-        <p role="status" className="text-xs font-bold text-[#7A6E65] px-1">
-          {notice}
-        </p>
-      )}
     </div>
   );
 }
@@ -235,6 +227,65 @@ function IncomingReminders({ viewer }: { viewer: ProfileData }) {
 
 /* ───────────────────────── Kartu postingan ───────────────────────── */
 
+/**
+ * Cerita Harian di dalam postingan (Versi 5.3): judul bisa diketuk untuk membaca isi cerita
+ * langsung di kartu, tanpa menu terpisah. Cerita dicari lewat kunci `story:<id>` pada postingan.
+ */
+function StoryReader({ post }: { post: FeedPost }) {
+  const storyId = post.dedupeKey?.startsWith("story:") ? post.dedupeKey.slice(6) : undefined;
+  const story = useFamilyStore((s) => (storyId ? s.stories.find((x) => x.id === storyId) : undefined));
+  const [open, setOpen] = useState(false);
+  const bodyId = `story-body-${post.id}`;
+  return (
+    <div className="rounded-2xl bg-[#FFFDF9] border-2 border-[#E6DFD2] overflow-hidden min-w-0">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        disabled={!story}
+        onClick={() => {
+          soundEffects.tactileClick();
+          setOpen((v) => !v);
+        }}
+        className="w-full flex items-center gap-2.5 p-2.5 text-left min-w-0 cursor-pointer disabled:cursor-default hover:bg-[#F7F3EB] transition-colors"
+      >
+        {post.emotion ? <EmotionWheelIcon emotion={post.emotion} size={34} /> : <GlyphIcon name="book_open" size={30} />}
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">Cerita Harian</span>
+          <span className="block text-sm font-display font-extrabold text-[#3D352E] leading-snug break-words">&ldquo;{post.storyTitle}&rdquo;</span>
+        </span>
+        {story && (
+          <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#EFFBE6] border border-[#C3EFA4] text-[11px] font-display font-extrabold text-[#2E6F00]">
+            {open ? "Tutup" : "Baca Cerita"}
+            <GlyphIcon name={open ? "chevron_up" : "chevron_down"} size={12} />
+          </span>
+        )}
+      </button>
+      <AnimatePresence initial={false}>
+        {open && story && (
+          <motion.div
+            id={bodyId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="overflow-hidden"
+          >
+            <div className="px-3 pb-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-display font-extrabold text-[#7A6E65]">
+                <span className="px-2 py-0.5 rounded-lg bg-[#F7F3EB] border border-[#E6DFD2]">{STORY_CATEGORY_BY_ID[story.category].label}</span>
+                <span className="px-2 py-0.5 rounded-lg bg-[#F7F3EB] border border-[#E6DFD2]">{story.wordCount} kata</span>
+                <span className="px-2 py-0.5 rounded-lg bg-[#F7F3EB] border border-[#E6DFD2]">{longDateLabel(story.date)}</span>
+              </div>
+              <p className="rounded-xl bg-white border border-[#E6DFD2] p-3 text-sm font-bold text-[#3D352E] leading-relaxed break-words whitespace-pre-line">{story.body}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function PostCard({ post, viewer }: { post: FeedPost; viewer: ProfileData }) {
   const profiles = useBukuDompetStore((s) => s.profiles);
   const toggleLike = useFamilyStore((s) => s.toggleLike);
@@ -242,7 +293,6 @@ function PostCard({ post, viewer }: { post: FeedPost; viewer: ProfileData }) {
   const giftPoints = useFamilyStore((s) => s.giftPoints);
   const [showComments, setShowComments] = useState<boolean>(false);
   const [comment, setComment] = useState<string>("");
-  const [notice, setNotice] = useState<string>("");
   const [giftOpen, setGiftOpen] = useState<boolean>(false);
   const [giftAmount, setGiftAmount] = useState<5 | 10>(5);
 
@@ -275,9 +325,8 @@ function PostCard({ post, viewer }: { post: FeedPost; viewer: ProfileData }) {
           onAmountChange={(n) => setGiftAmount(n === 10 ? 10 : 5)}
           fromBalance={viewerBalance}
           execute={() => {
-            const res = giftPoints(post.id, viewer.id, giftAmount);
-            setNotice(res.message);
-            return res;
+            // Toast "Hadiah terkirim" sudah dikirim oleh store; modal menampilkan pesan hasilnya.
+            return giftPoints(post.id, viewer.id, giftAmount);
           }}
           confirmLabel={`Kirim ${giftAmount} Poin`}
         />
@@ -294,7 +343,10 @@ function PostCard({ post, viewer }: { post: FeedPost; viewer: ProfileData }) {
               </span>
             )}
           </div>
-          <p className="text-[11px] font-bold text-[#7A6E65]">{timeAgo(post.createdAt)}</p>
+          <div className="mt-1 flex items-center gap-2 flex-wrap min-w-0">
+            <TitleBadge profileId={author.id} size="xs" />
+            <span className="text-[11px] font-bold text-[#7A6E65]">{timeAgo(post.createdAt)}</span>
+          </div>
         </div>
       </header>
 
@@ -319,17 +371,12 @@ function PostCard({ post, viewer }: { post: FeedPost; viewer: ProfileData }) {
           </div>
           <div className="min-w-0">
             <p className="font-display text-sm font-extrabold text-[#3D352E] break-words">{post.petPreview.name}</p>
-            <p className="text-xs font-bold text-[#7A6E65]">Fase {post.petPreview.stage}/8</p>
+            <p className="text-xs font-bold text-[#7A6E65]">{GROWTH_STAGE_META[Math.min(8, Math.max(1, post.petPreview.stage)) as GrowthStage].name}</p>
           </div>
         </div>
       )}
 
-      {post.kind === "story" && post.storyTitle && (
-        <div className="flex items-center gap-2 rounded-2xl bg-[#EFFBE6] border-2 border-[#C3EFA4] p-2.5 min-w-0">
-          {post.emotion && <EmotionWheelIcon emotion={post.emotion} size={32} />}
-          <p className="text-xs font-display font-extrabold text-[#2E6F00] leading-snug break-words">Judul: &ldquo;{post.storyTitle}&rdquo;</p>
-        </div>
-      )}
+      {post.kind === "story" && post.storyTitle && <StoryReader post={post} />}
 
       {post.imageDataUrl && (
         // eslint-disable-next-line @next/next/no-img-element -- data URL lokal hasil WebP, tidak perlu optimasi Next
@@ -366,7 +413,6 @@ function PostCard({ post, viewer }: { post: FeedPost; viewer: ProfileData }) {
         </button>
         {canGift && (
           <div className="flex items-center gap-1.5 ml-auto">
-            <Gift className="w-4 h-4 text-[#E5A400]" aria-hidden="true" />
             {([5, 10] as const).map((amt) => (
               <button
                 key={amt}
@@ -385,12 +431,6 @@ function PostCard({ post, viewer }: { post: FeedPost; viewer: ProfileData }) {
       {giftedTotal > 0 && (
         <p className="text-[11px] font-bold text-[#4A3500] tabular-nums"><GlyphInline name="gift" /> Total hadiah diterima: {giftedTotal} Poin dari {post.gifts.length} hadiah</p>
       )}
-      {notice && (
-        <p role="status" className="text-xs font-bold text-[#7A6E65]">
-          {notice}
-        </p>
-      )}
-
       {showComments && (
         <div className="space-y-2 pt-2 border-t-2 border-dashed border-[#E6DFD2]">
           {post.comments.map((c) => {
@@ -400,6 +440,7 @@ function PostCard({ post, viewer }: { post: FeedPost; viewer: ProfileData }) {
                 {ca && <FamilyAvatar profile={ca} size={32} />}
                 <div className="min-w-0 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] px-3 py-1.5">
                   <p className="text-[11px] font-display font-extrabold text-[#3D352E]">{ca ? shortName(ca.display_name) : "Anggota"}</p>
+                  {ca && <TitleBadge profileId={ca.id} size="xs" className="my-0.5" />}
                   <p className="text-xs font-bold text-[#3D352E] leading-snug break-words">{c.text}</p>
                 </div>
               </div>

@@ -5,5 +5,5 @@ export default function SegmentLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <AppProviders auth="required">{children}</AppProviders>;
+  return <AppProviders auth="required" roles={["admin"]}>{children}</AppProviders>;
 }

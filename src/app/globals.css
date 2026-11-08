@@ -175,3 +175,28 @@ body.cold-mode ::-webkit-scrollbar-thumb { background: #9CC0DB; border-color: #E
   .living-ripple { transform: translate(-50%, -50%) scale(0.7); opacity: 0.4; }
   .living-mist { left: 10% !important; opacity: 0.5; }
 }
+
+/* ───────── Badge Gelar & Latar (Versi 5.3) ───────── */
+.tb { position: relative; overflow: hidden; isolation: isolate; }
+.tb::before, .tb::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.tb > * { position: relative; z-index: 1; }
+@keyframes tb-sheen { 0% { background-position: 160% 0; } 100% { background-position: -60% 0; } }
+@keyframes tb-shift { 0% { background-position: 0% 50%; } 100% { background-position: 100% 50%; } }
+@keyframes tb-pingpong { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+@keyframes tb-twinkle { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.95; } }
+@keyframes tb-drift { 0% { background-position: 0 0; } 100% { background-position: -48px 24px; } }
+@keyframes tb-pulse { 0%, 100% { opacity: 0.3; transform: scale(0.9); } 50% { opacity: 0.85; transform: scale(1.1); } }
+.tb-sheen::after { background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.7) 50%, transparent 62%); background-size: 260% 100%; animation: tb-sheen 3.4s linear infinite; }
+.tb-twinkle::after { background: radial-gradient(circle, #fff 1px, transparent 1.6px) 0 0 / 13px 11px; animation: tb-twinkle 2.2s ease-in-out infinite; }
+.tb-aurora { background-size: 300% 100% !important; animation: tb-shift 6s linear infinite; }
+.tb-holo { background-size: 300% 100% !important; animation: tb-pingpong 4.5s ease-in-out infinite; }
+.tb-holo::after { background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.8) 50%, transparent 60%); background-size: 260% 100%; animation: tb-sheen 2.8s linear infinite; }
+.tb-ember { background-size: 220% 100% !important; animation: tb-pingpong 3s ease-in-out infinite; }
+.tb-ember::after { background: radial-gradient(circle at 20% 110%, rgba(255,255,200,.6), transparent 60%), radial-gradient(circle at 80% 110%, rgba(255,255,200,.45), transparent 55%); animation: tb-twinkle 1.6s ease-in-out infinite; }
+.tb-cosmos::before { background: radial-gradient(circle, rgba(255,255,255,.95) 1px, transparent 1.5px) 0 0 / 24px 24px; animation: tb-drift 7s linear infinite; opacity: .7; }
+.tb-cosmos::after { background: radial-gradient(circle, rgba(255,255,255,.8) 1px, transparent 1.4px) 8px 8px / 17px 19px; animation: tb-twinkle 2.6s ease-in-out infinite; }
+.tb-radiant::after { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.95), transparent 62%); animation: tb-pulse 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tb, .tb::before, .tb::after { animation: none !important; }
+  .tb-aurora, .tb-holo, .tb-ember { background-size: 100% 100% !important; }
+}

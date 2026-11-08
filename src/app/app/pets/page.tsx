@@ -3,8 +3,8 @@
 import { GlyphIcon, GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
-import { Pencil, Check, X, MessageCircleHeart } from "@/components/illustrations/UiGlyphs";
+import { motion, useReducedMotion } from "framer-motion";
+import { Pencil, Check, X } from "@/components/illustrations/UiGlyphs";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import { pickViewedChild } from "@/lib/active-child";
 import {
@@ -40,6 +40,10 @@ import {
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { ChipScroller } from "@/components/ui/ChipScroller";
 import { ShieldShop, ShieldTeaser } from "@/components/pets/ShieldShop";
+import { TitleBadge } from "@/components/badges/TitleBadge";
+import { PetSpeechBubble, type PetMessage } from "@/components/pets/PetSpeechBubble";
+import { BadgeCollection } from "@/components/badges/BadgeCollection";
+import { CozySheet } from "@/components/ui/CozySheet";
 import { freeShieldsFor, totalShieldsFor, type ShieldPackId } from "@/lib/streak-shields";
 import { localDateStr } from "@/lib/dates";
 import {
@@ -49,6 +53,7 @@ import {
   SLOT_GLYPH,
   type TileAction,
 } from "@/components/pets/PetCatalogParts";
+import { notify } from "@/lib/notify";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 import { cn } from "@/lib/utils";
 
@@ -179,7 +184,6 @@ function PetsAndBoutiqueContent() {
     monitoredUserId,
     profiles,
     transactions,
-    equippedTitle,
     isProudComboActive,
     renamePet,
     equipPetSpecies,
@@ -248,7 +252,7 @@ function PetsAndBoutiqueContent() {
   const [shopStageFilter, setShopStageFilter] = useState<
     "all" | GrowthStage
   >(currentStage);
-  const [shopSlotFilter, setShopSlotFilter] = useState<"all" | "shield" | AccessorySlot>(
+  const [shopSlotFilter, setShopSlotFilter] = useState<"all" | "shield" | "badge" | AccessorySlot>(
     "all"
   );
   const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
@@ -260,11 +264,14 @@ function PetsAndBoutiqueContent() {
 
   // Inline Rename State
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
+  const [badgeSheetOpen, setBadgeSheetOpen] = useState<boolean>(false);
   const [nameInput, setNameInput] = useState<string>(petName);
 
   // TUGAS 4: Interactive "Cek Kabar & Mood Finansial Pet" State (0 Free XP/Points)
   const [petHopKey, setPetHopKey] = useState<number>(0);
   const [dialogueIndex, setDialogueIndex] = useState<number>(0);
+  const [petSpeaking, setPetSpeaking] = useState<boolean>(false);
+  const reduceMotion = useReducedMotion();
 
   // Preview Growth Stage on Left Stage (defaults to active pet's currentStage)
   const [previewStage, setPreviewStage] = useState<GrowthStage>(currentStage);
@@ -289,7 +296,10 @@ function PetsAndBoutiqueContent() {
   };
 
   // Umpan balik aksi (beli gagal, dll.) — dibacakan pembaca layar lewat role="status"
-  const [notice, setNotice] = useState<string | null>(null);
+  // Pesan gagal beli tampil sebagai notifikasi kanan-bawah (Versi 5.3).
+  const setNotice = (m: string | null) => {
+    if (m) notify.warn("Belum bisa dibeli", m);
+  };
 
   // Detail item (modal) + paginasi kartu
   const [detail, setDetail] = useState<{ id: string; mode: "wardrobe" | "shop" } | null>(null);
@@ -326,23 +336,27 @@ function PetsAndBoutiqueContent() {
         ? GROWTH_STAGE_META[(currentStage + 1) as GrowthStage].name
         : "Sepuh Bijaksana";
 
-    const list: string[] = [
-      report.mochiSpeech,
-      `Kabar Dompet Hari Ini: Sisa jatah aman harianmu ${formatRupiah(
-        report.remainingDailySafeSpend
-      )} dari batas ${formatRupiah(report.dssl)} (Status: ${
-        report.walletStatus
-      }).`,
-      currentStage < 8
-        ? `Progres Pertumbuhan ${petName}: Saat ini di Fase ${currentStage}/8 (${stageMeta.name}). Butuh ${remXp} Stage XP & ${remDays} hari mencatat lagi untuk tumbuh ke Fase ${
-            currentStage + 1
-          } (${nextStageName})!`
-        : `${petName} sudah mencapai Fase 8 (Sepuh Bijaksana)! Terima kasih sudah konsisten merawat dan mencatat kas setiap hari!`,
-      `Konsistensi Api Streak: Kamu sudah mencatat kas ${userProfile.current_streak} hari berturut-turut dan punya ${shieldTotal} Perisai Es pelindung!`,
+    const list: PetMessage[] = [
+      { topic: "Diagnosis", text: report.mochiSpeech },
+      {
+        topic: "Kabar Dompet",
+        text: `Sisa jatah aman harianmu ${formatRupiah(report.remainingDailySafeSpend)} dari batas ${formatRupiah(report.dssl)} (status: ${report.walletStatus}).`,
+      },
+      {
+        topic: "Pertumbuhan",
+        text:
+          currentStage < 8
+            ? `Aku sedang di tahap ${stageMeta.name}. Butuh ${remXp} Stage XP & ${remDays} hari mencatat lagi supaya aku tumbuh jadi ${nextStageName}!`
+            : `Aku sudah jadi ${stageMeta.name}! Terima kasih sudah konsisten merawat dan mencatat kas setiap hari!`,
+      },
+      {
+        topic: "Streak",
+        text: `Kamu sudah mencatat kas ${userProfile.current_streak} hari berturut-turut dan punya ${shieldTotal} Perisai Es pelindung!`,
+      },
     ];
 
     if (report.microLeaks.length > 0) {
-      list.push(report.microLeaks[0].message);
+      list.push({ topic: "Awas Bocor Halus", text: report.microLeaks[0].message });
     }
 
     return list;
@@ -358,7 +372,6 @@ function PetsAndBoutiqueContent() {
     userProfile.current_streak,
     shieldTotal,
     currentStage,
-    petName,
     stageMeta.name,
   ]);
 
@@ -646,11 +659,17 @@ function PetsAndBoutiqueContent() {
             <div className="flex flex-col items-center text-center gap-2">
               <div className="flex items-center justify-center gap-1.5 flex-wrap">
                 <span className="px-2.5 py-0.5 rounded-full bg-[#EEF8FF] border border-[#BCE3FF] text-xs font-display font-extrabold text-[#1565C0]">
-                  Fase {currentStage}/8: {stageMeta.name}
+                  {stageMeta.name}
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full bg-[#F8F0FF] border border-[#E2C6FF] text-xs font-display font-extrabold text-[#A552DB] leading-snug break-words">
-                  {equippedTitle}
-                </span>
+                <TitleBadge profileId={userProfile.id} size="sm" />
+                <button
+                  type="button"
+                  onClick={() => setBadgeSheetOpen(true)}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border-2 border-[#E6DFD2] bg-white text-xs font-display font-extrabold text-[#3D352E] hover:bg-[#FFFDF9] cursor-pointer"
+                  aria-label="Ganti Gelar dan Latar badge"
+                >
+                  <GlyphIcon name="pencil" size={12} /> Ganti
+                </button>
               </div>
 
               {isEditingName ? (
@@ -714,7 +733,7 @@ function PetsAndBoutiqueContent() {
             <div
               onClick={handleCheckPetMood}
               className="relative rounded-3xl bg-[#FFFDF9] border-2 border-[#E6DFD2] border-b-[5px] border-b-[#D4C9B4] p-4 flex flex-col items-center justify-center cursor-pointer group overflow-hidden"
-              title="Ketuk untuk cek kabar & mood finansial Pet!"
+              title="Ketuk pet untuk mendengar kabarnya"
             >
               {previewStage !== currentStage && (
                 <div className="mb-2 px-3 py-1 rounded-full bg-[#FFFBEB] border border-[#FDE08D] text-[11px] font-display font-extrabold text-[#4A3500]">
@@ -738,16 +757,33 @@ function PetsAndBoutiqueContent() {
                 transition={{ type: "spring", stiffness: 320, damping: 16 }}
                 className="w-56 h-56 sm:w-64 sm:h-64 flex items-center justify-center"
               >
-                <CustomizablePetAvatar
-                  species={activeSpecies}
-                  stage={previewStage}
-                  mood={userProfile.isColdStreakMode ? "shivering_cold" : report.petMood}
-                  customName={petName}
-                  equippedAccessories={userProfile.equippedAccessories}
-                  isMysteryLocked={previewStage > currentStage}
+                <motion.div
                   className="w-full h-full"
-                />
+                  animate={petSpeaking && !reduceMotion ? { y: [0, -6, 0], rotate: [0, -1.5, 1.5, 0] } : { y: 0, rotate: 0 }}
+                  transition={petSpeaking && !reduceMotion ? { duration: 0.7, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
+                >
+                  <CustomizablePetAvatar
+                    species={activeSpecies}
+                    stage={previewStage}
+                    mood={userProfile.isColdStreakMode ? "shivering_cold" : report.petMood}
+                    customName={petName}
+                    equippedAccessories={userProfile.equippedAccessories}
+                    isMysteryLocked={previewStage > currentStage}
+                    className="w-full h-full"
+                  />
+                </motion.div>
               </motion.div>
+
+              {previewStage === currentStage && (
+                <PetSpeechBubble
+                  petName={petName}
+                  mood={userProfile.isColdStreakMode ? "shivering_cold" : report.petMood}
+                  messages={smartDialogues}
+                  index={dialogueIndex}
+                  onNext={handleCheckPetMood}
+                  onSpeakingChange={setPetSpeaking}
+                />
+              )}
 
               {previewStage === 1 && (
                 <span className="mt-1 px-3 py-1 rounded-xl bg-[#FFFBEB] border border-[#FDE08D] text-[11px] font-bold text-[#4A3500] text-center leading-snug inline-flex items-start gap-1.5">
@@ -761,31 +797,19 @@ function PetsAndBoutiqueContent() {
               )}
             </div>
 
-            {/* TUGAS 4: Meaningful Interaction — "Cek Kabar & Mood Finansial Pet" (Replaces Gimmick Elus/Lempar Koin) */}
-            <div className="space-y-2.5">
-              <div className="bg-[#F7F3EB] border-2 border-[#E6DFD2] rounded-2xl p-3.5 text-xs sm:text-sm font-bold text-[#3D352E] leading-relaxed break-words">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#2E6F00]">
-                    Mood & Diagnosis Finansial {petName}:
-                  </span>
-                  <span className="text-[10px] font-bold text-[#7A6E65]">
-                    Pesan {(dialogueIndex % smartDialogues.length) + 1}/
-                    {smartDialogues.length}
-                  </span>
-                </div>
-                <p>&ldquo;{smartDialogues[dialogueIndex % smartDialogues.length]}&rdquo;</p>
-              </div>
-
-              <TactileButton
-                variant="sky"
-                size="sm"
-                fullWidth
-                onClick={handleCheckPetMood}
-              >
-                <MessageCircleHeart className="w-4 h-4" />
-                <span>Cek Kabar & Mood Finansial {petName}</span>
-              </TactileButton>
-            </div>
+            {/* Lemari: slot berikon + strip koleksi yang bisa digeser; Versi 5.2 dipindah tepat di bawah karakter pet */}
+            <EquippedSlotsPanel
+              equipped={userProfile.equippedAccessories}
+              ownedIds={userProfile.ownedAccessories || []}
+              onToggle={(id) => toggleEquipAccessory(id)}
+              onOpenItem={(id) => setDetail({ id, mode: "wardrobe" })}
+              onGoShop={(slot) => {
+                setShopSlotFilter(slot);
+                setActiveTab("shop");
+              }}
+              petName={petName}
+              isEggStage={previewStage === 1}
+            />
 
             {/* 8 Fase: baris geser + kartu info (Versi 5.1) */}
             <div className="space-y-2 pt-1">
@@ -893,21 +917,6 @@ function PetsAndBoutiqueContent() {
                 </span>
               </div>
             )}
-
-            {/* Lemari Cepat: slot berikon + strip koleksi yang bisa digeser (Versi 5.1) */}
-            <EquippedSlotsPanel
-              equipped={userProfile.equippedAccessories}
-              ownedIds={userProfile.ownedAccessories || []}
-              onToggle={(id) => toggleEquipAccessory(id)}
-              onOpenItem={(id) => setDetail({ id, mode: "wardrobe" })}
-              onGoShop={(slot) => {
-                setShopSlotFilter(slot);
-                setActiveTab("shop");
-              }}
-              petName={petName}
-              isEggStage={previewStage === 1}
-            />
-          
           </CozyCard>
         </div>
 
@@ -969,23 +978,6 @@ function PetsAndBoutiqueContent() {
                 </button>
               );
             })}
-          </div>
-
-          {/* Pesan status (beli gagal, dll.) — dibacakan pembaca layar */}
-          <div role="status" aria-live="polite" className={notice ? "" : "sr-only"}>
-            {notice && (
-              <div className="px-4 py-2.5 rounded-2xl bg-[#FFF2F0] border-2 border-[#FFCDC6] text-xs sm:text-sm font-bold text-[#8F2A1B] flex items-start gap-2">
-                <span className="flex-1 leading-snug break-words">{notice}</span>
-                <button
-                  type="button"
-                  aria-label="Tutup pesan"
-                  onClick={() => setNotice(null)}
-                  className={cn("rounded-lg p-0.5 cursor-pointer", FOCUS_RING)}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
           </div>
 
           {/* ================= TAB 1: LEMARI KOSTUM (WARDROBE) ================= */}
@@ -1087,7 +1079,7 @@ function PetsAndBoutiqueContent() {
                     <span>Butik Kostum, Properti & Latar ({SHOP_ITEM_COUNT} Item Shop)</span>
                   </h2>
                   <span className="px-2.5 py-0.5 rounded-full bg-[#EFFBE6] border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00]">
-                    Fase Aktif {petName}: Fase {currentStage}/8
+                    Fase aktif: {stageMeta.name}
                   </span>
                 </div>
                 <p className="text-xs font-bold text-[#7A6E65] leading-relaxed break-words">
@@ -1099,7 +1091,7 @@ function PetsAndBoutiqueContent() {
               </div>
 
               {/* Filter fase pertumbuhan (1..8) — satu baris geser */}
-              {shopSlotFilter !== "shield" && (
+              {shopSlotFilter !== "shield" && shopSlotFilter !== "badge" && (
               <div className="space-y-1">
                 <span className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">
                   Fase Pertumbuhan
@@ -1157,6 +1149,14 @@ function PetsAndBoutiqueContent() {
                   ))}
                   <FilterChip
                     size="sm"
+                    tone="taro"
+                    active={shopSlotFilter === "badge"}
+                    onClick={() => setShopSlotFilter("badge")}
+                  >
+                    <GlyphIcon name="crown" size={14} /> Gelar & Latar
+                  </FilterChip>
+                  <FilterChip
+                    size="sm"
                     tone="sky"
                     active={shopSlotFilter === "shield"}
                     onClick={() => setShopSlotFilter("shield")}
@@ -1166,7 +1166,9 @@ function PetsAndBoutiqueContent() {
                 </ChipScroller>
               </div>
 
-              {shopSlotFilter === "shield" ? (
+              {shopSlotFilter === "badge" ? (
+                <BadgeCollection profileId={userProfile.id} />
+              ) : shopSlotFilter === "shield" ? (
                 <ShieldShop
                   today={todayStr}
                   freeLeft={shieldFreeLeft}
@@ -1286,7 +1288,7 @@ function PetsAndBoutiqueContent() {
                         {isUnlocked ? (
                           <div className="flex flex-wrap items-center justify-center gap-1.5">
                             <span className="px-2.5 py-0.5 rounded-lg bg-[#EEF8FF] border border-[#BCE3FF] text-[11px] font-display font-extrabold text-[#1565C0]">
-                              Fase {instStage}/8: {instMeta.name}
+                              {instMeta.name}
                             </span>
                             <span className="px-2.5 py-0.5 rounded-lg bg-[#F7F3EB] border border-[#E6DFD2] text-[11px] font-bold text-[#7A6E65]">
                               {petInstance?.stageXp ?? 0} XP •{" "}
@@ -1368,6 +1370,17 @@ function PetsAndBoutiqueContent() {
           )}
         </div>
       </div>
+
+      <CozySheet
+        open={badgeSheetOpen}
+        onOpenChange={setBadgeSheetOpen}
+        title="Gelar & Latar Badge"
+        description="Pilih tulisan pujian dan latar badge yang ingin dipamerkan."
+        icon={<GlyphIcon name="crown" size={28} />}
+        maxWidthClass="md:max-w-3xl"
+      >
+        <BadgeCollection profileId={userProfile.id} />
+      </CozySheet>
     </div>
   );
 }

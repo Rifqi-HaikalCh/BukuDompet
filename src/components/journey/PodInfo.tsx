@@ -14,7 +14,7 @@ import { SteppingStoneNode, type StoneStatus } from "@/components/illustrations/
 import { EmotionWheelIcon, EMOTION_LABEL } from "@/components/illustrations/DetectiveAndStoryAssets";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import { CozyCard, formatRupiah } from "@/components/ui/CozyPrimitives";
-import { longDateLabel } from "@/lib/dates";
+import { longDateLabel, mediumDateLabel } from "@/lib/dates";
 import { STORY_CATEGORY_BY_ID } from "@/lib/story-utils";
 import type { StoryEntry } from "@/lib/family-types";
 import { cn, formatCompactRupiah } from "@/lib/utils";
@@ -116,7 +116,7 @@ export function PodPopover({ pod, isKid, onClose }: { pod: PodSummary; isKid: bo
   return (
     <motion.div
       role="dialog"
-      aria-label={`Info Hari ke-${pod.dayIndex}`}
+      aria-label={`Perjalanan Hari ke-${pod.dayIndex}`}
       initial={{ opacity: 0, y: 14, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 10, scale: 0.97 }}
@@ -125,8 +125,8 @@ export function PodPopover({ pod, isKid, onClose }: { pod: PodSummary; isKid: bo
     >
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="min-w-0">
-          <p className="font-display text-sm font-extrabold text-[#3D352E] leading-snug break-words">Hari ke-{pod.dayIndex}</p>
-          <p className="text-[11px] font-bold text-[#7A6E65] leading-snug break-words">{longDateLabel(pod.dateStr)}</p>
+          <p className="font-display text-sm font-extrabold text-[#3D352E] leading-snug break-words">Perjalanan Hari ke-{pod.dayIndex}</p>
+          <p className="text-[11px] font-bold text-[#7A6E65] leading-snug break-words">{mediumDateLabel(pod.dateStr)}</p>
         </div>
         <button
           type="button"

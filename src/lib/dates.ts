@@ -76,3 +76,13 @@ export function longDateLabel(dateStr: string): string {
     year: "numeric",
   });
 }
+
+/** Label tanggal sedang berbahasa Indonesia, contoh "Minggu, 8 Nov 2026". */
+export function mediumDateLabel(dateStr: string): string {
+  return parseLocalDate(dateStr).toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}

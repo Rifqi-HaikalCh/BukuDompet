@@ -1,9 +1,15 @@
 /**
- * Bank soal Arcade Sekolah (kelas 3 SD). Murni data + pembangun soal deterministik:
- * tidak memakai Math.random; acakan selalu dari seed teks (anak + mode + tanggal + putaran).
+ * Bank soal Arcade Sekolah (kelas 3 SD → kelas 5-6 SD). Murni data + pembangun soal deterministik:
+ * tidak memakai Math.random; acakan selalu dari seed teks (anak + mode + level + putaran).
+ *
+ * Versi 5.2: setiap mode punya 5 level. Soal pilihan ganda diambil bergilir dari "kolam level"
+ * (level ini + level sebelumnya) memakai `cursor`, jadi soal tidak berulang selama kolam belum habis.
+ * Mode hitungan (kembalian, target celengan, deret, jam) dibangkitkan dari aturan per level sehingga
+ * angkanya tidak pernah habis.
  */
 import { hashString, mulberry32, seededShuffle } from "@/lib/quest-engine";
 import type { AnimalId, BiomeGlyphId } from "@/components/illustrations/GlyphCreatures";
+import { BANK_EXTRAS, type LevelExtras, type Raw } from "./arcade-bank";
 
 /* ───────────────────────── Tipe ───────────────────────── */
 
@@ -22,25 +28,52 @@ export interface ChoiceItem {
   explain?: string;
 }
 
-/** [pertanyaan, jawaban benar, ...pilihan salah] */
-type Raw = readonly [string, string, ...string[]];
+/** Konteks pembangunan soal untuk satu ronde. */
+export interface BuildCtx {
+  /** Benih dasar sesi (tanpa cursor). */
+  seed: string;
+  /** Level kesulitan 1..5. */
+  level: number;
+  /** Nomor putaran bank soal pada level ini (naik tiap ronde baru). */
+  cursor: number;
+}
 
-const ROUNDS = 5;
+export const ROUNDS = 5;
 
-function fromRaw(modeId: string, raws: readonly Raw[], seed: string, explain?: (r: Raw) => string): ChoiceItem[] {
-  return seededShuffle(raws, `${seed}|pick`)
-    .slice(0, ROUNDS)
-    .map((r, i) => {
-      const [prompt, answer, ...wrong] = r;
-      const options = seededShuffle([answer, ...wrong], `${seed}|opt|${i}`);
-      return {
-        id: `${modeId}-${i}`,
-        prompt,
-        options,
-        answerIndex: options.indexOf(answer),
-        explain: explain ? explain(r) : `Jawaban yang benar: ${answer}.`,
-      };
-    });
+/** Ambil `n` anggota berurutan dari kolam yang diacak; tiap putaran penuh kolam diacak ulang. */
+function pickWindow<T>(pool: readonly T[], seed: string, cursor: number, n: number): T[] {
+  if (pool.length === 0) return [];
+  const out: T[] = [];
+  const used = new Set<number>();
+  for (let i = 0; i < n; i++) {
+    const g = cursor * n + i;
+    const epoch = Math.floor(g / pool.length);
+    const order = seededShuffle(pool.map((_, idx) => idx), `${seed}|e${epoch}`);
+    let idx = order[g % pool.length];
+    // hindari soal kembar di satu ronde saat melewati batas putaran
+    let guard = 0;
+    while (used.has(idx) && used.size < pool.length && guard < pool.length) {
+      guard += 1;
+      idx = order[(g + guard) % pool.length];
+    }
+    used.add(idx);
+    out.push(pool[idx]);
+  }
+  return out;
+}
+
+function fromRaw(modeId: string, raws: readonly Raw[], ctx: BuildCtx): ChoiceItem[] {
+  return pickWindow(raws, ctx.seed, ctx.cursor, ROUNDS).map((r, i) => {
+    const [prompt, answer, ...wrong] = r;
+    const options = seededShuffle([answer, ...wrong], `${ctx.seed}|c${ctx.cursor}|opt|${i}`);
+    return {
+      id: `${modeId}-L${ctx.level}-${ctx.cursor}-${i}`,
+      prompt,
+      options,
+      answerIndex: options.indexOf(answer),
+      explain: `Jawaban yang benar: ${answer}.`,
+    };
+  });
 }
 
 /* ───────────────────────── Bahasa ───────────────────────── */
@@ -214,10 +247,29 @@ const SILHOUETTES: { animal: AnimalId; name: string }[] = [
   { animal: "dolphin", name: "Lumba-lumba" },
 ];
 
+
+/* ───────────────────────── Bank soal dasar (dibagi dua: L1 & L2) ───────────────────────── */
+
+/** Soal dasar dibagi dua: paruh awal → L1, paruh akhir → L2; lalu ditambah soal baru per level. */
+function tiered(modeId: string, base: readonly Raw[]): readonly (readonly Raw[])[] {
+  const ex: LevelExtras = BANK_EXTRAS[modeId] ?? { l1: [], l2: [], l3: [], l4: [], l5: [] };
+  const half = Math.ceil(base.length / 2);
+  return [
+    [...base.slice(0, half), ...ex.l1],
+    [...base.slice(half), ...ex.l2],
+    ex.l3,
+    ex.l4,
+    ex.l5,
+  ];
+}
+
+
 /* ───────────────────────── Pembangun soal ───────────────────────── */
 
 const formatRp = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
 const pad2 = (n: number) => String(n).padStart(2, "0");
+const rint = (rand: () => number, min: number, max: number) => min + Math.floor(rand() * (max - min + 1));
+const clampLv = (l: number) => Math.min(5, Math.max(1, Math.floor(l) || 1));
 
 /** Tiga pengecoh angka unik yang dekat dengan jawaban benar. */
 function numericOptions(answer: number, rand: () => number, steps: number[], fmt: (n: number) => string, min = 0): { options: string[]; answerLabel: string } {
@@ -236,189 +288,455 @@ function numericOptions(answer: number, rand: () => number, steps: number[], fmt
   return { options: Array.from(set).map(fmt), answerLabel: fmt(answer) };
 }
 
-function buildChange(seed: string): ChoiceItem[] {
-  const rand = mulberry32(hashString(seed));
+function finishNumeric(id: string, prompt: string, answer: number, rand: () => number, steps: number[], fmt: (n: number) => string, ctx: BuildCtx, i: number, explain: string, min = 0): ChoiceItem {
+  const { options, answerLabel } = numericOptions(answer, rand, steps, fmt, min);
+  const shuffled = seededShuffle(options, `${ctx.seed}|c${ctx.cursor}|o|${i}`);
+  return { id, prompt, options: shuffled, answerIndex: shuffled.indexOf(answerLabel), explain };
+}
+
+const SNACKS = ["roti", "susu kotak", "pensil", "penghapus", "jus jeruk", "buku tulis", "kerupuk", "air mineral"];
+
+function buildChange(ctx: BuildCtx): ChoiceItem[] {
+  const rand = mulberry32(hashString(`${ctx.seed}|c${ctx.cursor}`));
+  const L = clampLv(ctx.level);
   return Array.from({ length: ROUNDS }, (_, i) => {
-    const price = (4 + Math.floor(rand() * 15)) * 500; // 2.000 .. 9.000
-    const paid = price <= 5000 ? 10000 : 20000 - (price > 9000 ? 0 : 10000 * Math.floor(rand() * 2));
-    const pay = paid <= price ? 20000 : paid;
-    const change = pay - price;
-    const { options, answerLabel } = numericOptions(change, rand, [500, 1000, 2000], formatRp);
-    const shuffled = seededShuffle(options, `${seed}|o|${i}`);
-    return {
-      id: `m-change-${i}`,
-      prompt: `Di kantin, jajanmu seharga ${formatRp(price)}. Kamu membayar ${formatRp(pay)}. Berapa uang kembaliannya?`,
-      options: shuffled,
-      answerIndex: shuffled.indexOf(answerLabel),
-      explain: `${formatRp(pay)} − ${formatRp(price)} = ${formatRp(change)}.`,
-    };
+    const id = `m-change-L${L}-${ctx.cursor}-${i}`;
+    if (L === 1) {
+      const price = rint(rand, 2, 5) * 1000;
+      const pay = price < 5000 ? 5000 : 10000;
+      return finishNumeric(id, `Di kantin, jajanmu seharga ${formatRp(price)}. Kamu membayar ${formatRp(pay)}. Berapa uang kembaliannya?`, pay - price, rand, [500, 1000, 2000], formatRp, ctx, i, `${formatRp(pay)} − ${formatRp(price)} = ${formatRp(pay - price)}.`);
+    }
+    if (L === 2) {
+      const price = rint(rand, 4, 18) * 500;
+      const pay = price <= 9500 && rand() < 0.5 ? 10000 : 20000;
+      return finishNumeric(id, `Di kantin, jajanmu seharga ${formatRp(price)}. Kamu membayar ${formatRp(pay)}. Berapa uang kembaliannya?`, pay - price, rand, [500, 1000, 2000], formatRp, ctx, i, `${formatRp(pay)} − ${formatRp(price)} = ${formatRp(pay - price)}.`);
+    }
+    if (L === 3) {
+      const a = rint(rand, 4, 14) * 500;
+      const b = rint(rand, 4, 14) * 500;
+      const sum = a + b;
+      const pay = sum <= 15000 ? 20000 : 50000;
+      const n1 = SNACKS[rint(rand, 0, SNACKS.length - 1)];
+      let n2 = SNACKS[rint(rand, 0, SNACKS.length - 1)];
+      if (n2 === n1) n2 = SNACKS[(SNACKS.indexOf(n1) + 1) % SNACKS.length];
+      return finishNumeric(id, `Kamu membeli ${n1} seharga ${formatRp(a)} dan ${n2} seharga ${formatRp(b)}. Kamu membayar ${formatRp(pay)}. Berapa kembaliannya?`, pay - sum, rand, [500, 1000, 2000, 5000], formatRp, ctx, i, `${formatRp(a)} + ${formatRp(b)} = ${formatRp(sum)}. ${formatRp(pay)} − ${formatRp(sum)} = ${formatRp(pay - sum)}.`);
+    }
+    if (L === 4) {
+      const unit = rint(rand, 2, 8) * 1000;
+      const qty = rint(rand, 2, 4);
+      const other = rint(rand, 2, 9) * 1000;
+      const total = unit * qty + other;
+      const pay = total <= 30000 ? 50000 : 100000;
+      const n1 = SNACKS[rint(rand, 0, SNACKS.length - 1)];
+      return finishNumeric(id, `Kamu membeli ${qty} ${n1} @${formatRp(unit)} dan satu barang lain ${formatRp(other)}. Kamu membayar ${formatRp(pay)}. Berapa kembaliannya?`, pay - total, rand, [1000, 2000, 5000, 10000], formatRp, ctx, i, `${qty} × ${formatRp(unit)} = ${formatRp(unit * qty)}; ditambah ${formatRp(other)} = ${formatRp(total)}. ${formatRp(pay)} − ${formatRp(total)} = ${formatRp(pay - total)}.`);
+    }
+    const base = rint(rand, 1, 5) * 20000; // 20.000 .. 100.000
+    const pct = [10, 20, 25][rint(rand, 0, 2)];
+    const net = (base * (100 - pct)) / 100;
+    const pay = base <= 40000 ? 50000 : 100000;
+    return finishNumeric(id, `Sepatu seharga ${formatRp(base)} diskon ${pct}%. Kamu membayar ${formatRp(pay)}. Berapa kembaliannya?`, pay - net, rand, [1000, 2000, 5000, 10000], formatRp, ctx, i, `Diskon ${pct}% dari ${formatRp(base)} = ${formatRp(base - net)}, jadi harga ${formatRp(net)}. ${formatRp(pay)} − ${formatRp(net)} = ${formatRp(pay - net)}.`);
   });
 }
 
-function buildTarget(seed: string): ChoiceItem[] {
-  const rand = mulberry32(hashString(seed));
-  const per = [2000, 5000, 10000];
+function buildTarget(ctx: BuildCtx): ChoiceItem[] {
+  const rand = mulberry32(hashString(`${ctx.seed}|c${ctx.cursor}`));
+  const L = clampLv(ctx.level);
   return Array.from({ length: ROUNDS }, (_, i) => {
-    const each = per[Math.floor(rand() * per.length)];
-    const times = 3 + Math.floor(rand() * 8); // 3..10
-    const target = each * times;
-    const { options, answerLabel } = numericOptions(times, rand, [1, 2, 3], (n) => `${n} kali`, 1);
-    const shuffled = seededShuffle(options, `${seed}|o|${i}`);
-    return {
-      id: `m-target-${i}`,
-      prompt: `Target celenganmu ${formatRp(target)}. Setiap kali menabung kamu memasukkan ${formatRp(each)}. Berapa kali menabung sampai target tercapai?`,
-      options: shuffled,
-      answerIndex: shuffled.indexOf(answerLabel),
-      explain: `${formatRp(target)} ÷ ${formatRp(each)} = ${times} kali.`,
-    };
+    const id = `m-target-L${L}-${ctx.cursor}-${i}`;
+    if (L === 1) {
+      const each = [1000, 2000][rint(rand, 0, 1)];
+      const times = rint(rand, 3, 6);
+      return finishNumeric(id, `Target celenganmu ${formatRp(each * times)}. Setiap kali menabung kamu memasukkan ${formatRp(each)}. Berapa kali menabung sampai target tercapai?`, times, rand, [1, 2, 3], (n) => `${n} kali`, ctx, i, `${formatRp(each * times)} ÷ ${formatRp(each)} = ${times} kali.`, 1);
+    }
+    if (L === 2) {
+      const each = [2000, 5000, 10000][rint(rand, 0, 2)];
+      const times = rint(rand, 3, 10);
+      return finishNumeric(id, `Target celenganmu ${formatRp(each * times)}. Setiap kali menabung kamu memasukkan ${formatRp(each)}. Berapa kali menabung sampai target tercapai?`, times, rand, [1, 2, 3], (n) => `${n} kali`, ctx, i, `${formatRp(each * times)} ÷ ${formatRp(each)} = ${times} kali.`, 1);
+    }
+    if (L === 3) {
+      const each = [2000, 5000, 10000][rint(rand, 0, 2)];
+      const times = rint(rand, 6, 12);
+      const done = rint(rand, 2, times - 2);
+      return finishNumeric(id, `Target celenganmu ${formatRp(each * times)} dan sudah terkumpul ${formatRp(each * done)}. Kamu menabung ${formatRp(each)} setiap kali. Berapa kali lagi menabung?`, times - done, rand, [1, 2, 3], (n) => `${n} kali lagi`, ctx, i, `Sisa ${formatRp(each * (times - done))} ÷ ${formatRp(each)} = ${times - done} kali lagi.`, 1);
+    }
+    if (L === 4) {
+      const each = [2500, 4000, 7500, 3000][rint(rand, 0, 3)];
+      const days = rint(rand, 8, 20);
+      return finishNumeric(id, `Kamu menabung ${formatRp(each)} setiap hari. Berapa hari yang dibutuhkan untuk mengumpulkan ${formatRp(each * days)}?`, days, rand, [1, 2, 4], (n) => `${n} hari`, ctx, i, `${formatRp(each * days)} ÷ ${formatRp(each)} = ${days} hari.`, 1);
+    }
+    const each = [3000, 4000, 5000][rint(rand, 0, 2)];
+    const weeks = rint(rand, 3, 8);
+    const perWeek = each * 5;
+    return finishNumeric(id, `Kamu menabung ${formatRp(each)} setiap hari sekolah (5 hari per minggu). Berapa minggu untuk mencapai ${formatRp(perWeek * weeks)}?`, weeks, rand, [1, 2, 3], (n) => `${n} minggu`, ctx, i, `Per minggu ${formatRp(each)} × 5 = ${formatRp(perWeek)}. ${formatRp(perWeek * weeks)} ÷ ${formatRp(perWeek)} = ${weeks} minggu.`, 1);
   });
 }
 
-function buildSequence(seed: string): ChoiceItem[] {
-  const rand = mulberry32(hashString(seed));
+function buildSequence(ctx: BuildCtx): ChoiceItem[] {
+  const rand = mulberry32(hashString(`${ctx.seed}|c${ctx.cursor}`));
+  const L = clampLv(ctx.level);
   return Array.from({ length: ROUNDS }, (_, i) => {
-    const doubling = i % 2 === 1;
+    const id = `m-sequence-L${L}-${ctx.cursor}-${i}`;
     let terms: number[];
     let next: number;
     let rule: string;
-    if (doubling) {
-      const start = 1 + Math.floor(rand() * 4);
-      terms = [start, start * 2, start * 4, start * 8];
-      next = start * 16;
-      rule = "Setiap angka dikali 2";
-    } else {
-      const start = 1 + Math.floor(rand() * 9);
-      const step = [2, 3, 5, 10][Math.floor(rand() * 4)];
-      terms = [start, start + step, start + 2 * step, start + 3 * step];
+    if (L === 1) {
+      const start = rint(rand, 1, 9);
+      const step = [1, 2, 3, 5][rint(rand, 0, 3)];
+      terms = [0, 1, 2, 3].map((k) => start + k * step);
       next = start + 4 * step;
       rule = `Setiap angka ditambah ${step}`;
+    } else if (L === 2) {
+      if (i % 2 === 1) {
+        const start = rint(rand, 1, 4);
+        terms = [start, start * 2, start * 4, start * 8];
+        next = start * 16;
+        rule = "Setiap angka dikali 2";
+      } else {
+        const start = rint(rand, 1, 9);
+        const step = [2, 3, 5, 10][rint(rand, 0, 3)];
+        terms = [0, 1, 2, 3].map((k) => start + k * step);
+        next = start + 4 * step;
+        rule = `Setiap angka ditambah ${step}`;
+      }
+    } else if (L === 3) {
+      if (i % 2 === 0) {
+        const step = [3, 4, 5, 6, 10][rint(rand, 0, 4)];
+        const start = rint(rand, 40, 90);
+        terms = [0, 1, 2, 3].map((k) => start - k * step);
+        next = start - 4 * step;
+        rule = `Setiap angka dikurangi ${step}`;
+      } else {
+        const start = rint(rand, 1, 3);
+        terms = [start, start * 3, start * 9, start * 27];
+        next = start * 81;
+        rule = "Setiap angka dikali 3";
+      }
+    } else if (L === 4) {
+      const s = rint(rand, 1, 10);
+      const a = rint(rand, 2, 5);
+      const b = rint(rand, 6, 9);
+      terms = [s, s + a, s + a + b, s + 2 * a + b, s + 2 * a + 2 * b];
+      next = s + 3 * a + 2 * b;
+      rule = `Pola tambah selang-seling: +${a}, +${b}, +${a}, +${b}, ...`;
+    } else {
+      const kind = i % 3;
+      if (kind === 0) {
+        const k0 = rint(rand, 1, 3);
+        terms = [k0, k0 + 1, k0 + 2, k0 + 3].map((k) => k * k);
+        next = (k0 + 4) * (k0 + 4);
+        rule = "Deret bilangan kuadrat (1×1, 2×2, 3×3, ...)";
+      } else if (kind === 1) {
+        const k0 = rint(rand, 1, 3);
+        const tri = (n: number) => (n * (n + 1)) / 2;
+        terms = [k0, k0 + 1, k0 + 2, k0 + 3].map(tri);
+        next = tri(k0 + 4);
+        rule = "Selisih antar-angka bertambah 1 tiap langkah";
+      } else {
+        const a = rint(rand, 1, 3);
+        const b = rint(rand, 2, 4);
+        const t3 = a + b;
+        const t4 = b + t3;
+        const t5 = t3 + t4;
+        terms = [a, b, t3, t4, t5];
+        next = t4 + t5;
+        rule = "Setiap angka adalah jumlah dua angka sebelumnya";
+      }
     }
-    const { options, answerLabel } = numericOptions(next, rand, [1, 2, 5], String, 1);
-    const shuffled = seededShuffle(options, `${seed}|o|${i}`);
-    return {
-      id: `m-sequence-${i}`,
-      prompt: `${terms.join(", ")}, ... Angka berikutnya adalah?`,
-      options: shuffled,
-      answerIndex: shuffled.indexOf(answerLabel),
-      explain: `${rule}, jadi angka berikutnya ${next}.`,
-    };
+    return finishNumeric(id, `${terms.join(", ")}, ... Angka berikutnya adalah?`, next, rand, [1, 2, 3, 5], String, ctx, i, `${rule}, jadi angka berikutnya ${next}.`, 1);
   });
 }
 
-function buildClock(seed: string): ChoiceItem[] {
-  const rand = mulberry32(hashString(seed));
-  const minutes = [0, 15, 30, 45];
+function buildClock(ctx: BuildCtx): ChoiceItem[] {
+  const rand = mulberry32(hashString(`${ctx.seed}|c${ctx.cursor}`));
+  const L = clampLv(ctx.level);
+  const minutePool = L === 1 ? [0] : L === 2 ? [0, 30] : L === 3 ? [0, 15, 30, 45] : [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
   return Array.from({ length: ROUNDS }, (_, i) => {
-    const hour = 1 + Math.floor(rand() * 12);
-    const minute = minutes[Math.floor(rand() * minutes.length)];
-    const label = (h: number, m: number) => `${pad2(h)}.${pad2(m)}`;
+    const hour = rint(rand, 1, 12);
+    const minute = minutePool[rint(rand, 0, minutePool.length - 1)];
+    const label = (h: number, m: number) => `${pad2(((h - 1 + 12) % 12) + 1)}.${pad2(m)}`;
     const answer = label(hour, minute);
     const set = new Set<string>([answer]);
-    let guard = 0;
-    while (set.size < 4 && guard < 40) {
-      guard += 1;
-      const h = 1 + Math.floor(rand() * 12);
-      const m = minutes[Math.floor(rand() * minutes.length)];
-      set.add(label(h, m));
+    if (L >= 4) {
+      // pengecoh khas: jarum tertukar, selisih 5 menit, selisih 1 jam
+      const swapped = (minute / 5 || 12);
+      set.add(label(swapped, ((hour * 5) % 60)));
+      set.add(label(hour, (minute + 5) % 60));
+      set.add(label(hour + 1, minute));
+      set.add(label(hour - 1, minute));
     }
-    const shuffled = seededShuffle(Array.from(set), `${seed}|o|${i}`);
+    let guard = 0;
+    while (set.size < 4 && guard < 60) {
+      guard += 1;
+      set.add(label(rint(rand, 1, 12), minutePool[rint(rand, 0, minutePool.length - 1)]));
+    }
+    const picked = [answer, ...seededShuffle(Array.from(set).filter((v) => v !== answer), `${ctx.seed}|c${ctx.cursor}|w|${i}`).slice(0, 3)];
+    const shuffled = seededShuffle(picked, `${ctx.seed}|c${ctx.cursor}|o|${i}`);
     return {
-      id: `s-clock-${i}`,
+      id: `s-clock-L${L}-${ctx.cursor}-${i}`,
       prompt: "Jam berapa yang ditunjukkan jarum jam ini?",
       visual: { kind: "clock", hour, minute },
       options: shuffled,
       answerIndex: shuffled.indexOf(answer),
       explain: `Jarum pendek di angka ${hour}, jarum panjang di angka ${minute / 5 || 12}: pukul ${answer}.`,
-    };
+    } satisfies ChoiceItem;
   });
 }
 
-function buildSilhouette(seed: string): ChoiceItem[] {
-  const picked = seededShuffle(SILHOUETTES, `${seed}|pick`).slice(0, ROUNDS);
+const ANIMAL_GROUP: Record<AnimalId, "darat" | "air" | "kecil"> = {
+  elephant: "darat",
+  giraffe: "darat",
+  lion: "darat",
+  monkey: "darat",
+  rabbit: "darat",
+  turtle: "air",
+  dolphin: "air",
+  crab: "air",
+  penguin: "air",
+  duck: "air",
+  owl: "kecil",
+  bee: "kecil",
+};
+
+const ANIMAL_HINT: Record<AnimalId, string> = {
+  elephant: "Petunjuk: hewan besar berbelalai panjang.",
+  giraffe: "Petunjuk: hewan berleher sangat panjang.",
+  turtle: "Petunjuk: hewan bercangkang yang berjalan pelan.",
+  lion: "Petunjuk: raja hutan yang berumbai di lehernya.",
+  penguin: "Petunjuk: burung yang tidak terbang dan suka es.",
+  monkey: "Petunjuk: hewan pandai memanjat dan suka pisang.",
+  rabbit: "Petunjuk: hewan bertelinga panjang yang suka wortel.",
+  owl: "Petunjuk: burung bermata besar yang aktif di malam hari.",
+  duck: "Petunjuk: unggas yang pandai berenang dan berbunyi kwek.",
+  bee: "Petunjuk: serangga bersayap yang membuat madu.",
+  crab: "Petunjuk: hewan bercapit yang berjalan menyamping.",
+  dolphin: "Petunjuk: mamalia laut yang pandai melompat.",
+};
+
+function buildSilhouette(ctx: BuildCtx): ChoiceItem[] {
+  const L = clampLv(ctx.level);
+  const picked = pickWindow(SILHOUETTES, ctx.seed, ctx.cursor, ROUNDS);
+  const optionCount = L === 1 ? 3 : 4;
   return picked.map((animal, i) => {
-    const wrong = seededShuffle(
-      SILHOUETTES.filter((a) => a.name !== animal.name).map((a) => a.name),
-      `${seed}|w|${i}`
-    ).slice(0, 3);
-    const options = seededShuffle([animal.name, ...wrong], `${seed}|o|${i}`);
+    const same = SILHOUETTES.filter((a) => a.name !== animal.name && ANIMAL_GROUP[a.animal] === ANIMAL_GROUP[animal.animal]);
+    const other = SILHOUETTES.filter((a) => a.name !== animal.name && ANIMAL_GROUP[a.animal] !== ANIMAL_GROUP[animal.animal]);
+    const pool = L >= 4 ? [...seededShuffle(same, `${ctx.seed}|c${ctx.cursor}|s|${i}`), ...seededShuffle(other, `${ctx.seed}|c${ctx.cursor}|x|${i}`)] : seededShuffle([...same, ...other], `${ctx.seed}|c${ctx.cursor}|w|${i}`);
+    const wrong = pool.slice(0, optionCount - 1).map((a) => a.name);
+    const options = seededShuffle([animal.name, ...wrong], `${ctx.seed}|c${ctx.cursor}|o|${i}`);
+    const hint = L <= 2 ? ` ${ANIMAL_HINT[animal.animal]}` : "";
     return {
-      id: `s-silhouette-${i}`,
-      prompt: "Hewan apa yang bersembunyi di dalam bayangan ini?",
+      id: `s-silhouette-L${L}-${ctx.cursor}-${i}`,
+      prompt: `Hewan apa yang bersembunyi di dalam bayangan ini?${hint}`,
       visual: { kind: "silhouette", animal: animal.animal },
       options,
       answerIndex: options.indexOf(animal.name),
       explain: `Itu adalah ${animal.name.toLowerCase()}.`,
-    };
+    } satisfies ChoiceItem;
   });
 }
 
-const RAW_BANK: Record<string, readonly Raw[]> = {
-  "l-english": ENGLISH,
-  "l-antonym": ANTONYM,
-  "l-spelling": SPELLING,
-  "l-proverb": PROVERB,
-  "m-denom": DENOM,
-  "m-compare": COMPARE,
-  "m-needwant": NEED_WANT,
-  "e-feeling": FEELING,
-  "e-honesty": HONESTY,
-  "e-share": SHARE,
-  "s-nature": NATURE,
-  "s-weekly": WEEKLY,
+const RAW_BANK: Record<string, readonly (readonly Raw[])[]> = {
+  "l-english": tiered("l-english", ENGLISH),
+  "l-antonym": tiered("l-antonym", ANTONYM),
+  "l-spelling": tiered("l-spelling", SPELLING),
+  "l-proverb": tiered("l-proverb", PROVERB),
+  "m-denom": tiered("m-denom", DENOM),
+  "m-compare": tiered("m-compare", COMPARE),
+  "m-needwant": tiered("m-needwant", NEED_WANT),
+  "e-feeling": tiered("e-feeling", FEELING),
+  "e-honesty": tiered("e-honesty", HONESTY),
+  "e-share": tiered("e-share", SHARE),
+  "s-nature": tiered("s-nature", NATURE),
+  "s-weekly": tiered("s-weekly", WEEKLY),
 };
 
+/** Jumlah soal bank per mode & level (untuk statistik/uji). Mode hitungan dibangkitkan sehingga tidak dihitung. */
+export function bankSizes(modeId: string): number[] | null {
+  const b = RAW_BANK[modeId];
+  return b ? b.map((l) => l.length) : null;
+}
+
+/** Kolam soal level L = level L ditambah level sebelumnya (pemanasan), supaya kolam cukup besar. */
+function poolFor(bank: readonly (readonly Raw[])[], level: number): Raw[] {
+  const L = clampLv(level);
+  return [...(L > 1 ? bank[L - 2] : []), ...bank[L - 1]];
+}
+
 /** Soal pilihan ganda untuk mode `choice` / `numeric` / `clock` / `silhouette`. */
-export function buildChoiceItems(modeId: string, seed: string): ChoiceItem[] {
+export function buildChoiceItems(modeId: string, ctx: BuildCtx): ChoiceItem[] {
   switch (modeId) {
     case "m-change":
-      return buildChange(seed);
+      return buildChange(ctx);
     case "m-target":
-      return buildTarget(seed);
+      return buildTarget(ctx);
     case "m-sequence":
-      return buildSequence(seed);
+      return buildSequence(ctx);
     case "s-clock":
-      return buildClock(seed);
+      return buildClock(ctx);
     case "s-silhouette":
-      return buildSilhouette(seed);
+      return buildSilhouette(ctx);
     default: {
       const bank = RAW_BANK[modeId];
-      return bank ? fromRaw(modeId, bank, seed) : [];
+      return bank ? fromRaw(modeId, poolFor(bank, ctx.level), ctx) : [];
     }
   }
 }
 
-/* ───────────────────────── Mode non-pilihan-ganda ───────────────────────── */
+/* ───────────────────────── Mode non-pilihan-ganda (bertingkat) ───────────────────────── */
 
-export const SENTENCES: readonly (readonly string[])[] = [
-  ["Ibu", "memasak", "nasi", "goreng", "di", "dapur"],
-  ["Aku", "bermain", "bola", "bersama", "teman"],
-  ["Kucing", "itu", "tidur", "di", "atas", "sofa"],
-  ["Kami", "pergi", "ke", "sekolah", "setiap", "pagi"],
-  ["Ayah", "membaca", "koran", "di", "teras"],
-  ["Adik", "menabung", "uang", "di", "celengan"],
-  ["Burung", "terbang", "tinggi", "di", "langit", "biru"],
-  ["Aku", "membantu", "ibu", "menyapu", "halaman"],
+/** Susun kalimat: makin tinggi level, makin panjang kalimatnya (4 → 11 kata). */
+const SENTENCE_LEVELS: readonly (readonly (readonly string[])[])[] = [
+  [
+    ["Aku", "makan", "nasi", "hangat"],
+    ["Ibu", "memasak", "sayur", "bayam"],
+    ["Kucing", "minum", "susu", "segar"],
+    ["Adik", "bermain", "bola", "kaki"],
+    ["Ayah", "membaca", "koran", "pagi"],
+    ["Burung", "terbang", "di", "langit"],
+  ],
+  [
+    ["Ibu", "memasak", "nasi", "goreng", "di", "dapur"],
+    ["Aku", "bermain", "bola", "bersama", "teman"],
+    ["Kucing", "itu", "tidur", "di", "atas", "sofa"],
+    ["Kami", "pergi", "ke", "sekolah", "setiap", "pagi"],
+    ["Ayah", "membaca", "koran", "di", "teras"],
+    ["Adik", "menabung", "uang", "di", "celengan"],
+    ["Burung", "terbang", "tinggi", "di", "langit", "biru"],
+    ["Aku", "membantu", "ibu", "menyapu", "halaman"],
+  ],
+  [
+    ["Kakak", "membantu", "ibu", "membersihkan", "rumah", "setiap", "sore"],
+    ["Kami", "belajar", "menabung", "uang", "jajan", "setiap", "hari"],
+    ["Nenek", "menanam", "bunga", "mawar", "di", "halaman", "rumah"],
+    ["Teman-temanku", "bermain", "layangan", "di", "lapangan", "yang", "luas"],
+    ["Guru", "membagikan", "buku", "cerita", "kepada", "semua", "murid"],
+    ["Adik", "memasukkan", "koin", "perak", "ke", "dalam", "celengan", "barunya"],
+  ],
+  [
+    ["Setiap", "hari", "Minggu", "keluargaku", "pergi", "berjalan-kaki", "ke", "taman", "kota"],
+    ["Aku", "menyisihkan", "sebagian", "uang", "jajan", "untuk", "membeli", "buku", "cerita"],
+    ["Pak", "guru", "menjelaskan", "cara", "menghitung", "kembalian", "dengan", "sabar"],
+    ["Ibu", "mengajak", "kami", "berbelanja", "sayur", "dan", "buah", "di", "pasar"],
+    ["Hujan", "turun", "deras", "sehingga", "kami", "bermain", "di", "dalam", "rumah"],
+    ["Kakak", "mengajariku", "mengendarai", "sepeda", "di", "halaman", "sekolah", "yang", "luas"],
+  ],
+  [
+    ["Karena", "rajin", "menabung", "setiap", "minggu", "akhirnya", "aku", "bisa", "membeli", "sepeda", "baru"],
+    ["Aku", "selalu", "mencatat", "pengeluaran", "jajan", "agar", "uang", "sakuku", "tidak", "cepat", "habis"],
+    ["Setelah", "pulang", "sekolah", "aku", "membantu", "ibu", "menyiram", "tanaman", "di", "kebun", "belakang"],
+    ["Teman", "sekelasku", "sangat", "senang", "ketika", "guru", "memberi", "pujian", "atas", "kerja", "kerasnya"],
+    ["Walaupun", "hujan", "deras", "kami", "tetap", "berangkat", "sekolah", "dengan", "memakai", "jas", "hujan"],
+    ["Kami", "bergotong-royong", "membersihkan", "selokan", "supaya", "air", "hujan", "mengalir", "dengan", "lancar"],
+  ],
 ];
 
-export const THREE_WORDS: readonly (readonly [string, string, string])[] = [
-  ["kucing", "hujan", "payung"],
-  ["pasar", "apel", "nenek"],
-  ["sepeda", "taman", "senja"],
-  ["celengan", "mimpi", "bintang"],
-  ["buku", "dinosaurus", "kelas"],
-  ["laut", "perahu", "kakek"],
-  ["roti", "bulan", "teman"],
-  ["kupu", "bunga", "pagi"],
+export const SENTENCES_PER_ROUND = 4;
+
+export function buildSentences(ctx: BuildCtx): (readonly string[])[] {
+  const pool = SENTENCE_LEVELS[clampLv(ctx.level) - 1];
+  return pickWindow(pool, ctx.seed, ctx.cursor, SENTENCES_PER_ROUND);
+}
+
+/** 3 Kata Jadi Cerita: kata makin abstrak dan syarat panjang cerita makin tinggi. */
+const THREE_WORD_LEVELS: readonly (readonly (readonly [string, string, string])[])[] = [
+  [
+    ["ayam", "pagi", "nasi"],
+    ["ibu", "dapur", "roti"],
+    ["kucing", "susu", "sofa"],
+    ["bola", "lapangan", "teman"],
+    ["hujan", "jendela", "teh"],
+    ["bunga", "lebah", "taman"],
+  ],
+  [
+    ["kucing", "hujan", "payung"],
+    ["pasar", "apel", "nenek"],
+    ["sepeda", "taman", "senja"],
+    ["celengan", "mimpi", "bintang"],
+    ["buku", "dinosaurus", "kelas"],
+    ["laut", "perahu", "kakek"],
+    ["roti", "bulan", "teman"],
+    ["kupu", "bunga", "pagi"],
+  ],
+  [
+    ["perahu", "pelangi", "nelayan"],
+    ["perpustakaan", "hantu", "lampu"],
+    ["kebun", "tomat", "kakek"],
+    ["balon", "angin", "pesta"],
+    ["kereta", "stasiun", "koper"],
+    ["sungai", "jembatan", "ikan"],
+  ],
+  [
+    ["petualangan", "peta", "gua"],
+    ["robot", "sekolah", "persahabatan"],
+    ["hutan", "senter", "malam"],
+    ["pelangi", "celengan", "harapan"],
+    ["juara", "latihan", "semangat"],
+    ["pulau", "harta", "kapal"],
+  ],
+  [
+    ["keberanian", "badai", "mercusuar"],
+    ["hemat", "impian", "sepeda"],
+    ["kejujuran", "dompet", "sahabat"],
+    ["musyawarah", "kampung", "jembatan"],
+    ["penemu", "mesin", "kejutan"],
+    ["bintang", "teleskop", "rahasia"],
+  ],
 ];
 
-export const ORDER_STORIES: readonly { title: string; steps: readonly string[] }[] = [
-  { title: "Menanam Bunga", steps: ["Menyiapkan tanah dan biji", "Menanam biji ke dalam tanah", "Menyiram setiap pagi", "Bunga mekar dengan indah"] },
-  { title: "Menabung di Celengan", steps: ["Mengumpulkan uang saku", "Memasukkan koin ke celengan", "Celengan semakin berat", "Membuka celengan untuk membeli sepeda"] },
-  { title: "Berangkat Sekolah", steps: ["Bangun tidur dan mandi", "Sarapan bersama keluarga", "Berangkat ke sekolah", "Belajar di dalam kelas"] },
-  { title: "Kupu-kupu", steps: ["Telur menetas menjadi ulat", "Ulat makan daun hijau", "Ulat membuat kepompong", "Kupu-kupu keluar dan terbang"] },
-  { title: "Turunnya Hujan", steps: ["Matahari memanaskan air laut", "Uap air naik membentuk awan", "Awan menjadi gelap dan berat", "Turunlah hujan ke bumi"] },
-  { title: "Membuat Susu Cokelat", steps: ["Menyiapkan gelas dan susu", "Menuang susu ke gelas", "Menambahkan bubuk cokelat", "Mengaduk lalu meminumnya"] },
+/** Minimal kata cerita per level. */
+export const THREEWORD_MIN_BY_LEVEL = [0, 10, 15, 20, 25, 30] as const;
+
+export function pickThreeWords(ctx: BuildCtx): readonly [string, string, string] {
+  const pool = THREE_WORD_LEVELS[clampLv(ctx.level) - 1];
+  return pickWindow(pool, ctx.seed, ctx.cursor, 1)[0];
+}
+
+/** Urutkan kronologi: makin tinggi level, makin banyak langkah (3 → 6). */
+export interface OrderStory {
+  title: string;
+  steps: readonly string[];
+}
+
+const ORDER_LEVELS: readonly (readonly OrderStory[])[] = [
+  [
+    { title: "Mencuci Tangan", steps: ["Membasahi tangan dengan air", "Menggosok tangan dengan sabun", "Membilas dan mengeringkan tangan"] },
+    { title: "Menyikat Gigi", steps: ["Mengambil sikat dan pasta gigi", "Menyikat seluruh gigi", "Berkumur sampai bersih"] },
+    { title: "Minum Susu", steps: ["Menuang susu ke gelas", "Meminum susu pelan-pelan", "Mencuci gelas yang kosong"] },
+    { title: "Memakai Sepatu", steps: ["Mengambil sepatu dan kaus kaki", "Memakai kaus kaki", "Memasang sepatu dan mengikat tali"] },
+  ],
+  [
+    { title: "Menanam Bunga", steps: ["Menyiapkan tanah dan biji", "Menanam biji ke dalam tanah", "Menyiram setiap pagi", "Bunga mekar dengan indah"] },
+    { title: "Menabung di Celengan", steps: ["Mengumpulkan uang saku", "Memasukkan koin ke celengan", "Celengan semakin berat", "Membuka celengan untuk membeli sepeda"] },
+    { title: "Berangkat Sekolah", steps: ["Bangun tidur dan mandi", "Sarapan bersama keluarga", "Berangkat ke sekolah", "Belajar di dalam kelas"] },
+    { title: "Kupu-kupu", steps: ["Telur menetas menjadi ulat", "Ulat makan daun hijau", "Ulat membuat kepompong", "Kupu-kupu keluar dan terbang"] },
+    { title: "Turunnya Hujan", steps: ["Matahari memanaskan air laut", "Uap air naik membentuk awan", "Awan menjadi gelap dan berat", "Turunlah hujan ke bumi"] },
+    { title: "Membuat Susu Cokelat", steps: ["Menyiapkan gelas dan susu", "Menuang susu ke gelas", "Menambahkan bubuk cokelat", "Mengaduk lalu meminumnya"] },
+  ],
+  [
+    { title: "Membuat Telur Dadar", steps: ["Memecahkan telur ke mangkuk", "Mengocok telur dengan garpu", "Memanaskan minyak di wajan", "Menuang telur ke wajan", "Mengangkat telur saat matang"] },
+    { title: "Belanja di Warung", steps: ["Membuat daftar belanjaan", "Membawa uang secukupnya", "Memilih barang yang dibutuhkan", "Membayar di kasir", "Memeriksa uang kembalian"] },
+    { title: "Membuat Pesawat Kertas", steps: ["Menyiapkan selembar kertas", "Melipat kertas menjadi dua", "Melipat kedua sudut atas ke tengah", "Melipat sayap di kiri dan kanan", "Menerbangkan pesawat kertas"] },
+    { title: "Pergi ke Perpustakaan", steps: ["Memilih buku yang menarik", "Membawa buku ke meja petugas", "Petugas mencatat peminjaman", "Membaca buku di rumah", "Mengembalikan buku tepat waktu"] },
+  ],
+  [
+    { title: "Siklus Air", steps: ["Air laut memanas oleh matahari", "Uap air naik ke langit", "Uap mengembun menjadi awan", "Awan menjatuhkan hujan", "Air hujan mengalir kembali ke sungai dan laut"] },
+    { title: "Menabung untuk Sepeda", steps: ["Menentukan harga sepeda yang diinginkan", "Menghitung tabungan tiap minggu", "Menyisihkan uang saku setiap hari", "Mencatat tabungan di buku", "Tabungan cukup lalu membeli sepeda", "Merawat sepeda dengan baik"] },
+    { title: "Tumbuhnya Pohon Mangga", steps: ["Biji mangga ditanam di tanah", "Biji berkecambah menjadi tunas", "Tunas tumbuh menjadi pohon muda", "Pohon dewasa berbunga", "Bunga menjadi buah mangga"] },
+    { title: "Menyelesaikan Kerja Kelompok", steps: ["Guru membagi kelompok", "Kelompok membagi tugas", "Setiap anggota mengerjakan bagiannya", "Hasil kerja digabungkan", "Kelompok mempresentasikan hasilnya"] },
+  ],
+  [
+    { title: "Membuat Kertas Daur Ulang", steps: ["Mengumpulkan kertas bekas", "Merobek kertas menjadi kecil", "Merendam kertas dalam air", "Menghaluskan menjadi bubur kertas", "Mencetak bubur pada saringan", "Menjemur sampai kering"] },
+    { title: "Perjalanan Sebuah Surat", steps: ["Menulis surat dan memasukkannya ke amplop", "Menempelkan perangko", "Memasukkan surat ke kotak pos", "Petugas mengumpulkan surat", "Surat disortir dan diantar kurir", "Surat diterima oleh yang dituju"] },
+    { title: "Berjualan Minuman Segar", steps: ["Merencanakan modal dan bahan", "Membeli jeruk, gula, dan gelas", "Membuat minuman", "Menjual di depan rumah", "Menghitung pendapatan dan modal", "Menyisihkan sebagian untung untuk ditabung"] },
+    { title: "Memilih Ketua Kelas", steps: ["Guru mengumumkan pemilihan", "Calon-calon mendaftar", "Calon menyampaikan rencananya", "Murid memberikan suara", "Panitia menghitung suara", "Ketua kelas terpilih diumumkan"] },
+  ],
 ];
+
+export const ORDER_STORIES_PER_ROUND = 3;
+
+export function buildOrderStories(ctx: BuildCtx): OrderStory[] {
+  const pool = ORDER_LEVELS[clampLv(ctx.level) - 1];
+  return pickWindow(pool, ctx.seed, ctx.cursor, Math.min(ORDER_STORIES_PER_ROUND, pool.length));
+}
 
 export const MEMORY_SYMBOLS: readonly { id: BiomeGlyphId; label: string }[] = [
   { id: "forest", label: "Hutan" },
@@ -431,6 +749,9 @@ export const MEMORY_SYMBOLS: readonly { id: BiomeGlyphId; label: string }[] = [
   { id: "island", label: "Pulau" },
 ];
 
+/** Jumlah pasang kartu per level (indeks = level). */
+export const MEMORY_PAIRS_BY_LEVEL = [0, 3, 4, 5, 6, 8] as const;
+
 export const KINDNESS_TASKS: readonly string[] = [
   "Merapikan tempat tidur sendiri",
   "Membantu ibu menyapu lantai",
@@ -442,4 +763,13 @@ export const KINDNESS_TASKS: readonly string[] = [
   "Mengucapkan terima kasih kepada orang tua",
 ];
 
+/** Minimal kebaikan yang dicentang per level. */
+export const KINDNESS_PASS_BY_LEVEL = [0, 3, 3, 4, 5, 6] as const;
+
 export const THANKS_RECIPIENTS: readonly string[] = ["Ibu", "Ayah", "Guru", "Sahabat", "Kakak atau Adik", "Nenek atau Kakek"];
+
+/** Minimal kata kartu terima kasih per level. */
+export const THANKS_MIN_BY_LEVEL = [0, 8, 10, 14, 18, 22] as const;
+
+/** Putaran latihan napas per level. */
+export const BREATH_CYCLES_BY_LEVEL = [0, 3, 4, 5, 6, 7] as const;

@@ -305,7 +305,7 @@ export function EquippedSlotsPanel({ equipped, ownedIds, onToggle, onOpenItem, o
     <div className="space-y-2.5 pt-1">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-display font-extrabold text-[#3D352E] inline-flex items-center gap-1.5">
-          <GlyphIcon name="hanger" size={18} /> Lemari Cepat · Terpasang {installedCount}/{ACCESSORY_SLOTS.length}
+          <GlyphIcon name="hanger" size={18} /> Lemari · Terpasang {installedCount}/{ACCESSORY_SLOTS.length}
         </p>
       </div>
 

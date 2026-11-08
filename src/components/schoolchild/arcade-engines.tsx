@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Mesin permainan Arcade Sekolah (Versi 5.0). Setiap mesin menerima `seed` deterministik
- * dan memanggil `onFinish(score, total)` sekali ketika permainan selesai.
+ * Mesin permainan Arcade Sekolah (Versi 5.0, bertingkat sejak 5.2). Setiap mesin menerima `seed`,
+ * `level`, dan `cursor` deterministik, melaporkan tiap soal selesai lewat `onStep` (agar bisa dilanjutkan
+ * saat dibuka lagi), dan memanggil `onFinish(score, total)` sekali ketika ronde selesai.
  * Tidak ada Math.random: pengacakan memakai `seededShuffle`.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -10,25 +11,44 @@ import { motion, useReducedMotion } from "framer-motion";
 import { TactileButton, ChunkyProgressBar } from "@/components/ui/CozyPrimitives";
 import { seededShuffle } from "@/lib/quest-engine";
 import { tokenizeWords } from "@/lib/story-utils";
+import { soundEffects } from "@/lib/sound-effects";
 import { cn } from "@/lib/utils";
 import { AnimalGlyph, BiomeGlyph, type BiomeGlyphId } from "@/components/illustrations/GlyphCreatures";
 import { GlyphIcon } from "@/components/illustrations/GlyphIcons";
 import {
+  BREATH_CYCLES_BY_LEVEL,
   buildChoiceItems,
+  buildOrderStories,
+  buildSentences,
+  KINDNESS_PASS_BY_LEVEL,
   KINDNESS_TASKS,
+  MEMORY_PAIRS_BY_LEVEL,
   MEMORY_SYMBOLS,
-  ORDER_STORIES,
-  SENTENCES,
+  pickThreeWords,
+  THANKS_MIN_BY_LEVEL,
   THANKS_RECIPIENTS,
-  THREE_WORDS,
+  THREEWORD_MIN_BY_LEVEL,
+  type BuildCtx,
   type ChoiceItem,
 } from "./arcade-content";
 
 export interface EngineProps {
   modeId: string;
+  /** Level kesulitan 1..5. */
+  level: number;
+  /** Benih dasar sesi (tanpa cursor). */
   seed: string;
+  /** Putaran bank soal untuk level ini. */
+  cursor: number;
+  /** Jumlah soal yang sudah dijawab pada sesi tersimpan (0 untuk ronde baru). */
+  initialIndex: number;
+  initialScore: number;
+  /** Dipanggil tiap satu soal selesai dijawab: `answered` soal, `score` benar. */
+  onStep: (answered: number, score: number) => void;
   onFinish: (score: number, total: number) => void;
 }
+
+const lv = (n: number) => Math.min(5, Math.max(1, Math.floor(n) || 1));
 
 /* ───────────────────────── Pilihan ganda (choice/numeric/clock/silhouette) ───────────────────────── */
 
@@ -85,12 +105,21 @@ function ChoiceVisualView({ item, revealed }: { item: ChoiceItem; revealed: bool
   );
 }
 
-export function ChoiceQuiz({ modeId, seed, onFinish }: EngineProps) {
-  const items = useMemo(() => buildChoiceItems(modeId, seed), [modeId, seed]);
-  const [index, setIndex] = useState(0);
+export function ChoiceQuiz({ modeId, level, seed, cursor, initialIndex, initialScore, onStep, onFinish }: EngineProps) {
+  const items = useMemo(() => buildChoiceItems(modeId, { seed, level: lv(level), cursor } satisfies BuildCtx), [modeId, seed, level, cursor]);
+  const [index, setIndex] = useState(Math.min(initialIndex, Math.max(0, items.length - 1)));
   const [picked, setPicked] = useState<number | null>(null);
-  const [score, setScore] = useState(0);
+  const [score, setScore] = useState(initialScore);
+  const [streak, setStreak] = useState(0);
   const finishedRef = useRef(false);
+
+  // Sesi tersimpan yang sebenarnya sudah selesai dijawab semua: langsung tampilkan hasil.
+  useEffect(() => {
+    if (items.length > 0 && initialIndex >= items.length && !finishedRef.current) {
+      finishedRef.current = true;
+      onFinish(initialScore, items.length);
+    }
+  }, [items.length, initialIndex, initialScore, onFinish]);
 
   if (items.length === 0) {
     return <p className="text-sm font-bold text-[#7A6E65]">Soal untuk mode ini belum tersedia.</p>;
@@ -102,7 +131,18 @@ export function ChoiceQuiz({ modeId, seed, onFinish }: EngineProps) {
   const choose = (i: number) => {
     if (answered) return;
     setPicked(i);
-    if (i === item.answerIndex) setScore((s) => s + 1);
+    const right = i === item.answerIndex;
+    const nextScore = right ? score + 1 : score;
+    if (right) {
+      setScore(nextScore);
+      setStreak((n) => n + 1);
+      soundEffects.arcadeCorrect(streak + 1);
+    } else {
+      setStreak(0);
+      soundEffects.arcadeWrong();
+    }
+    // Simpan sekarang juga, supaya menutup game lalu membukanya lagi tidak bisa mengulang soal ini.
+    onStep(index + 1, nextScore);
   };
 
   const next = () => {
@@ -121,7 +161,10 @@ export function ChoiceQuiz({ modeId, seed, onFinish }: EngineProps) {
       <div className="space-y-1">
         <div className="flex items-center justify-between text-xs font-display font-extrabold text-[#7A6E65]">
           <span>Soal {index + 1} dari {items.length}</span>
-          <span className="tabular-nums">Benar: {score}</span>
+          <span className="tabular-nums">
+            Benar: {score}
+            {streak >= 2 && <span className="ml-1.5 px-1.5 py-0.5 rounded-lg bg-[#FFC800] text-[#4A3500]">Beruntun x{streak}</span>}
+          </span>
         </div>
         <ChunkyProgressBar value={index + (answered ? 1 : 0)} max={items.length} variant="matcha" />
       </div>
@@ -189,16 +232,23 @@ function shuffleNotEqual<T>(items: readonly T[], seed: string): T[] {
   return out;
 }
 
-export function SentenceBuilder({ seed, onFinish }: EngineProps) {
+export function SentenceBuilder({ level, seed, cursor, initialIndex, initialScore, onStep, onFinish }: EngineProps) {
   const rounds = useMemo(
-    () => seededShuffle(SENTENCES, `${seed}|s`).slice(0, 4).map((words, i) => ({ words, tiles: shuffleNotEqual(words.map((w, j) => ({ w, j })), `${seed}|t|${i}`) })),
-    [seed]
+    () => buildSentences({ seed, level: lv(level), cursor }).map((words, i) => ({ words, tiles: shuffleNotEqual(words.map((w, j) => ({ w, j })), `${seed}|c${cursor}|t|${i}`) })),
+    [seed, level, cursor]
   );
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(Math.min(initialIndex, Math.max(0, rounds.length - 1)));
   const [chosen, setChosen] = useState<number[]>([]);
   const [checked, setChecked] = useState<null | boolean>(null);
-  const [score, setScore] = useState(0);
+  const [score, setScore] = useState(initialScore);
   const finishedRef = useRef(false);
+
+  useEffect(() => {
+    if (rounds.length > 0 && initialIndex >= rounds.length && !finishedRef.current) {
+      finishedRef.current = true;
+      onFinish(initialScore, rounds.length);
+    }
+  }, [rounds.length, initialIndex, initialScore, onFinish]);
 
   const round = rounds[index];
   const isLast = index === rounds.length - 1;
@@ -207,13 +257,21 @@ export function SentenceBuilder({ seed, onFinish }: EngineProps) {
 
   const toggle = (j: number) => {
     if (checked !== null) return;
+    soundEffects.arcadeFlip();
     setChosen((c) => (c.includes(j) ? c.filter((x) => x !== j) : [...c, j]));
   };
 
   const check = () => {
     const ok = chosen.every((j, pos) => round.words[j] === round.words[pos]);
     setChecked(ok);
-    if (ok) setScore((s) => s + 1);
+    const nextScore = ok ? score + 1 : score;
+    if (ok) {
+      setScore(nextScore);
+      soundEffects.arcadeCorrect();
+    } else {
+      soundEffects.arcadeWrong();
+    }
+    onStep(index + 1, nextScore);
   };
 
   const next = () => {
@@ -302,20 +360,20 @@ export function SentenceBuilder({ seed, onFinish }: EngineProps) {
 
 /* ───────────────────────── 3 Kata Jadi Cerita ───────────────────────── */
 
-const THREEWORD_MIN = 15;
-
-export function ThreeWordStory({ seed, onFinish }: EngineProps) {
-  const words = useMemo(() => THREE_WORDS[Math.abs(Array.from(seed).reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)) % THREE_WORDS.length], [seed]);
+export function ThreeWordStory({ level, seed, cursor, onFinish }: EngineProps) {
+  const words = useMemo(() => pickThreeWords({ seed, level: lv(level), cursor }), [seed, level, cursor]);
+  const minWords = THREEWORD_MIN_BY_LEVEL[lv(level)];
   const [text, setText] = useState("");
   const finishedRef = useRef(false);
   const tokens = tokenizeWords(text);
   const missing = words.filter((w) => !tokens.includes(w));
-  const enough = tokens.length >= THREEWORD_MIN;
+  const enough = tokens.length >= minWords;
   const ok = enough && missing.length === 0;
 
   const finish = () => {
     if (!ok || finishedRef.current) return;
     finishedRef.current = true;
+    soundEffects.arcadeCorrect(3);
     onFinish(1, 1);
   };
 
@@ -348,7 +406,7 @@ export function ThreeWordStory({ seed, onFinish }: EngineProps) {
         />
       </label>
       <p className={cn("text-xs font-bold tabular-nums", enough ? "text-[#2E6F00]" : "text-[#7A6E65]")}>
-        {tokens.length} kata • minimal {THREEWORD_MIN} kata{missing.length > 0 ? ` • belum memakai: ${missing.join(", ")}` : ""}
+        {tokens.length} kata • minimal {minWords} kata{missing.length > 0 ? ` • belum memakai: ${missing.join(", ")}` : ""}
       </p>
       <TactileButton variant="matcha" fullWidth disabled={!ok} onClick={finish}>
         <>Selesai Bercerita <GlyphIcon name="party" size={20} /></>
@@ -359,14 +417,14 @@ export function ThreeWordStory({ seed, onFinish }: EngineProps) {
 
 /* ───────────────────────── Latihan Napas ───────────────────────── */
 
-const BREATH_CYCLES = 4;
 const BREATH_PHASES = [
   { label: "Tarik napas pelan…", seconds: 4, scale: 1.25 },
   { label: "Tahan sebentar…", seconds: 2, scale: 1.25 },
   { label: "Hembuskan perlahan…", seconds: 4, scale: 0.8 },
 ] as const;
 
-export function BreathingExercise({ onFinish }: EngineProps) {
+export function BreathingExercise({ level, onFinish }: EngineProps) {
+  const BREATH_CYCLES = BREATH_CYCLES_BY_LEVEL[lv(level)];
   const reduce = useReducedMotion();
   const [started, setStarted] = useState(false);
   const [step, setStep] = useState(0); // 0 .. BREATH_CYCLES*3
@@ -386,7 +444,7 @@ export function BreathingExercise({ onFinish }: EngineProps) {
       finishedRef.current = true;
       onFinish(BREATH_CYCLES, BREATH_CYCLES);
     }
-  }, [done, onFinish]);
+  }, [done, onFinish, BREATH_CYCLES]);
 
   const phase = BREATH_PHASES[step % BREATH_PHASES.length];
   const cycle = Math.min(BREATH_CYCLES, Math.floor(step / BREATH_PHASES.length) + 1);
@@ -419,10 +477,9 @@ export function BreathingExercise({ onFinish }: EngineProps) {
 
 /* ───────────────────────── Misi Kebaikan ───────────────────────── */
 
-const KINDNESS_PASS = 3;
-
-export function KindnessChecklist({ seed, onFinish }: EngineProps) {
-  const tasks = useMemo(() => seededShuffle(KINDNESS_TASKS, `${seed}|k`).slice(0, 6), [seed]);
+export function KindnessChecklist({ level, seed, cursor, onFinish }: EngineProps) {
+  const KINDNESS_PASS = KINDNESS_PASS_BY_LEVEL[lv(level)];
+  const tasks = useMemo(() => seededShuffle(KINDNESS_TASKS, `${seed}|c${cursor}|k`).slice(0, lv(level) >= 4 ? 8 : 6), [seed, cursor, level]);
   const [checked, setChecked] = useState<string[]>([]);
   const finishedRef = useRef(false);
   const enough = checked.length >= KINDNESS_PASS;
@@ -467,9 +524,8 @@ export function KindnessChecklist({ seed, onFinish }: EngineProps) {
 
 /* ───────────────────────── Kartu Terima Kasih ───────────────────────── */
 
-const THANKS_MIN = 10;
-
-export function ThankYouCard({ onFinish }: EngineProps) {
+export function ThankYouCard({ level, onFinish }: EngineProps) {
+  const THANKS_MIN = THANKS_MIN_BY_LEVEL[lv(level)];
   const [to, setTo] = useState<string>(THANKS_RECIPIENTS[0]);
   const [text, setText] = useState("");
   const finishedRef = useRef(false);
@@ -527,8 +583,6 @@ export function ThankYouCard({ onFinish }: EngineProps) {
 
 /* ───────────────────────── Kartu Memori Bioma ───────────────────────── */
 
-const MEMORY_PAIRS = 4;
-
 interface MemoryCard {
   key: string;
   symbolId: string;
@@ -536,22 +590,24 @@ interface MemoryCard {
   label: string;
 }
 
-function memoryScore(moves: number): number {
-  if (moves <= 6) return 4;
-  if (moves <= 9) return 3;
-  if (moves <= 12) return 2;
-  return 1;
+/** Skor 1..pairs menurut jumlah langkah; main rapi (≤ 1,6× jumlah pasang) = nilai penuh. */
+function memoryScore(moves: number, pairs: number): number {
+  if (moves <= pairs * 1.6) return pairs;
+  if (moves <= pairs * 2.4) return pairs - 1;
+  if (moves <= pairs * 3.2) return pairs - 2;
+  return Math.max(1, pairs - 3);
 }
 
-export function MemoryMatch({ seed, onFinish }: EngineProps) {
+export function MemoryMatch({ level, seed, cursor, onFinish }: EngineProps) {
+  const MEMORY_PAIRS = MEMORY_PAIRS_BY_LEVEL[lv(level)];
   const cards = useMemo<MemoryCard[]>(() => {
-    const picked = seededShuffle(MEMORY_SYMBOLS, `${seed}|m`).slice(0, MEMORY_PAIRS);
+    const picked = seededShuffle(MEMORY_SYMBOLS, `${seed}|c${cursor}|m`).slice(0, MEMORY_PAIRS);
     const doubled = picked.flatMap((s) => [
       { key: `${s.id}-a`, symbolId: s.id, symbol: s.id, label: s.label },
       { key: `${s.id}-b`, symbolId: s.id, symbol: s.id, label: s.label },
     ]);
-    return seededShuffle(doubled, `${seed}|deck`);
-  }, [seed]);
+    return seededShuffle(doubled, `${seed}|c${cursor}|deck`);
+  }, [seed, cursor, MEMORY_PAIRS]);
 
   const [flipped, setFlipped] = useState<string[]>([]);
   const [matched, setMatched] = useState<string[]>([]);
@@ -569,6 +625,7 @@ export function MemoryMatch({ seed, onFinish }: EngineProps) {
 
   const flip = (key: string) => {
     if (locked || flipped.includes(key) || matched.includes(key)) return;
+    soundEffects.arcadeFlip();
     const nextFlipped = [...flipped, key];
     setFlipped(nextFlipped);
     if (nextFlipped.length < 2) return;
@@ -579,12 +636,14 @@ export function MemoryMatch({ seed, onFinish }: EngineProps) {
       const nextMatched = [...matched, a.key, b.key];
       setMatched(nextMatched);
       setFlipped([]);
+      soundEffects.arcadeMatch();
       if (nextMatched.length === cards.length && !finishedRef.current) {
         finishedRef.current = true;
-        timerRef.current = window.setTimeout(() => onFinish(memoryScore(nextMoves), MEMORY_PAIRS), 700);
+        timerRef.current = window.setTimeout(() => onFinish(memoryScore(nextMoves, MEMORY_PAIRS), MEMORY_PAIRS), 700);
       }
     } else {
       setLocked(true);
+      window.setTimeout(() => soundEffects.arcadeWrong(), 250);
       timerRef.current = window.setTimeout(() => {
         setFlipped([]);
         setLocked(false);
@@ -598,7 +657,7 @@ export function MemoryMatch({ seed, onFinish }: EngineProps) {
         <span>Cocokkan {MEMORY_PAIRS} pasang kartu bioma</span>
         <span className="tabular-nums">Langkah: {moves}</span>
       </div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className={cn("grid gap-2", cards.length <= 6 ? "grid-cols-3 max-w-xs mx-auto" : "grid-cols-4")}>
         {cards.map((c) => {
           const open = flipped.includes(c.key) || matched.includes(c.key);
           const isMatched = matched.includes(c.key);
@@ -625,16 +684,23 @@ export function MemoryMatch({ seed, onFinish }: EngineProps) {
 
 /* ───────────────────────── Urutkan Kronologi ───────────────────────── */
 
-export function OrderChronology({ seed, onFinish }: EngineProps) {
+export function OrderChronology({ level, seed, cursor, initialIndex, initialScore, onStep, onFinish }: EngineProps) {
   const stories = useMemo(
-    () => seededShuffle(ORDER_STORIES, `${seed}|o`).slice(0, 3).map((s, i) => ({ ...s, tiles: shuffleNotEqual(s.steps.map((text, j) => ({ text, j })), `${seed}|ot|${i}`) })),
-    [seed]
+    () => buildOrderStories({ seed, level: lv(level), cursor }).map((s, i) => ({ ...s, tiles: shuffleNotEqual(s.steps.map((text, j) => ({ text, j })), `${seed}|c${cursor}|ot|${i}`) })),
+    [seed, level, cursor]
   );
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(Math.min(initialIndex, Math.max(0, stories.length - 1)));
   const [chosen, setChosen] = useState<number[]>([]);
   const [checked, setChecked] = useState<null | boolean>(null);
-  const [score, setScore] = useState(0);
+  const [score, setScore] = useState(initialScore);
   const finishedRef = useRef(false);
+
+  useEffect(() => {
+    if (stories.length > 0 && initialIndex >= stories.length && !finishedRef.current) {
+      finishedRef.current = true;
+      onFinish(initialScore, stories.length);
+    }
+  }, [stories.length, initialIndex, initialScore, onFinish]);
 
   const story = stories[index];
   const isLast = index === stories.length - 1;
@@ -642,12 +708,20 @@ export function OrderChronology({ seed, onFinish }: EngineProps) {
 
   const toggle = (j: number) => {
     if (checked !== null) return;
+    soundEffects.arcadeFlip();
     setChosen((c) => (c.includes(j) ? c.filter((x) => x !== j) : [...c, j]));
   };
   const check = () => {
     const ok = chosen.every((j, pos) => j === pos);
     setChecked(ok);
-    if (ok) setScore((s) => s + 1);
+    const nextScore = ok ? score + 1 : score;
+    if (ok) {
+      setScore(nextScore);
+      soundEffects.arcadeCorrect();
+    } else {
+      soundEffects.arcadeWrong();
+    }
+    onStep(index + 1, nextScore);
   };
   const next = () => {
     if (isLast) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { BADGE_BG_BY_ID, STARTER_BG_IDS, STARTER_TITLE_IDS, TITLE_BY_ID, journeyUnlockForDay, type BadgeUnlock } from "@/lib/badge-catalog";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { BadgeId } from "@/components/illustrations/PraiseBadges";
@@ -21,7 +22,10 @@ import {
   getLevelFromXp,
   GROWTH_STAGE_TARGETS,
   PET_SPECIES_SHOP_PRICES,
+  EXPENSE_CATEGORIES,
+  INCOME_CATEGORIES,
 } from "@/lib/spending-detective";
+import { transactionLockReason, rewardLedgerKey, TX_TITLE_MAX } from "@/lib/transaction-rules";
 import { pickPathDropItem } from "@/lib/path-drop";
 import { localDateStr } from "@/lib/dates";
 import { evaluateStreakContinuity, nextStreakOnRecord } from "@/lib/streak";
@@ -66,6 +70,11 @@ export interface ProfileData {
   display_name: string;
   role: UserRole;
   pin_code: string;
+  /**
+   * Versi 5.2: tanggal registrasi akun (`YYYY-MM-DD`, lokal). Menjadi "Hari ke-1" Peta Perjalanan.
+   * Opsional agar data lama tetap valid; bila kosong, peta memakai catatan paling awal atau hari ini.
+   */
+  createdAt?: string;
   avatar_theme: string;
   xp: number;
   level: number;
@@ -82,6 +91,11 @@ export interface ProfileData {
   claimedPathMilestones: number[]; // [7, 14, 21, 28, 35, ...]
   /** Item yang dijatuhkan tiap peti (hari -> id). Opsional: klaim lama sebelum fitur ini tidak punya catatan. */
   pathMilestoneDrops?: Record<number, string>;
+  /** Gelar & Latar badge (Versi 5.3). Opsional: profil lama otomatis memakai bawaan. */
+  ownedTitleIds?: string[];
+  ownedBadgeBgIds?: string[];
+  equippedTitleId?: string;
+  equippedBadgeBgId?: string;
   supervisorCheers: SupervisorCheerSticker[];
   // Economy & Streak
   points_balance: number; // 1 Poin = Rp 1
@@ -170,6 +184,9 @@ export interface UnboxedAccessoryDropState {
   milestoneDay: number;
   points: number;
   xp: number;
+  /** Gelar & Latar bonus dari peti ini (Versi 5.3). */
+  newTitleIds?: string[];
+  newBgIds?: string[];
 }
 
 function getRelativeDateStr(daysOffset: number): string {
@@ -177,1008 +194,129 @@ function getRelativeDateStr(daysOffset: number): string {
   return localDateStr(daysOffset);
 }
 
-export const USER_1_ID = "11111111-1111-4111-8111-111111111111"; // Adik Rara
-export const USER_2_ID = "11111111-1111-4111-8111-222222222222"; // Adik Bima
-export const USER_3_ID = "11111111-1111-4111-8111-333333333333"; // Sepupu Citra
-export const SUPERVISOR_1_ID = "22222222-2222-4222-8222-222222222222"; // Ayah & Ibu
-export const SUPERVISOR_2_ID = "22222222-2222-4222-8222-333333333333"; // Bibi Ratna (Wali)
-export const ADMIN_ID = "99999999-9999-4999-8999-999999999999"; // Abang Admin
-export const SCHOOLCHILD_1_ID = "11111111-1111-4111-8111-444444444444"; // Adik Kecil (Kelas 3 SD)
+/**
+ * Versi 5.4 — GO LIVE. Seluruh data demo (akun contoh, transaksi, misi, lencana, penukaran) sudah dihapus.
+ * Yang tersisa hanyalah 12 akun keluarga asli di bawah ini. ID bersifat tetap (deterministik) agar
+ * `supabase/migrations/004_v5_4_go_live.sql` memakai ID yang sama persis dengan aplikasi.
+ *
+ * Kunci masuk = `username` (unik) + PIN. Nama yang sama (mis. "Ekal") dipakai beberapa peran, maka
+ * halaman Login menampilkan pilihan peran saat satu nama cocok dengan lebih dari satu akun.
+ */
+export const POIN_AWAL_AKUN_BARU = 500;
+
+const realId = (n: number) =>
+  `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+export const ADMIN_ID = realId(1); // Ekal (Admin)
+export const SUPERVISOR_BUNDA_ID = realId(2);
+export const SUPERVISOR_AYAH_ID = realId(3);
+export const USER_BUNDA_ID = realId(4);
+export const USER_AYAH_ID = realId(5);
+export const USER_TIARA_ID = realId(6);
+export const SCHOOLCHILD_AIRA_ID = realId(7);
+export const USER_EKAL_ID = realId(8);
+export const USER_TANIA_ID = realId(9);
+export const USER_SOFIA_ID = realId(10);
+export const SCHOOLCHILD_EKAL_ID = realId(11);
+export const SUPERVISOR_EKAL_ID = realId(12);
+
+/**
+ * Pemetaan pengawasan.
+ * - Ayah & Bunda (Supervisor) -> Ayah, Bunda, Tiara, Aira, Tania, dan kedua akun bernama "Ekal"
+ *   (User & Anak SD).
+ * - Ekal (Supervisor) -> Sofia, Ekal (User), dan Ekal (Anak SD).
+ */
+const AWASI_ORANG_TUA: string[] = [
+  USER_AYAH_ID,
+  USER_BUNDA_ID,
+  USER_TIARA_ID,
+  SCHOOLCHILD_AIRA_ID,
+  USER_TANIA_ID,
+  USER_EKAL_ID,
+  SCHOOLCHILD_EKAL_ID,
+];
+const AWASI_EKAL: string[] = [USER_SOFIA_ID, USER_EKAL_ID, SCHOOLCHILD_EKAL_ID];
 
 export const INITIAL_SUPERVISOR_ASSIGNMENTS: SupervisorAssignment[] = [
-  // Ayah & Ibu memantau Adik Rara & Adik Bima
-  { supervisorId: SUPERVISOR_1_ID, userId: USER_1_ID },
-  { supervisorId: SUPERVISOR_1_ID, userId: USER_2_ID },
-  // Bibi Ratna (Wali) memantau Sepupu Citra & Adik Rara
-  { supervisorId: SUPERVISOR_2_ID, userId: USER_3_ID },
-  { supervisorId: SUPERVISOR_2_ID, userId: USER_1_ID },
-  // Orang Tua juga memantau Adik Kecil (Kelas 3 SD)
-  { supervisorId: SUPERVISOR_1_ID, userId: SCHOOLCHILD_1_ID },
+  ...AWASI_ORANG_TUA.map((userId) => ({ supervisorId: SUPERVISOR_BUNDA_ID, userId })),
+  ...AWASI_ORANG_TUA.map((userId) => ({ supervisorId: SUPERVISOR_AYAH_ID, userId })),
+  ...AWASI_EKAL.map((userId) => ({ supervisorId: SUPERVISOR_EKAL_ID, userId })),
 ];
+
+/** Profil baru yang bersih: Fase 1 (Telur Ajaib), tanpa riwayat apa pun. */
+function buildRealProfile(spec: {
+  id: string;
+  username: string;
+  display_name: string;
+  role: UserRole;
+  pin_code: string;
+}): ProfileData {
+  const isKid = spec.role === "schoolchild";
+  const isPlayer = spec.role === "user" || isKid;
+  const budget = isKid ? 150000 : 1500000;
+  const today = getRelativeDateStr(0);
+  return {
+    id: spec.id,
+    username: spec.username,
+    display_name: spec.display_name,
+    role: spec.role,
+    pin_code: spec.pin_code,
+    createdAt: today,
+    avatar_theme: spec.role === "admin" ? "mochi-boss" : spec.role === "supervisor" ? "mochi-parent" : "mochi-cat",
+    xp: 0,
+    level: 1,
+    currentStage: 1,
+    stageXp: 0,
+    stageRecordedDays: 0,
+    petCustomName: "Mochi",
+    activeSpecies: "chubby_cat",
+    unlockedSpecies: ["chubby_cat"],
+    ownedPets: {
+      chubby_cat: {
+        species: "chubby_cat",
+        customName: "Mochi",
+        currentStage: 1,
+        stageXp: 0,
+        stageRecordedDays: 0,
+        unlockedAt: today,
+      },
+    },
+    ownedAccessories: isPlayer ? ["head_straw_hat", "bg_warm_room"] : [],
+    equippedAccessories: {},
+    claimedPathMilestones: [],
+    supervisorCheers: [],
+    points_balance: isPlayer ? POIN_AWAL_AKUN_BARU : 0,
+    lifetime_points: isPlayer ? POIN_AWAL_AKUN_BARU : 0,
+    current_streak: 0,
+    longest_streak: 0,
+    streak_freeze_count: isPlayer ? 1 : 0,
+    // Kemarin: catatan pertama hari ini langsung menyambung menjadi streak 1 (lihat evaluator streak).
+    last_recorded_date: getRelativeDateStr(-1),
+    monthly_budget_target: budget,
+    monthly_saving_target: Math.round(budget * 0.2),
+  };
+}
 
 export const INITIAL_PROFILES: ProfileData[] = [
-  {
-    id: USER_1_ID,
-    username: "adik",
-    display_name: "Adik Rara (Mahasiswi)",
-    role: "user",
-    pin_code: "1111",
-    avatar_theme: "mochi-cat",
-    xp: 630,
-    level: 6,
-    currentStage: 3, // Balita Gembul (Menuju Stage 4: butuh 1800 Stage XP & 25 Hari)
-    stageXp: 540,
-    stageRecordedDays: 8,
-    petCustomName: "Mochi",
-    activeSpecies: "chubby_cat",
-    unlockedSpecies: ["chubby_cat"],
-    ownedPets: {
-      chubby_cat: {
-        species: "chubby_cat",
-        customName: "Mochi",
-        currentStage: 3,
-        stageXp: 540,
-        stageRecordedDays: 8,
-        unlockedAt: getRelativeDateStr(-8),
-      },
-    },
-    ownedAccessories: [
-      "head_straw_hat",
-      "outfit_tee",
-      "prop_patched_cardboard",
-      "bg_warm_room",
-      "head_pastel_ribbon",
-      "outfit_knit_sweater",
-      "neck_knit_scarf",
-      "face_round_glasses",
-    ],
-    equippedAccessories: {
-      head: "head_pastel_ribbon",
-      outfit: "outfit_knit_sweater",
-      neck: "neck_knit_scarf",
-      background: "bg_warm_room",
-    },
-    claimedPathMilestones: [],
-    supervisorCheers: [
-      {
-        id: "cheer-seed-1",
-        fromSupervisorName: "Ayah & Ibu (Orang Tua)",
-        stickerLabel: "Stiker Bintang Kebanggaan Keluarga",
-        message: "Bangga banget lihat catatan kas Rara minggu ini rapi & jujur!",
-        sentAt: getRelativeDateStr(-1),
-      },
-    ],
-    points_balance: 3260,
-    lifetime_points: 5260,
-    current_streak: 8,
-    longest_streak: 9,
-    streak_freeze_count: 2,
-    last_recorded_date: getRelativeDateStr(0),
-    last_daily_claim_date: getRelativeDateStr(-1),
-    monthly_budget_target: 1800000,
-    monthly_saving_target: 350000,
-  },
-  {
-    id: USER_2_ID,
-    username: "bima",
-    display_name: "Adik Bima (SMA)",
-    role: "user",
-    pin_code: "1212",
-    avatar_theme: "mochi-capybara",
-    xp: 1450,
-    level: 12,
-    currentStage: 4, // Anak Ceria
-    stageXp: 620,
-    stageRecordedDays: 10,
-    petCustomName: "Yuzu",
-    activeSpecies: "capybara_chill",
-    unlockedSpecies: ["chubby_cat", "capybara_chill"],
-    ownedPets: {
-      chubby_cat: {
-        species: "chubby_cat",
-        customName: "Mochi",
-        currentStage: 2,
-        stageXp: 180,
-        stageRecordedDays: 4,
-        unlockedAt: getRelativeDateStr(-15),
-      },
-      capybara_chill: {
-        species: "capybara_chill",
-        customName: "Yuzu",
-        currentStage: 4,
-        stageXp: 620,
-        stageRecordedDays: 10,
-        unlockedAt: getRelativeDateStr(-10),
-      },
-    },
-    ownedAccessories: [
-      "head_straw_hat",
-      "head_grad_cap",
-      "outfit_cozy_hoodie",
-      "prop_matcha_boba",
-      "face_round_glasses",
-      "bg_warm_room",
-    ],
-    equippedAccessories: {
-      head: "head_grad_cap",
-      outfit: "outfit_cozy_hoodie",
-      prop: "prop_matcha_boba",
-      face: "face_round_glasses",
-    },
-    claimedPathMilestones: [7],
-    supervisorCheers: [],
-    points_balance: 2400,
-    lifetime_points: 5400,
-    current_streak: 10,
-    longest_streak: 14,
-    streak_freeze_count: 2,
-    last_recorded_date: getRelativeDateStr(0),
-    last_daily_claim_date: getRelativeDateStr(-1),
-    monthly_budget_target: 1200000,
-    monthly_saving_target: 250000,
-  },
-  {
-    id: USER_3_ID,
-    username: "citra",
-    display_name: "Sepupu Citra (Kos Baru)",
-    role: "user",
-    pin_code: "1313",
-    avatar_theme: "mochi-fox",
-    xp: 140,
-    level: 2,
-    currentStage: 1, // Telur Ajaib (Menuju Stage 2: butuh 350 Stage XP & 7 Hari)
-    stageXp: 140,
-    stageRecordedDays: 3,
-    petCustomName: "Stroberi",
-    activeSpecies: "lop_bunny",
-    unlockedSpecies: ["chubby_cat", "lop_bunny"],
-    ownedPets: {
-      chubby_cat: {
-        species: "chubby_cat",
-        customName: "Mochi",
-        currentStage: 2,
-        stageXp: 90,
-        stageRecordedDays: 2,
-        unlockedAt: getRelativeDateStr(-7),
-      },
-      lop_bunny: {
-        species: "lop_bunny",
-        customName: "Stroberi",
-        currentStage: 1,
-        stageXp: 140,
-        stageRecordedDays: 3,
-        unlockedAt: getRelativeDateStr(-3),
-      },
-    },
-    ownedAccessories: ["head_straw_hat", "prop_patched_cardboard"],
-    equippedAccessories: {
-      head: "head_straw_hat",
-      prop: "prop_patched_cardboard",
-    },
-    claimedPathMilestones: [],
-    supervisorCheers: [],
-    points_balance: 620,
-    lifetime_points: 620,
-    current_streak: 3,
-    longest_streak: 3,
-    streak_freeze_count: 1,
-    last_recorded_date: getRelativeDateStr(0),
-    last_daily_claim_date: getRelativeDateStr(-1),
-    monthly_budget_target: 1500000,
-    monthly_saving_target: 300000,
-  },
-  {
-    id: SCHOOLCHILD_1_ID,
-    username: "adik_sd",
-    display_name: "Adik Kecil (Kelas 3 SD)",
-    role: "schoolchild",
-    pin_code: "3333",
-    avatar_theme: "mochi-cat",
-    xp: 180,
-    level: 2,
-    currentStage: 2, // Menetas Imut
-    stageXp: 120,
-    stageRecordedDays: 3,
-    petCustomName: "Kumo",
-    activeSpecies: "hamster_cheek",
-    unlockedSpecies: ["hamster_cheek"],
-    ownedPets: {
-      hamster_cheek: {
-        species: "hamster_cheek",
-        customName: "Kumo",
-        currentStage: 2,
-        stageXp: 120,
-        stageRecordedDays: 3,
-        unlockedAt: getRelativeDateStr(-4),
-      },
-    },
-    ownedAccessories: ["head_straw_hat", "bg_warm_room"],
-    equippedAccessories: { head: "head_straw_hat", background: "bg_warm_room" },
-    claimedPathMilestones: [],
-    supervisorCheers: [],
-    points_balance: 90,
-    lifetime_points: 90,
-    current_streak: 4,
-    longest_streak: 4,
-    streak_freeze_count: 1,
-    // Kemarin sudah menulis cerita -> hari ini belum, jadi beranda menampilkan pengingat.
-    last_recorded_date: getRelativeDateStr(-1),
-    monthly_budget_target: 150000,
-    monthly_saving_target: 50000,
-  },
-  {
-    id: SUPERVISOR_1_ID,
-    username: "orangtua",
-    display_name: "Ayah & Ibu (Orang Tua)",
-    role: "supervisor",
-    pin_code: "2222",
-    avatar_theme: "mochi-parent",
-    xp: 0,
-    level: 1,
-    currentStage: 1,
-    stageXp: 0,
-    stageRecordedDays: 0,
-    petCustomName: "Mochi",
-    activeSpecies: "chubby_cat",
-    unlockedSpecies: ["chubby_cat"],
-    ownedPets: {
-      chubby_cat: {
-        species: "chubby_cat",
-        customName: "Mochi",
-        currentStage: 1,
-        stageXp: 0,
-        stageRecordedDays: 0,
-        unlockedAt: getRelativeDateStr(0),
-      },
-    },
-    ownedAccessories: [],
-    equippedAccessories: {},
-    claimedPathMilestones: [],
-    supervisorCheers: [],
-    points_balance: 0,
-    lifetime_points: 0,
-    current_streak: 0,
-    longest_streak: 0,
-    streak_freeze_count: 0,
-    last_recorded_date: getRelativeDateStr(0),
-    monthly_budget_target: 1800000,
-    monthly_saving_target: 350000,
-  },
-  {
-    id: SUPERVISOR_2_ID,
-    username: "wali",
-    display_name: "Bibi Ratna (Wali Kos)",
-    role: "supervisor",
-    pin_code: "3333",
-    avatar_theme: "mochi-guardian",
-    xp: 0,
-    level: 1,
-    currentStage: 1,
-    stageXp: 0,
-    stageRecordedDays: 0,
-    petCustomName: "Mochi",
-    activeSpecies: "chubby_cat",
-    unlockedSpecies: ["chubby_cat"],
-    ownedPets: {
-      chubby_cat: {
-        species: "chubby_cat",
-        customName: "Mochi",
-        currentStage: 1,
-        stageXp: 0,
-        stageRecordedDays: 0,
-        unlockedAt: getRelativeDateStr(0),
-      },
-    },
-    ownedAccessories: [],
-    equippedAccessories: {},
-    claimedPathMilestones: [],
-    supervisorCheers: [],
-    points_balance: 0,
-    lifetime_points: 0,
-    current_streak: 0,
-    longest_streak: 0,
-    streak_freeze_count: 0,
-    last_recorded_date: getRelativeDateStr(0),
-    monthly_budget_target: 1500000,
-    monthly_saving_target: 300000,
-  },
-  {
-    id: ADMIN_ID,
-    username: "abang",
-    display_name: "Abang (Admin & Sponsor Poin)",
-    role: "admin",
-    pin_code: "9999",
-    avatar_theme: "mochi-boss",
-    xp: 3500,
-    level: 18,
-    currentStage: 6,
-    stageXp: 1200,
-    stageRecordedDays: 22,
-    petCustomName: "Sultan Rusty",
-    activeSpecies: "red_panda",
-    unlockedSpecies: [
-      "chubby_cat",
-      "hamster_cheek",
-      "lop_bunny",
-      "capybara_chill",
-      "red_panda",
-    ],
-    ownedPets: {
-      chubby_cat: {
-        species: "chubby_cat",
-        customName: "Mochi",
-        currentStage: 4,
-        stageXp: 400,
-        stageRecordedDays: 10,
-        unlockedAt: getRelativeDateStr(-30),
-      },
-      red_panda: {
-        species: "red_panda",
-        customName: "Sultan Rusty",
-        currentStage: 6,
-        stageXp: 1200,
-        stageRecordedDays: 22,
-        unlockedAt: getRelativeDateStr(-20),
-      },
-    },
-    ownedAccessories: [
-      "head_top_hat",
-      "outfit_boss_suit",
-      "prop_pastel_scooter",
-      "aura_sparkle_stars",
-      "bg_gold_vault",
-    ],
-    equippedAccessories: {
-      head: "head_top_hat",
-      outfit: "outfit_boss_suit",
-      prop: "prop_pastel_scooter",
-    },
-    claimedPathMilestones: [7, 14],
-    supervisorCheers: [],
-    points_balance: 50000,
-    lifetime_points: 50000,
-    current_streak: 14,
-    longest_streak: 14,
-    streak_freeze_count: 5,
-    last_recorded_date: getRelativeDateStr(0),
-    monthly_budget_target: 1800000,
-    monthly_saving_target: 350000,
-  },
+  buildRealProfile({ id: ADMIN_ID, username: "ekal_admin", display_name: "Ekal (Admin)", role: "admin", pin_code: "0000" }),
+  buildRealProfile({ id: SUPERVISOR_BUNDA_ID, username: "bunda_sv", display_name: "Bunda (Supervisor)", role: "supervisor", pin_code: "1111" }),
+  buildRealProfile({ id: SUPERVISOR_AYAH_ID, username: "ayah_sv", display_name: "Ayah (Supervisor)", role: "supervisor", pin_code: "1111" }),
+  buildRealProfile({ id: USER_BUNDA_ID, username: "bunda", display_name: "Bunda", role: "user", pin_code: "2222" }),
+  buildRealProfile({ id: USER_AYAH_ID, username: "ayah", display_name: "Ayah", role: "user", pin_code: "2222" }),
+  buildRealProfile({ id: USER_TIARA_ID, username: "tiara", display_name: "Tiara", role: "user", pin_code: "1111" }),
+  buildRealProfile({ id: SCHOOLCHILD_AIRA_ID, username: "aira", display_name: "Aira", role: "schoolchild", pin_code: "1111" }),
+  buildRealProfile({ id: USER_EKAL_ID, username: "ekal", display_name: "Ekal", role: "user", pin_code: "1111" }),
+  buildRealProfile({ id: USER_TANIA_ID, username: "tania", display_name: "Tania", role: "user", pin_code: "1111" }),
+  buildRealProfile({ id: USER_SOFIA_ID, username: "sofia", display_name: "Sofia", role: "user", pin_code: "1111" }),
+  buildRealProfile({ id: SCHOOLCHILD_EKAL_ID, username: "ekal_sd", display_name: "Ekal (Anak SD)", role: "schoolchild", pin_code: "2222" }),
+  buildRealProfile({ id: SUPERVISOR_EKAL_ID, username: "ekal_sv", display_name: "Ekal (Supervisor)", role: "supervisor", pin_code: "3333" }),
 ];
 
-export const INITIAL_TRANSACTIONS: TransactionRecord[] = [
-  // === TRANSAKSI ADIK RARA (USER_1_ID — Perjalanan sejak Hari ke-1 = H-7 s/d Hari ke-8 = Hari Ini) ===
-  {
-    id: "tx-seed-0a",
-    user_id: USER_1_ID,
-    type: "income",
-    category: "Uang Saku Bulanan",
-    need_or_want: "income",
-    title: "Transfer Uang Saku Bulanan dari Orang Tua",
-    total_amount: 1800000,
-    is_itemized: false,
-    points_earned: 5,
-    xp_earned: 10,
-    transaction_date: getRelativeDateStr(-7),
-    created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
-    items: [],
-  },
-  {
-    id: "tx-seed-0b",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Makan Pokok",
-    need_or_want: "need",
-    title: "Sarapan Bubur Ayam & Teh Hangat",
-    total_amount: 17000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(-7),
-    created_at: new Date(Date.now() - 7 * 86400000 + 3600000).toISOString(),
-    items: [
-      {
-        id: "it-001",
-        transaction_id: "tx-seed-0b",
-        item_name: "Bubur Ayam Komplit",
-        quantity: 1,
-        unit_price: 13000,
-        subtotal: 13000,
-      },
-      {
-        id: "it-002",
-        transaction_id: "tx-seed-0b",
-        item_name: "Teh Manis Hangat",
-        quantity: 1,
-        unit_price: 4000,
-        subtotal: 4000,
-      },
-    ],
-  },
-  {
-    id: "tx-seed-0c",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Transportasi",
-    need_or_want: "need",
-    title: "Isi Saldo Kartu KRL & Busway",
-    total_amount: 25000,
-    is_itemized: false,
-    points_earned: 5,
-    xp_earned: 10,
-    transaction_date: getRelativeDateStr(-6),
-    created_at: new Date(Date.now() - 6 * 86400000).toISOString(),
-    items: [],
-  },
-  {
-    id: "tx-seed-2",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Makan Pokok",
-    need_or_want: "need",
-    title: "Makan Siang Kantin & Air Mineral",
-    total_amount: 24000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(-5),
-    created_at: new Date(Date.now() - 5 * 86400000 + 3600000).toISOString(),
-    items: [
-      {
-        id: "it-201",
-        transaction_id: "tx-seed-2",
-        item_name: "Nasi Ayam Bakar Madu",
-        quantity: 1,
-        unit_price: 18000,
-        subtotal: 18000,
-      },
-      {
-        id: "it-202",
-        transaction_id: "tx-seed-2",
-        item_name: "Air Mineral Botol",
-        quantity: 1,
-        unit_price: 6000,
-        subtotal: 6000,
-      },
-    ],
-  },
-  {
-    id: "tx-seed-3",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Kopi/Minuman",
-    need_or_want: "want",
-    title: "Es Kopi Susu Gula Aren",
-    total_amount: 19000,
-    is_itemized: false,
-    points_earned: 5,
-    xp_earned: 10,
-    transaction_date: getRelativeDateStr(-5),
-    created_at: new Date(Date.now() - 5 * 86400000 + 7200000).toISOString(),
-    items: [],
-  },
-  {
-    id: "tx-seed-4",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Kuliah/Alat Tulis",
-    need_or_want: "need",
-    title: "Beli Alat Tulis & Fotokopi Modul",
-    total_amount: 31000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(-4),
-    created_at: new Date(Date.now() - 4 * 86400000).toISOString(),
-    items: [
-      {
-        id: "it-401",
-        transaction_id: "tx-seed-4",
-        item_name: "Buku Catatan Bergaris",
-        quantity: 1,
-        unit_price: 15000,
-        subtotal: 15000,
-      },
-      {
-        id: "it-402",
-        transaction_id: "tx-seed-4",
-        item_name: "Pulpen Gel Hitam",
-        quantity: 2,
-        unit_price: 5000,
-        subtotal: 10000,
-      },
-      {
-        id: "it-403",
-        transaction_id: "tx-seed-4",
-        item_name: "Fotokopi Modul Kuliah",
-        quantity: 1,
-        unit_price: 6000,
-        subtotal: 6000,
-      },
-    ],
-  },
-  {
-    id: "tx-seed-5",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Kopi/Minuman",
-    need_or_want: "want",
-    title: "Kopi Kenangan Mantan",
-    total_amount: 22000,
-    is_itemized: false,
-    points_earned: 5,
-    xp_earned: 10,
-    transaction_date: getRelativeDateStr(-4),
-    created_at: new Date(Date.now() - 4 * 86400000 + 3600000).toISOString(),
-    items: [],
-  },
-  {
-    id: "tx-seed-6",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Makan Pokok",
-    need_or_want: "need",
-    title: "Makan Malam Warung Pak Kumis",
-    total_amount: 23000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(-3),
-    created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-    items: [
-      {
-        id: "it-601",
-        transaction_id: "tx-seed-6",
-        item_name: "Nasi Goreng Spesial",
-        quantity: 1,
-        unit_price: 15000,
-        subtotal: 15000,
-      },
-      {
-        id: "it-602",
-        transaction_id: "tx-seed-6",
-        item_name: "Es Teh Manis",
-        quantity: 1,
-        unit_price: 5000,
-        subtotal: 5000,
-      },
-      {
-        id: "it-603",
-        transaction_id: "tx-seed-6",
-        item_name: "Kerupuk Kaleng",
-        quantity: 1,
-        unit_price: 3000,
-        subtotal: 3000,
-      },
-    ],
-  },
-  {
-    id: "tx-seed-7",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Kopi/Minuman",
-    need_or_want: "want",
-    title: "Matcha Latte Dingin",
-    total_amount: 21000,
-    is_itemized: false,
-    points_earned: 5,
-    xp_earned: 10,
-    transaction_date: getRelativeDateStr(-3),
-    created_at: new Date(Date.now() - 3 * 86400000 + 5400000).toISOString(),
-    items: [],
-  },
-  {
-    id: "tx-seed-8",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Transportasi",
-    need_or_want: "need",
-    title: "Naik KRL & Ojek Stasiun",
-    total_amount: 18000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(-2),
-    created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
-    items: [
-      {
-        id: "it-801",
-        transaction_id: "tx-seed-8",
-        item_name: "Tiket KRL Commuter",
-        quantity: 1,
-        unit_price: 6000,
-        subtotal: 6000,
-      },
-      {
-        id: "it-802",
-        transaction_id: "tx-seed-8",
-        item_name: "Ojek Online Stasiun",
-        quantity: 1,
-        unit_price: 12000,
-        subtotal: 12000,
-      },
-    ],
-  },
-  {
-    id: "tx-seed-9",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Kopi/Minuman",
-    need_or_want: "want",
-    title: "Boba Brown Sugar Fresh Milk",
-    total_amount: 24000,
-    is_itemized: false,
-    points_earned: 5,
-    xp_earned: 10,
-    transaction_date: getRelativeDateStr(-2),
-    created_at: new Date(Date.now() - 2 * 86400000 + 3600000).toISOString(),
-    items: [],
-  },
-  {
-    id: "tx-seed-10",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Makan Pokok",
-    need_or_want: "need",
-    title: "Makan Siang Warteg Bahari",
-    total_amount: 22000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(-1),
-    created_at: new Date(Date.now() - 1 * 86400000).toISOString(),
-    items: [
-      {
-        id: "it-1001",
-        transaction_id: "tx-seed-10",
-        item_name: "Nasi Sayur Sop & Telur Dadar",
-        quantity: 1,
-        unit_price: 14000,
-        subtotal: 14000,
-      },
-      {
-        id: "it-1002",
-        transaction_id: "tx-seed-10",
-        item_name: "Tempe Orek & Perkedel",
-        quantity: 1,
-        unit_price: 5000,
-        subtotal: 5000,
-      },
-      {
-        id: "it-1003",
-        transaction_id: "tx-seed-10",
-        item_name: "Es Jeruk Peras",
-        quantity: 1,
-        unit_price: 3000,
-        subtotal: 3000,
-      },
-    ],
-  },
-  {
-    id: "tx-seed-11",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Makan Pokok",
-    need_or_want: "need",
-    title: "Makan Siang Nasi Goreng & Es Teh",
-    total_amount: 23000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(0),
-    created_at: new Date(Date.now() - 7200000).toISOString(),
-    items: [
-      {
-        id: "it-1101",
-        transaction_id: "tx-seed-11",
-        item_name: "Nasi Goreng Kampung",
-        quantity: 1,
-        unit_price: 15000,
-        subtotal: 15000,
-      },
-      {
-        id: "it-1102",
-        transaction_id: "tx-seed-11",
-        item_name: "Es Teh Manis Segar",
-        quantity: 1,
-        unit_price: 5000,
-        subtotal: 5000,
-      },
-      {
-        id: "it-1103",
-        transaction_id: "tx-seed-11",
-        item_name: "Kerupuk Udang",
-        quantity: 1,
-        unit_price: 3000,
-        subtotal: 3000,
-      },
-    ],
-  },
-  {
-    id: "tx-seed-12",
-    user_id: USER_1_ID,
-    type: "expense",
-    category: "Kopi/Minuman",
-    need_or_want: "want",
-    title: "Es Kopi Susu Kampus",
-    total_amount: 16000,
-    is_itemized: false,
-    points_earned: 5,
-    xp_earned: 10,
-    transaction_date: getRelativeDateStr(0),
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-    items: [],
-  },
-
-  // === TRANSAKSI ADIK BIMA (USER_2_ID) ===
-  {
-    id: "tx-bima-1",
-    user_id: USER_2_ID,
-    type: "income",
-    category: "Uang Saku Bulanan",
-    need_or_want: "income",
-    title: "Uang Saku Sekolah Bulanan Bima",
-    total_amount: 1200000,
-    is_itemized: false,
-    points_earned: 5,
-    xp_earned: 10,
-    transaction_date: getRelativeDateStr(-4),
-    created_at: new Date(Date.now() - 4 * 86400000).toISOString(),
-    items: [],
-  },
-  {
-    id: "tx-bima-2",
-    user_id: USER_2_ID,
-    type: "expense",
-    category: "Makan Pokok",
-    need_or_want: "need",
-    title: "Makan Siang Kantin SMA & Susu Kotak",
-    total_amount: 21000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(0),
-    created_at: new Date(Date.now() - 5400000).toISOString(),
-    items: [
-      {
-        id: "it-bima-201",
-        transaction_id: "tx-bima-2",
-        item_name: "Soto Ayam Kantin",
-        quantity: 1,
-        unit_price: 15000,
-        subtotal: 15000,
-      },
-      {
-        id: "it-bima-202",
-        transaction_id: "tx-bima-2",
-        item_name: "Susu UHT Coklat",
-        quantity: 1,
-        unit_price: 6000,
-        subtotal: 6000,
-      },
-    ],
-  },
-  {
-    id: "tx-bima-3",
-    user_id: USER_2_ID,
-    type: "expense",
-    category: "Kuliah/Alat Tulis",
-    need_or_want: "need",
-    title: "Beli Buku Latihan Olimpiade & Jangka",
-    total_amount: 45000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(-1),
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    items: [
-      {
-        id: "it-bima-301",
-        transaction_id: "tx-bima-3",
-        item_name: "Buku Soal Matematika",
-        quantity: 1,
-        unit_price: 32000,
-        subtotal: 32000,
-      },
-      {
-        id: "it-bima-302",
-        transaction_id: "tx-bima-3",
-        item_name: "Jangka Besi & Penggaris",
-        quantity: 1,
-        unit_price: 13000,
-        subtotal: 13000,
-      },
-    ],
-  },
-
-  // === TRANSAKSI SEPUPU CITRA (USER_3_ID) ===
-  {
-    id: "tx-citra-1",
-    user_id: USER_3_ID,
-    type: "income",
-    category: "Uang Saku Bulanan",
-    need_or_want: "income",
-    title: "Kiriman Bulanan Kos Citra",
-    total_amount: 1500000,
-    is_itemized: false,
-    points_earned: 5,
-    xp_earned: 10,
-    transaction_date: getRelativeDateStr(-3),
-    created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-    items: [],
-  },
-  {
-    id: "tx-citra-2",
-    user_id: USER_3_ID,
-    type: "expense",
-    category: "Makan Pokok",
-    need_or_want: "need",
-    title: "Belanja Sayur & Telur Masak di Kos",
-    total_amount: 28000,
-    is_itemized: true,
-    points_earned: 10,
-    xp_earned: 20,
-    transaction_date: getRelativeDateStr(0),
-    created_at: new Date(Date.now() - 4200000).toISOString(),
-    items: [
-      {
-        id: "it-citra-201",
-        transaction_id: "tx-citra-2",
-        item_name: "Telur Ayam 1/2 Kg",
-        quantity: 1,
-        unit_price: 16000,
-        subtotal: 16000,
-      },
-      {
-        id: "it-citra-202",
-        transaction_id: "tx-citra-2",
-        item_name: "Sayur Bayam & Tempe",
-        quantity: 1,
-        unit_price: 12000,
-        subtotal: 12000,
-      },
-    ],
-  },
-];
-
-export const INITIAL_MISSIONS: MissionRecord[] = [
-  {
-    id: "mis-1",
-    user_id: USER_1_ID,
-    mission_type: "daily",
-    title: "Detektif Struk Harian",
-    description:
-      "Catat 1 pengeluaran hari ini dengan rincian minimal 2 sub-item spesifik.",
-    target_value: 1,
-    current_value: 1,
-    reward_points: 15,
-    reward_xp: 25,
-    is_claimed: false,
-    valid_until: getRelativeDateStr(0),
-  },
-  {
-    id: "mis-2",
-    user_id: USER_1_ID,
-    mission_type: "daily",
-    title: "Rem Pakem Harian",
-    description:
-      "Pengeluaran kategori Jajan/Wants hari ini di bawah 50% batas harian.",
-    target_value: 1,
-    current_value: 1,
-    reward_points: 15,
-    reward_xp: 25,
-    is_claimed: false,
-    valid_until: getRelativeDateStr(0),
-  },
-  {
-    id: "mis-3",
-    user_id: USER_1_ID,
-    mission_type: "daily",
-    title: "Jurnal Jujur",
-    description: "Catat transaksi harianmu sebelum jam 21:00 WIB.",
-    target_value: 1,
-    current_value: 1,
-    reward_points: 15,
-    reward_xp: 25,
-    is_claimed: false,
-    valid_until: getRelativeDateStr(0),
-  },
-  {
-    id: "mis-4",
-    user_id: USER_1_ID,
-    mission_type: "weekly",
-    title: "Evaluasi Anggaran Mingguan",
-    description:
-      "Selesaikan 7 hari penuh dengan total pengeluaran di bawah Budget Mingguan.",
-    target_value: 7,
-    current_value: 6,
-    reward_points: 150,
-    reward_xp: 120,
-    is_claimed: false,
-    valid_until: getRelativeDateStr(2),
-  },
-  {
-    id: "mis-5",
-    user_id: USER_1_ID,
-    mission_type: "saving_challenge",
-    title: "Disiplin Tabungan Rp350.000",
-    description:
-      "Pertahankan sisa uang saku minimal Rp350.000 hingga akhir bulan untuk masuk celengan.",
-    target_value: 350000,
-    current_value: 350000,
-    reward_points: 150,
-    reward_xp: 120,
-    is_claimed: false,
-    valid_until: getRelativeDateStr(20),
-  },
-  {
-    id: "mis-6",
-    user_id: USER_1_ID,
-    mission_type: "budget_challenge",
-    title: "Evaluasi Mingguan Tanpa Boros Minuman",
-    description:
-      "Batasi jajan minuman manis maksimal 5x minggu ini agar dompet tetap aman.",
-    target_value: 5,
-    current_value: 5,
-    reward_points: 150,
-    reward_xp: 120,
-    is_claimed: false,
-    valid_until: getRelativeDateStr(4),
-  },
-];
-
-export const INITIAL_BADGES: UserBadgeRecord[] = [
-  {
-    id: "bdg-1",
-    user_id: USER_1_ID,
-    badge_code: "streak_7",
-    badge_name: BADGE_META.streak_7.title,
-    praise_quote:
-      "Penabung Ulung: Konsistensimu mencatat 7 hari berturut-turut adalah awal dari kebebasan finansial!",
-    unlocked_at: getRelativeDateStr(-2),
-  },
-  {
-    id: "bdg-2",
-    user_id: USER_1_ID,
-    badge_code: "detail_master",
-    badge_name: BADGE_META.detail_master.title,
-    praise_quote:
-      "Kejujuran dan ketelitianmu mencatat setiap rincian struk membuat pet kesayanganmu sangat bangga!",
-    unlocked_at: getRelativeDateStr(-1),
-  },
-  {
-    id: "bdg-3",
-    user_id: USER_1_ID,
-    badge_code: "budget_guardian",
-    badge_name: BADGE_META.budget_guardian.title,
-    praise_quote:
-      "Hebat! Kamu selalu memikirkan kebutuhan utama sebelum keinginan sesaat.",
-    unlocked_at: getRelativeDateStr(0),
-  },
-];
-
-export const INITIAL_REDEMPTIONS: PointRedemptionRecord[] = [
-  {
-    id: "red-1",
-    user_id: USER_1_ID,
-    points_redeemed: 1000,
-    rupiah_value: 1000,
-    status: "approved",
-    note: "Tukar poin konsistensi buat tambahan tabungan buku kuliah",
-    created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-    approved_at: new Date(Date.now() - 2 * 86400000).toISOString(),
-  },
-  {
-    id: "red-2",
-    user_id: USER_1_ID,
-    points_redeemed: 1500,
-    rupiah_value: 1500,
-    status: "pending",
-    note: "Tukar poin rajin mencatat minggu ini buat ditabung ke celengan!",
-    created_at: new Date(Date.now() - 1800000).toISOString(),
-    approved_at: null,
-  },
-];
+/* Go live: tidak ada transaksi, misi, lencana, atau penukaran contoh. */
+export const INITIAL_TRANSACTIONS: TransactionRecord[] = [];
+export const INITIAL_MISSIONS: MissionRecord[] = [];
+export const INITIAL_BADGES: UserBadgeRecord[] = [];
+export const INITIAL_REDEMPTIONS: PointRedemptionRecord[] = [];
 
 /**
  * Helper: Evaluasi kenaikan Fase Pertumbuhan (Stage 1..8) untuk Pet Aktif
@@ -1327,7 +465,6 @@ interface BukuDompetState {
   zeroSpendDates: string[];
   mysteryBoxCount: number;
   openedCheckpointWeeks: number[];
-  isSandboxMode: boolean;
   isProudComboActive: boolean;
   lastSupervisorCheerDate: string | null;
   supervisorCheersCount: number;
@@ -1387,8 +524,6 @@ interface BukuDompetState {
   // Versi 5.0: Streak ketat & Mode Streak Padam
   /** Evaluasi semua profil anak/user terhadap tanggal hari ini. Idempoten per hari. */
   runStreakEvaluation: () => void;
-  /** Tombol uji/demo: nyalakan atau matikan suasana dingin untuk satu profil. */
-  setColdStreakMode: (profileId: string, cold: boolean) => void;
   /**
    * Beri hadiah generik (Poin + Stage XP) ke profil, opsional sekaligus menyambung streak.
    * Dipakai Cerita Harian, Arcade, Misi Katalog, Tabungan, dan Hadiah Poin dari keluarga.
@@ -1445,7 +580,6 @@ interface BukuDompetState {
   clearRewardToast: () => void;
   closeCelebrationModal: () => void;
   triggerParticleBurst: (type?: "coin" | "xp" | "both") => void;
-  toggleSandboxMode: () => void;
 
   // Pet Customization, Boutique Shop & Evolution Actions
   renamePet: (newName: string) => { success: boolean; message: string };
@@ -1470,6 +604,11 @@ interface BukuDompetState {
   };
   equipMochiStage: (stage: MochiStage | null) => void;
   equipSpecialTitle: (title: string) => void;
+  /** Gelar & Latar badge (Versi 5.3). */
+  buyBadgeItem: (kind: "title" | "bg", id: string) => { success: boolean; message: string };
+  equipBadge: (profileId: string, pick: { titleId?: string; bgId?: string }) => { success: boolean; message: string };
+  /** Buka gelar/latar sekaligus (hadiah Peti/Medali). Mengembalikan yang benar-benar baru. */
+  unlockBadgeItems: (profileId: string, unlock: BadgeUnlock) => { titleIds: string[]; bgIds: string[] };
   petMochiForAffection: () => { xpEarned: number; leveledUp: boolean };
   buyStreakFreezeShield: (packId?: ShieldPackId) => { success: boolean; message: string };
 
@@ -1488,6 +627,16 @@ interface BukuDompetState {
     isCombo: boolean;
     dailyCapReached: boolean;
   };
+
+  /** Versi 5.4: ubah catatan HARI INI milik sendiri. Poin & XP yang sudah didapat tidak berubah. */
+  updateTransaction: (
+    id: string,
+    patch: { title: string; category: string; total_amount?: number }
+  ) => { success: boolean; message: string };
+  /** Versi 5.4: hapus catatan HARI INI milik sendiri. Poin & XP tidak ditarik, kuota 3 transaksi berpoin tetap terhitung. */
+  removeTransaction: (id: string) => { success: boolean; message: string };
+  /** Jumlah transaksi berpoin yang sudah dihapus per `userId:tanggal` (agar kuota harian tidak bisa dicurangi). */
+  deletedRewardLedger: Record<string, number>;
 
   recordZeroSpendDay: () => {
     alreadyRecorded: boolean;
@@ -1544,7 +693,6 @@ interface BukuDompetState {
     targetUserId?: string;
   }) => void;
 
-  resetToDemoSeed: () => void;
   syncWithSupabaseIfAvailable: () => Promise<void>;
 }
 
@@ -1566,6 +714,25 @@ async function trySupabaseInsert(table: string, row: Record<string, unknown>) {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Ubah/hapus baris transaksi di Supabase (best-effort). `patch = null` berarti hapus. */
+async function trySupabaseMutate(
+  tx: Pick<TransactionRecord, "id" | "user_id" | "created_at">,
+  patch: Record<string, unknown> | null
+) {
+  try {
+    if (typeof window === "undefined" || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    const supabase = createSupabaseBrowserClient();
+    const base = supabase.from("transactions");
+    const q = patch ? base.update(patch) : base.delete();
+    // Baris bawaan server punya UUID; baris buatan lokal dicocokkan lewat pemilik + waktu buat.
+    await (UUID_RE.test(tx.id) ? q.eq("id", tx.id) : q.eq("user_id", tx.user_id).eq("created_at", tx.created_at));
+  } catch {
+    // Tetap lokal bila tabel belum dimigrasi
+  }
+}
+
 function getActiveUserProfile(state: {
   currentRole: UserRole;
   activeProfileId: string;
@@ -1583,7 +750,9 @@ function getActiveUserProfile(state: {
   );
   if (monitored) return monitored;
   return (
-    state.profiles.find((p) => isChildRole(p.role)) || INITIAL_PROFILES[0]
+    state.profiles.find((p) => isChildRole(p.role)) ||
+    INITIAL_PROFILES.find((p) => p.id === USER_EKAL_ID) ||
+    INITIAL_PROFILES[0]
   );
 }
 
@@ -1611,8 +780,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
   persist(
     (set, get) => ({
       currentRole: "user",
-      activeProfileId: USER_1_ID,
-      monitoredUserId: USER_1_ID,
+      activeProfileId: USER_EKAL_ID,
+      monitoredUserId: USER_EKAL_ID,
       profiles: INITIAL_PROFILES,
       supervisorAssignments: INITIAL_SUPERVISOR_ASSIGNMENTS,
       transactions: INITIAL_TRANSACTIONS,
@@ -1625,7 +794,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
       zeroSpendDates: [getRelativeDateStr(-7)],
       mysteryBoxCount: 0,
       openedCheckpointWeeks: [],
-      isSandboxMode: false,
+      deletedRewardLedger: {},
       isProudComboActive: false,
       lastSupervisorCheerDate: null,
       supervisorCheersCount: 1,
@@ -1658,7 +827,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           return {
             success: false,
             message:
-              "Username tidak ditemukan. Gunakan akun terdaftar atau panel Demo di bawah.",
+              "Username tidak ditemukan. Periksa ejaannya atau minta Admin mendaftarkan akunmu.",
           };
         }
 
@@ -1718,7 +887,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         if (profile.pin_code !== pin) {
           return {
             success: false,
-            message: `PIN salah! (Petunjuk demo: ${profile.pin_code})`,
+            message: "PIN salah. Silakan periksa kembali.",
           };
         }
 
@@ -1829,6 +998,15 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           }
           if (base.lastStreakCheckDate === today) return base;
           changed = true;
+          // Akun yang belum pernah mencatat apa pun belum punya streak untuk diputus: jangan
+          // dinginkan. Catatan pertama kelak langsung menyambung menjadi streak 1.
+          if (base.longest_streak === 0 && base.xp === 0) {
+            return {
+              ...base,
+              last_recorded_date: getRelativeDateStr(-1),
+              lastStreakCheckDate: today,
+            };
+          }
           const res = evaluateStreakContinuity({
             lastRecordedDate: base.last_recorded_date,
             currentStreak: base.current_streak,
@@ -1855,35 +1033,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           };
         });
         if (changed) set({ profiles: nextProfiles });
-      },
-
-      setColdStreakMode: (profileId, cold) => {
-        const state = get();
-        set({
-          profiles: state.profiles.map((p) => {
-            if (p.id !== profileId) return p;
-            if (cold) {
-              if (p.isColdStreakMode) return p;
-              return {
-                ...p,
-                isColdStreakMode: true,
-                coldSince: getRelativeDateStr(0),
-                streakBeforeCold: p.current_streak,
-                current_streak: 0,
-              };
-            }
-            return {
-              ...p,
-              isColdStreakMode: false,
-              coldSince: undefined,
-              current_streak:
-                p.current_streak === 0 && p.streakBeforeCold !== undefined
-                  ? p.streakBeforeCold
-                  : p.current_streak,
-              streakBeforeCold: undefined,
-            };
-          }),
-        });
       },
 
       awardReward: (payload) => {
@@ -2054,20 +1203,18 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           },
         });
 
-        if (!state.isSandboxMode) {
-          trySupabaseInsert("transactions", {
-            user_id: prof.id,
-            type: tx.type,
-            category: tx.category,
-            need_or_want: tx.need_or_want,
-            title: tx.title,
-            total_amount: tx.total_amount,
-            is_itemized: false,
-            points_earned: tx.points_earned,
-            xp_earned: tx.xp_earned,
-            transaction_date: tx.transaction_date,
-          });
-        }
+        trySupabaseInsert("transactions", {
+          user_id: prof.id,
+          type: tx.type,
+          category: tx.category,
+          need_or_want: tx.need_or_want,
+          title: tx.title,
+          total_amount: tx.total_amount,
+          is_itemized: false,
+          points_earned: tx.points_earned,
+          xp_earned: tx.xp_earned,
+          transaction_date: tx.transaction_date,
+        });
 
         return {
           success: true,
@@ -2104,7 +1251,11 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           };
         }
 
-        const newId = `prof-${Date.now()}`;
+        // UUID asli agar sinkron ke kolom `profiles.id` (UUID) di Supabase.
+        const newId =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `prof-${Date.now()}`;
         const isKid = payload.role === "schoolchild";
         const budget =
           Number(payload.monthlyBudgetTarget) || (isKid ? 150000 : 1500000);
@@ -2118,6 +1269,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           display_name: cleanDisplayName,
           role: payload.role,
           pin_code: cleanPin,
+          createdAt: getRelativeDateStr(0),
           avatar_theme: "mochi-cat",
           xp: 0,
           level: 1,
@@ -2308,9 +1460,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           particleBurstKey: s.particleBurstKey + 1,
           particleBurstType: type,
         })),
-
-      toggleSandboxMode: () =>
-        set((s) => ({ isSandboxMode: !s.isSandboxMode })),
 
       renamePet: (newName) => {
         const clean = newName.trim().slice(0, 18);
@@ -2654,6 +1803,11 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         const nextOwned = Array.from(
           new Set([...targetUser.ownedAccessories, droppedItem.id])
         );
+        const journeyBadge = journeyUnlockForDay(milestoneDay);
+        const ownedTitlesNow = targetUser.ownedTitleIds ?? STARTER_TITLE_IDS;
+        const ownedBgsNow = targetUser.ownedBadgeBgIds ?? STARTER_BG_IDS;
+        const newTitleIds = (journeyBadge.titleIds ?? []).filter((id) => !ownedTitlesNow.includes(id));
+        const newBgIds = (journeyBadge.bgIds ?? []).filter((id) => !ownedBgsNow.includes(id));
 
         set({
           openedCheckpointWeeks: Array.from(
@@ -2674,6 +1828,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
                   points_balance: p.points_balance + rewardPoints,
                   lifetime_points: p.lifetime_points + rewardPoints,
                   ownedAccessories: nextOwned,
+                  ownedTitleIds: [...ownedTitlesNow, ...newTitleIds],
+                  ownedBadgeBgIds: [...ownedBgsNow, ...newBgIds],
                   claimedPathMilestones: [
                     ...p.claimedPathMilestones,
                     milestoneDay,
@@ -2691,6 +1847,8 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             milestoneDay,
             points: rewardPoints,
             xp: rewardStageXp,
+            newTitleIds: newTitleIds,
+            newBgIds: newBgIds,
           },
           rewardToast: {
             id: `toast-${Date.now()}`,
@@ -2725,6 +1883,74 @@ export const useBukuDompetStore = create<BukuDompetState>()(
             xp: 0,
           },
         });
+      },
+
+      buyBadgeItem: (kind, id) => {
+        const state = get();
+        const prof = getActiveUserProfile(state);
+        const def = kind === "title" ? TITLE_BY_ID[id] : BADGE_BG_BY_ID[id];
+        if (!def || def.source.kind !== "shop") return { success: false, message: "Item ini tidak dijual di Butik." };
+        const owned = kind === "title" ? prof.ownedTitleIds ?? STARTER_TITLE_IDS : prof.ownedBadgeBgIds ?? STARTER_BG_IDS;
+        if (owned.includes(id)) return { success: false, message: `${def.name} sudah menjadi milikmu.` };
+        const price = def.source.price;
+        if (prof.points_balance < price) {
+          return { success: false, message: `Poin belum cukup (butuh ${price.toLocaleString("id-ID")} Poin untuk ${def.name}).` };
+        }
+        set({
+          profiles: state.profiles.map((p) =>
+            p.id === prof.id
+              ? {
+                  ...p,
+                  points_balance: p.points_balance - price,
+                  ownedTitleIds: kind === "title" ? [...(p.ownedTitleIds ?? STARTER_TITLE_IDS), id] : p.ownedTitleIds,
+                  ownedBadgeBgIds: kind === "bg" ? [...(p.ownedBadgeBgIds ?? STARTER_BG_IDS), id] : p.ownedBadgeBgIds,
+                }
+              : p
+          ),
+          rewardToast: {
+            id: `toast-${Date.now()}`,
+            title: `${kind === "title" ? "Gelar" : "Latar"} "${def.name}" Dibeli!`,
+            subtitle: "Pasang dari Koleksi Badge, lalu pamerkan di Beranda Keluarga.",
+            points: 0,
+            xp: 0,
+          },
+        });
+        return { success: true, message: `${def.name} berhasil dibeli.` };
+      },
+
+      equipBadge: (profileId, pick) => {
+        const state = get();
+        const prof = state.profiles.find((p) => p.id === profileId);
+        if (!prof) return { success: false, message: "Profil tidak ditemukan." };
+        const ownedT = prof.ownedTitleIds ?? STARTER_TITLE_IDS;
+        const ownedB = prof.ownedBadgeBgIds ?? STARTER_BG_IDS;
+        if (pick.titleId && !ownedT.includes(pick.titleId)) return { success: false, message: "Gelar ini belum kamu miliki." };
+        if (pick.bgId && !ownedB.includes(pick.bgId)) return { success: false, message: "Latar ini belum kamu miliki." };
+        set({
+          profiles: state.profiles.map((p) =>
+            p.id === profileId
+              ? { ...p, equippedTitleId: pick.titleId ?? p.equippedTitleId, equippedBadgeBgId: pick.bgId ?? p.equippedBadgeBgId }
+              : p
+          ),
+        });
+        return { success: true, message: "Badge dipasang." };
+      },
+
+      unlockBadgeItems: (profileId, unlock) => {
+        const state = get();
+        const prof = state.profiles.find((p) => p.id === profileId);
+        if (!prof) return { titleIds: [], bgIds: [] };
+        const ownedT = prof.ownedTitleIds ?? STARTER_TITLE_IDS;
+        const ownedB = prof.ownedBadgeBgIds ?? STARTER_BG_IDS;
+        const titleIds = (unlock.titleIds ?? []).filter((id) => TITLE_BY_ID[id] && !ownedT.includes(id));
+        const bgIds = (unlock.bgIds ?? []).filter((id) => BADGE_BG_BY_ID[id] && !ownedB.includes(id));
+        if (titleIds.length === 0 && bgIds.length === 0) return { titleIds, bgIds };
+        set({
+          profiles: state.profiles.map((p) =>
+            p.id === profileId ? { ...p, ownedTitleIds: [...ownedT, ...titleIds], ownedBadgeBgIds: [...ownedB, ...bgIds] } : p
+          ),
+        });
+        return { titleIds, bgIds };
       },
 
       equipSpecialTitle: (title) => {
@@ -2798,12 +2024,15 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         const userProf = getActiveUserProfile(state);
         const todayStr = payload.transaction_date || getRelativeDateStr(0);
 
-        const todayRewardedTxCount = state.transactions.filter(
-          (t) =>
-            t.user_id === userProf.id &&
-            t.transaction_date === todayStr &&
-            t.points_earned > 0
-        ).length;
+        const todayRewardedTxCount =
+          state.transactions.filter(
+            (t) =>
+              t.user_id === userProf.id &&
+              t.transaction_date === todayStr &&
+              t.points_earned > 0
+          ).length +
+          // Catatan berpoin yang sudah dihapus tetap dihitung agar kuota 3/hari tidak bisa dicurangi.
+          (state.deletedRewardLedger?.[rewardLedgerKey(userProf.id, todayStr)] ?? 0);
 
         const dailyCapReached = todayRewardedTxCount >= 3;
 
@@ -2988,20 +2217,19 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           }, 5500);
         }
 
-        if (!state.isSandboxMode) {
-          trySupabaseInsert("transactions", {
-            user_id: userProf.id,
-            type: newTx.type,
-            category: newTx.category,
-            need_or_want: newTx.need_or_want,
-            title: newTx.title,
-            total_amount: newTx.total_amount,
-            is_itemized: newTx.is_itemized,
-            points_earned: newTx.points_earned,
-            xp_earned: newTx.xp_earned,
-            transaction_date: newTx.transaction_date,
-          });
-        }
+        trySupabaseInsert("transactions", {
+          user_id: userProf.id,
+          type: newTx.type,
+          category: newTx.category,
+          need_or_want: newTx.need_or_want,
+          title: newTx.title,
+          total_amount: newTx.total_amount,
+          is_itemized: newTx.is_itemized,
+          points_earned: newTx.points_earned,
+          xp_earned: newTx.xp_earned,
+          transaction_date: newTx.transaction_date,
+          created_at: newTx.created_at,
+        });
 
         return {
           pointsEarned: totalPointsEarned,
@@ -3009,6 +2237,64 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           isCombo,
           dailyCapReached,
         };
+      },
+
+      updateTransaction: (id, patch) => {
+        const state = get();
+        const owner = getActiveUserProfile(state);
+        const tx = state.transactions.find((t) => t.id === id);
+        if (!tx) return { success: false, message: "Catatan tidak ditemukan." };
+        const lock = transactionLockReason(tx, owner.id, getRelativeDateStr(0));
+        if (lock) return { success: false, message: lock };
+
+        const title = patch.title.trim().slice(0, TX_TITLE_MAX);
+        if (!title) return { success: false, message: "Judul catatan tidak boleh kosong." };
+
+        let need_or_want = tx.need_or_want;
+        if (tx.type === "expense") {
+          const cat = EXPENSE_CATEGORIES.find((c) => c.name === patch.category);
+          if (!cat) return { success: false, message: "Kategori pengeluaran tidak dikenal." };
+          need_or_want = cat.group;
+        } else if (!INCOME_CATEGORIES.some((c) => c.name === patch.category)) {
+          return { success: false, message: "Kategori pemasukan tidak dikenal." };
+        }
+
+        // Catatan rinci: total berasal dari sub-item struk, jadi nominal dikunci.
+        let total = tx.total_amount;
+        if (!tx.is_itemized && patch.total_amount !== undefined) {
+          const n = Number(patch.total_amount);
+          if (!Number.isFinite(n) || n <= 0) return { success: false, message: "Nominal harus lebih dari 0." };
+          if (n > 1_000_000_000) return { success: false, message: "Nominal terlalu besar." };
+          total = Math.round(n);
+        }
+
+        set({
+          transactions: state.transactions.map((t) =>
+            t.id === id ? { ...t, title, category: patch.category, need_or_want, total_amount: total } : t
+          ),
+        });
+        trySupabaseMutate(tx, { title, category: patch.category, need_or_want, total_amount: total });
+        return { success: true, message: "Catatan berhasil diperbarui." };
+      },
+
+      removeTransaction: (id) => {
+        const state = get();
+        const owner = getActiveUserProfile(state);
+        const tx = state.transactions.find((t) => t.id === id);
+        if (!tx) return { success: false, message: "Catatan tidak ditemukan." };
+        const lock = transactionLockReason(tx, owner.id, getRelativeDateStr(0));
+        if (lock) return { success: false, message: lock };
+
+        const key = rewardLedgerKey(tx.user_id, tx.transaction_date);
+        const ledger = { ...(state.deletedRewardLedger ?? {}) };
+        if (tx.points_earned > 0) ledger[key] = (ledger[key] ?? 0) + 1;
+
+        set({
+          transactions: state.transactions.filter((t) => t.id !== id),
+          deletedRewardLedger: ledger,
+        });
+        trySupabaseMutate(tx, null);
+        return { success: true, message: "Catatan dihapus." };
       },
 
       recordZeroSpendDay: () => {
@@ -3337,39 +2623,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         });
       },
 
-      resetToDemoSeed: () => {
-        set({
-          currentRole: "user",
-          activeProfileId: USER_1_ID,
-          monitoredUserId: USER_1_ID,
-          profiles: INITIAL_PROFILES,
-          supervisorAssignments: INITIAL_SUPERVISOR_ASSIGNMENTS,
-          transactions: INITIAL_TRANSACTIONS,
-          missions: INITIAL_MISSIONS,
-          badges: INITIAL_BADGES,
-          redemptions: INITIAL_REDEMPTIONS,
-          equippedMochiStage: null,
-          equippedTitle: "Penabung Cerdas",
-          streakFreezeDates: [getRelativeDateStr(-6), getRelativeDateStr(-9)],
-          zeroSpendDates: [getRelativeDateStr(-7)],
-          mysteryBoxCount: 0,
-          openedCheckpointWeeks: [],
-          isSandboxMode: false,
-          isProudComboActive: false,
-          lastSupervisorCheerDate: null,
-          supervisorCheersCount: 1,
-          unboxedAccessoryDrop: null,
-          rewardToast: {
-            id: `toast-${Date.now()}`,
-            title: "Data Demo Versi 4.0 Direset!",
-            subtitle:
-              "Seluruh akun multi-user, 8 fase pet, dan buku kas kembali ke pengaturan awal.",
-            points: 0,
-            xp: 0,
-          },
-        });
-      },
-
       syncWithSupabaseIfAvailable: async () => {
         try {
           if (
@@ -3398,40 +2651,22 @@ export const useBukuDompetStore = create<BukuDompetState>()(
     }),
     {
       name: "bukudompet-v4-storage",
-      version: 5,
+      version: 6,
       // Hidrasi dipicu manual lewat <StoreHydrator /> setelah mount, agar render pertama di klien
       // identik dengan SSR (tanpa galat hidrasi) walau localStorage berisi data berbeda.
       skipHydration: true,
-      // Versi 4 -> 5 hanya MENAMBAH field opsional dan akun seed baru; data lama dipakai apa adanya.
-      migrate: (persistedState) => persistedState as BukuDompetState,
-      // Migrasi ringan & idempoten: katalog aksesori membesar 48 -> 144 tanpa mengubah ID lama,
-      // jadi data lama tetap valid. Merge ini hanya membuang ID yang tidak dikenal katalog
-      // (data rusak / sisa versi eksperimen) agar tidak muncul sebagai item "?" di lemari.
+      // Versi 5.4 (GO LIVE): data lokal versi lama berisi akun & catatan DEMO. Semuanya dibuang, lalu
+      // aplikasi memakai 12 akun asli dari seed. Penyimpanan versi 6 ke atas dipakai apa adanya.
+      migrate: (persistedState, fromVersion) =>
+        (fromVersion < 6 ? {} : persistedState) as BukuDompetState,
+      // Merge ringan & idempoten: hanya membuang ID aksesori yang tidak dikenal katalog
+      // (data rusak) agar tidak muncul sebagai item "?" di lemari. Tidak ada lagi akun seed
+      // yang dihidupkan kembali, jadi akun yang dihapus Admin tetap terhapus.
       merge: (persistedState, currentState) => {
         const raw = (persistedState ?? {}) as Partial<BukuDompetState>;
         const merged = { ...currentState, ...raw };
         if (Array.isArray(merged.profiles)) {
-          // Versi 5.0: tambahkan akun seed baru (Adik Kecil) bila data lama belum memilikinya.
-          const knownIds = new Set(merged.profiles.map((p) => p.id));
-          const missingSeeds = INITIAL_PROFILES.filter(
-            (p) => p.role === "schoolchild" && !knownIds.has(p.id)
-          );
-          merged.profiles = [...merged.profiles, ...missingSeeds].map(
-            sanitizeProfileAccessories
-          );
-          if (missingSeeds.length > 0 && Array.isArray(merged.supervisorAssignments)) {
-            const seedIds = new Set(missingSeeds.map((p) => p.id));
-            const have = new Set(
-              merged.supervisorAssignments.map((a) => `${a.supervisorId}:${a.userId}`)
-            );
-            merged.supervisorAssignments = [
-              ...merged.supervisorAssignments,
-              ...INITIAL_SUPERVISOR_ASSIGNMENTS.filter(
-                (a) =>
-                  seedIds.has(a.userId) && !have.has(`${a.supervisorId}:${a.userId}`)
-              ),
-            ];
-          }
+          merged.profiles = merged.profiles.map(sanitizeProfileAccessories);
         }
         if (!Array.isArray(merged.savedProfileIds)) merged.savedProfileIds = [];
         return merged;
@@ -3443,6 +2678,7 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         profiles: state.profiles,
         supervisorAssignments: state.supervisorAssignments,
         transactions: state.transactions,
+        deletedRewardLedger: state.deletedRewardLedger,
         missions: state.missions,
         badges: state.badges,
         redemptions: state.redemptions,
@@ -3451,7 +2687,6 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         streakFreezeDates: state.streakFreezeDates,
         zeroSpendDates: state.zeroSpendDates,
         openedCheckpointWeeks: state.openedCheckpointWeeks,
-        isSandboxMode: state.isSandboxMode,
         lastSupervisorCheerDate: state.lastSupervisorCheerDate,
         supervisorCheersCount: state.supervisorCheersCount,
         isLoggedIn: state.isLoggedIn,

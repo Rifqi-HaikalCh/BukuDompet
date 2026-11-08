@@ -3,14 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Drawer } from "vaul";
-import { ChevronDown, ChevronUp, Sparkles, ShieldCheck, User, X, UserPlus } from "@/components/illustrations/UiGlyphs";
+import { ShieldCheck, User, X, UserPlus } from "@/components/illustrations/UiGlyphs";
 import {
   useBukuDompetStore,
   type ProfileData,
 } from "@/store/useBukuDompetStore";
 import {
   CustomizablePetAvatar,
-  GROWTH_STAGE_META,
 } from "@/components/illustrations/PetAvatarSystem";
 import { PersonaAvatar, personaVariantFromId } from "@/components/illustrations/PersonaAvatars";
 import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
@@ -24,6 +23,7 @@ import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { homePathForRole } from "@/components/ui/AppProviders";
 import { SafeVault } from "@/components/login/SafeVault";
 import { soundEffects } from "@/lib/sound-effects";
+import { cozyBgm } from "@/lib/cozy-bgm";
 import { cn } from "@/lib/utils";
 
 function getRoleBadge(role: ProfileData["role"]) {
@@ -46,7 +46,6 @@ function shortLabel(display: string): string {
 export default function LoginPage() {
   const router = useRouter();
   const profiles = useBukuDompetStore((s) => s.profiles);
-  const supervisorAssignments = useBukuDompetStore((s) => s.supervisorAssignments);
   const savedProfileIds = useBukuDompetStore((s) => s.savedProfileIds);
   const isLoggedIn = useBukuDompetStore((s) => s.isLoggedIn);
   const currentRole = useBukuDompetStore((s) => s.currentRole);
@@ -66,7 +65,8 @@ export default function LoginPage() {
   const [showUsernameForm, setShowUsernameForm] = useState<boolean>(false);
   const [usernameInput, setUsernameInput] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [demoPanelOpen, setDemoPanelOpen] = useState<boolean>(false);
+  // Beberapa akun boleh memakai nama yang sama (mis. "Ekal" sebagai User, Anak SD, Supervisor, Admin).
+  const [candidateIds, setCandidateIds] = useState<string[]>([]);
 
   const [isOpening, setIsOpening] = useState<boolean>(false);
   const openingRef = useRef<boolean>(false);
@@ -85,22 +85,33 @@ export default function LoginPage() {
     soundEffects.tactileClick();
     setSelectedId(id);
     setErrorMsg(null);
+    setCandidateIds([]);
     setShowUsernameForm(false);
   };
 
   const handleUsernameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const clean = usernameInput.trim().toLowerCase();
-    const found = profiles.find((p) => p.username.toLowerCase() === clean);
-    if (!found) {
+    // Cocok dengan username ATAU nama depan tampilan, agar cukup mengetik "Ekal".
+    const found = profiles.filter(
+      (p) => p.username.toLowerCase() === clean || shortLabel(p.display_name).toLowerCase() === clean
+    );
+    if (found.length === 0) {
       soundEffects.detectiveBuzz();
-      setErrorMsg("Username tidak ditemukan. Cek ejaan atau pakai Mode Cepat Demo di bawah.");
+      setCandidateIds([]);
+      setErrorMsg("Nama tidak ditemukan. Periksa ejaannya atau minta Admin mendaftarkan akunmu.");
       return;
     }
     setErrorMsg(null);
-    setSelectedId(found.id);
-    setShowUsernameForm(false);
     setUsernameInput("");
+    if (found.length === 1) {
+      setCandidateIds([]);
+      setSelectedId(found[0].id);
+      setShowUsernameForm(false);
+      return;
+    }
+    // Nama kembar: minta pilih peran dulu, baru PIN.
+    setCandidateIds(found.map((p) => p.id));
   };
 
   const handlePinComplete = useCallback(
@@ -110,6 +121,7 @@ export default function LoginPage() {
       openingRef.current = true;
       const res = loginWithCredentials(selected.username, pin);
       if (res.success && res.targetPath) {
+        cozyBgm.start(); // gestur pengguna: musik latar dimulai saat login berhasil
         targetPathRef.current = res.targetPath;
         setIsOpening(true);
         return true;
@@ -123,19 +135,6 @@ export default function LoginPage() {
   const handleOpened = useCallback(() => {
     router.push(targetPathRef.current);
   }, [router]);
-
-  const handleInstantLogin = (acc: ProfileData) => {
-    soundEffects.tactileClick();
-    openingRef.current = true;
-    const res = loginWithCredentials(acc.username, acc.pin_code);
-    if (res.success && res.targetPath) {
-      triggerActionLoading(8000);
-      soundEffects.comboFanfare();
-      router.push(res.targetPath);
-    } else {
-      openingRef.current = false;
-    }
-  };
 
   const showSafe = Boolean(selected) && !showUsernameForm;
 
@@ -172,7 +171,7 @@ export default function LoginPage() {
             <div className="space-y-1">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00]">
                 <CozyIcon name="coin_rupiah" size={16} />
-                Versi 5.1 • Beranda Keluarga
+                Versi 5.4 • Beranda Keluarga
               </span>
               <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E]">
                 Jurnal Kas & Petualangan Finansial
@@ -300,7 +299,7 @@ export default function LoginPage() {
                         setUsernameInput(e.target.value);
                         setErrorMsg(null);
                       }}
-                      placeholder="Contoh: adik, bima, orangtua, adik_sd"
+                      placeholder="Ketik namamu, contoh: Tiara"
                       className="w-full pl-10 pr-3 py-3 rounded-2xl border-2 border-[#E6DFD2] bg-white focus:border-[#38B6FF] focus:outline-none font-display font-extrabold text-sm text-[#3D352E]"
                     />
                   </div>
@@ -318,6 +317,45 @@ export default function LoginPage() {
                   </div>
                 )}
               </form>
+            )}
+
+            {candidateIds.length > 0 && !selected && (
+              <div className="space-y-2" role="group" aria-label="Pilih peran akun">
+                <p className="text-xs font-display font-extrabold text-[#3D352E]">
+                  Ada beberapa akun dengan nama itu. Masuk sebagai siapa?
+                </p>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {candidateIds
+                    .map((id) => profiles.find((p) => p.id === id))
+                    .filter((p): p is ProfileData => Boolean(p))
+                    .map((acc) => {
+                      const badge = getRoleBadge(acc.role);
+                      return (
+                        <li key={acc.id} className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectProfile(acc.id)}
+                            className="w-full flex items-center gap-3 p-2.5 rounded-2xl border-2 border-b-[4px] border-[#E6DFD2] border-b-[#D4C9B4] bg-[#F7F3EB] hover:bg-white text-left min-w-0 cursor-pointer focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[#38B6FF]"
+                          >
+                            <span className="min-w-0">
+                              <span className="block font-display text-sm font-extrabold text-[#3D352E] truncate">
+                                {shortLabel(acc.display_name)}
+                              </span>
+                              <span
+                                className={cn(
+                                  "inline-block mt-0.5 px-2 py-0.5 rounded-lg border text-[10px] font-display font-extrabold",
+                                  badge.cls
+                                )}
+                              >
+                                {badge.label}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                </ul>
+              </div>
             )}
 
             {savedProfiles.length > 0 && !showUsernameForm && (
@@ -344,109 +382,6 @@ export default function LoginPage() {
               </span>
             </div>
           </div>
-        </CozyCard>
-
-        {/* Mode Cepat Demo */}
-        <CozyCard tone="white" className="p-4 sm:p-5 space-y-3.5">
-          <button
-            type="button"
-            onClick={() => {
-              soundEffects.tactileClick();
-              setDemoPanelOpen((prev) => !prev);
-            }}
-            aria-expanded={demoPanelOpen}
-            className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Sparkles className="w-5 h-5 text-[#E5A400] shrink-0" aria-hidden="true" />
-              <span className="font-display text-sm sm:text-base font-extrabold text-[#3D352E] truncate">
-                Mode Cepat Demo (semua akun contoh)
-              </span>
-            </div>
-            <span className="px-2.5 py-1 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-display font-extrabold text-[#3D352E] inline-flex items-center gap-1 shrink-0">
-              {profiles.length} Akun
-              {demoPanelOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </span>
-          </button>
-
-          {demoPanelOpen && (
-            <div className="pt-2 border-t border-[#E6DFD2] space-y-3">
-              <p className="text-xs font-bold text-[#7A6E65]">
-                Hanya untuk demo: pilih akun untuk membuka brankasnya, atau tekan{" "}
-                <strong>Masuk Instan</strong> untuk langsung masuk tanpa PIN.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {profiles.map((acc) => {
-                  const badge = getRoleBadge(acc.role);
-                  const assigned =
-                    acc.role === "supervisor"
-                      ? supervisorAssignments
-                          .filter((a) => a.supervisorId === acc.id)
-                          .map((a) => profiles.find((u) => u.id === a.userId)?.display_name || "")
-                          .filter(Boolean)
-                      : [];
-                  const isChild = acc.role === "user" || acc.role === "schoolchild";
-                  return (
-                    <div
-                      key={acc.id}
-                      className="p-3.5 rounded-2xl border-2 border-b-[4px] bg-[#F7F3EB] border-[#E6DFD2] border-b-[#D4C9B4] flex flex-col justify-between gap-2.5 min-w-0"
-                    >
-                      <div className="space-y-1.5 min-w-0">
-                        <div className="flex items-center justify-between gap-1.5">
-                          <span
-                            className={cn(
-                              "px-2 py-0.5 rounded-lg border text-[10px] font-display font-extrabold",
-                              badge.cls
-                            )}
-                          >
-                            {badge.label}
-                          </span>
-                          <span className="font-display text-xs font-extrabold tabular-nums text-[#7A6E65]">
-                            PIN: {acc.pin_code}
-                          </span>
-                        </div>
-                        <p className="font-display text-sm font-extrabold text-[#3D352E] truncate">
-                          {acc.display_name}
-                        </p>
-                        <p className="text-[11px] font-bold text-[#7A6E65] truncate">
-                          Username: <span className="text-[#3D352E] font-extrabold">@{acc.username}</span>
-                        </p>
-                        {isChild && (
-                          <p className="text-[10px] font-bold text-[#2E6F00] break-words">
-                            Pet: {acc.petCustomName} • Fase {acc.currentStage} (
-                            {GROWTH_STAGE_META[acc.currentStage]?.name})
-                          </p>
-                        )}
-                        {acc.role === "supervisor" && (
-                          <p className="text-[10px] font-bold text-[#4A3500] break-words">
-                            Pantau: {assigned.length > 0 ? assigned.join(", ") : "Belum ditugaskan"}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleSelectProfile(acc.id);
-                          }}
-                          className="flex-1 py-1.5 px-2 rounded-xl bg-white border border-[#E6DFD2] text-[11px] font-display font-extrabold text-[#3D352E] hover:bg-[#FFFBEB] cursor-pointer"
-                        >
-                          Buka Brankas
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleInstantLogin(acc)}
-                          className="flex-1 py-1.5 px-2 rounded-xl bg-[#58CC02] border-b-[3px] border-b-[#46A302] text-[11px] font-display font-extrabold text-[#173300] hover:bg-[#61DC06] cursor-pointer"
-                        >
-                          Masuk Instan &rarr;
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </CozyCard>
       </div>
 

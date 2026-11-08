@@ -4,7 +4,7 @@
 import React from "react";
 import { CozyIcon, type IconName } from "@/components/illustrations/CozyIcons";
 import { CozyCard } from "@/components/ui/CozyPrimitives";
-import { ARCADE_CLAIM_POINTS, ARCADE_CLAIM_XP, ARCADE_DAILY_CLAIM_LIMIT, STORY_REWARD_POINTS, STORY_REWARD_XP } from "@/lib/family-types";
+import { ARCADE_DAILY_REWARD_LIMIT, ARCADE_LEVEL_POINTS, ARCADE_LEVEL_XP, ARCADE_MAX_LEVEL, STORY_REWARD_POINTS, STORY_REWARD_XP } from "@/lib/family-types";
 import { cn } from "@/lib/utils";
 
 interface Row {
@@ -24,7 +24,7 @@ const USER_ROWS: Row[] = [
 
 const KID_ROWS: Row[] = [
   { icon: "missions_scroll", title: "Tulis Cerita Harian", reward: `+${STORY_REWARD_POINTS} Poin & +${STORY_REWARD_XP} Stage XP`, note: "Minimal 30 kata, 1x per hari", tone: "bg-[#EFFBE6] border-[#C3EFA4]" },
-  { icon: "combo_sparkle", title: "Mini-Game Arcade Sekolah", reward: `+${ARCADE_CLAIM_POINTS} Poin & +${ARCADE_CLAIM_XP} Stage XP`, note: `Maks. ${ARCADE_DAILY_CLAIM_LIMIT} klaim/hari, lulus ≥ 60%`, tone: "bg-[#FFFBEB] border-[#FDE08D]" },
+  { icon: "combo_sparkle", title: "Mini-Game Arcade Sekolah", reward: `+${ARCADE_LEVEL_POINTS[1]} s/d +${ARCADE_LEVEL_POINTS[ARCADE_MAX_LEVEL]} Poin & +${ARCADE_LEVEL_XP[1]} s/d +${ARCADE_LEVEL_XP[ARCADE_MAX_LEVEL]} Stage XP`, note: `Makin tinggi level makin besar. Maks. ${ARCADE_DAILY_REWARD_LIMIT} ronde berhadiah/hari, lulus ≥ 60%`, tone: "bg-[#FFFBEB] border-[#FDE08D]" },
   { icon: "flame_streak", title: "Jaga Api Streak", reward: "+10 Poin & +15 Stage XP", note: "Tulis cerita setiap hari agar api tidak padam", tone: "bg-[#FFF2F0] border-[#FFCDC6]" },
   { icon: "cat_saving", title: "Isi Celengan", reward: "Progres misi & medali", note: "Setor tabungan kecil tiap hari", tone: "bg-[#EEF8FF] border-[#BCE3FF]" },
 ];

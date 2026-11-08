@@ -2,11 +2,11 @@
 
 import React from "react";
 import NumberFlow from "@number-flow/react";
-import { motion, AnimatePresence } from "framer-motion";
 import { cn, formatCompactRupiah } from "@/lib/utils";
 import { soundEffects } from "@/lib/sound-effects";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
-import { CozyIcon } from "@/components/illustrations/CozyIcons";
+import { ToastHost } from "@/components/ui/ToastHost";
+import { notify } from "@/lib/notify";
 
 export { formatCompactRupiah };
 
@@ -267,63 +267,21 @@ export function formatRupiah(amount: number): string {
   return `Rp${Math.round(amount).toLocaleString("id-ID")}`;
 }
 
+/**
+ * Penyalur notifikasi hadiah: memindahkan `rewardToast` dari store ke antrean notifikasi global
+ * dan memasang <ToastHost /> (pojok kanan-bawah). Dipasang di semua cangkang halaman.
+ */
 export function FloatingRewardBanner() {
-  const { rewardToast, clearRewardToast } = useBukuDompetStore();
+  const rewardToast = useBukuDompetStore((s) => s.rewardToast);
+  const clearRewardToast = useBukuDompetStore((s) => s.clearRewardToast);
 
   React.useEffect(() => {
     if (!rewardToast) return;
-    const t = setTimeout(() => {
-      clearRewardToast();
-    }, 4200);
-    return () => clearTimeout(t);
+    const hasReward = rewardToast.points > 0 || rewardToast.xp > 0 || rewardToast.isCombo;
+    if (hasReward) notify.reward(rewardToast.title, rewardToast.subtitle, rewardToast.points, rewardToast.xp);
+    else notify.success(rewardToast.title, rewardToast.subtitle);
+    clearRewardToast();
   }, [rewardToast, clearRewardToast]);
 
-  return (
-    <AnimatePresence>
-      {rewardToast && (
-        <motion.div
-          key={rewardToast.id}
-          initial={{ opacity: 0, y: -40, scale: 0.9 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -30, scale: 0.92 }}
-          transition={{ type: "spring", stiffness: 360, damping: 22 }}
-          onClick={clearRewardToast}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[92vw] max-w-md cursor-pointer"
-        >
-          <div className="rounded-3xl p-3.5 flex items-center justify-between gap-3 shadow-md bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4]">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <CozyIcon
-                name={rewardToast.isCombo ? "combo_sparkle" : "check_badge"}
-                size={32}
-                animated
-              />
-              <div className="min-w-0">
-                <p className="font-display text-sm sm:text-base font-extrabold text-[#3D352E] truncate">
-                  {rewardToast.title}
-                </p>
-                <p className="text-xs font-bold text-[#7A6E65] truncate">
-                  {rewardToast.subtitle}
-                </p>
-              </div>
-            </div>
-            {(rewardToast.points > 0 || rewardToast.xp > 0) && (
-              <div className="flex items-center gap-1.5 shrink-0">
-                {rewardToast.points > 0 && (
-                  <span className="px-2.5 py-1 rounded-xl bg-[#FFC800] border-b-[3px] border-b-[#E5A400] font-display tabular-nums text-xs font-extrabold text-[#4A3500] inline-flex items-center gap-1">
-                    <CozyIcon name="coin_rupiah" size={16} />+
-                    {rewardToast.points}
-                  </span>
-                )}
-                {rewardToast.xp > 0 && (
-                  <span className="px-2 py-1 rounded-xl bg-[#38B6FF] border-b-[3px] border-b-[#1E88E5] font-display tabular-nums text-xs font-extrabold text-white inline-flex items-center gap-1">
-                    <CozyIcon name="xp_star" size={16} />+{rewardToast.xp}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
+  return <ToastHost />;
 }

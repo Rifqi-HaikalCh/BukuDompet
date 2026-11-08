@@ -77,6 +77,10 @@ CREATE TABLE IF NOT EXISTS family_chat_messages (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+/* ===== DATA DEMO DINONAKTIFKAN (Versi 5.4 - GO LIVE) =====
+   Akun contoh adik_sd tidak lagi dibuat. Akun asli dibuat oleh 004_v5_4_go_live.sql.
+   Skema (CREATE/ALTER) di atas tetap berlaku. Blok seed di bawah sengaja dikomentari.
+
 -- 6. Seed Anak SD: Adik Kecil (Kelas 3 SD) di bawah Supervisor Orang Tua
 INSERT INTO profiles (
   id, username, display_name, role, pin_code, avatar_theme,
@@ -110,3 +114,4 @@ ON CONFLICT (id) DO UPDATE SET
 INSERT INTO supervisor_assignments (supervisor_id, user_id) VALUES
   ('22222222-2222-4222-8222-222222222222', '11111111-1111-4111-8111-444444444444')
 ON CONFLICT (supervisor_id, user_id) DO NOTHING;
+*/

@@ -448,14 +448,15 @@ export default function SupervisorDashboardPage() {
           <CozyCard tone="matcha" className="p-4 sm:p-5 space-y-4 w-full max-w-full overflow-hidden">
             <div className="flex flex-col xl:flex-row items-start justify-between gap-4 w-full max-w-full min-w-0">
               <div className="flex flex-col sm:flex-row items-start gap-3.5 w-full max-w-full min-w-0 flex-1">
-                <div className="w-20 h-22 rounded-2xl bg-white border-2 border-[#C3EFA4] flex items-center justify-center shrink-0 p-1">
+                {/* Karakter anak = tanda pengenal utama bagi orang tua: besar di ponsel (tengah, ±176px), ringkas di layar lebar. */}
+                <div className="w-44 h-48 sm:w-28 sm:h-32 mx-auto sm:mx-0 rounded-3xl bg-white border-2 border-[#C3EFA4] border-b-4 flex items-center justify-center shrink-0 p-1.5 sm:p-1">
                   <CustomizablePetAvatar
                     species={inspectedUser.activeSpecies || "chubby_cat"}
                     stage={currentStage}
                     mood={report.petMood}
                     customName={petName}
                     equippedAccessories={inspectedUser.equippedAccessories}
-                    className="w-18 h-20"
+                    className="w-full h-full"
                   />
                 </div>
                 <div className="space-y-2 w-full max-w-full min-w-0 flex-1">

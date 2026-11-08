@@ -14,6 +14,7 @@ import { CozyIcon, CategoryIcon } from "@/components/illustrations/CozyIcons";
 import { TactileButton, CozyCard, ChunkyProgressBar, formatRupiah } from "@/components/ui/CozyPrimitives";
 import { parseLocalDate } from "@/lib/dates";
 import { soundEffects } from "@/lib/sound-effects";
+import { TransactionActions } from "@/components/journey/TransactionEditor";
 import { cn } from "@/lib/utils";
 
 type TxList = ReturnType<typeof useBukuDompetStore.getState>["transactions"];
@@ -352,6 +353,8 @@ export function ReceiptCardItem({
           )}
         </div>
       </div>
+
+      <TransactionActions tx={tx} />
 
       {/* Sub-items receipt breakdown */}
       <AnimatePresence>

@@ -1,15 +1,16 @@
 "use client";
 
-/** Beranda Keluarga: tab Feed + tab Chat Keluarga (Obrolan Pet). Dipakai di /app dan /supervisor. */
+/** Beranda Keluarga: tab Beranda, Peringkat, dan Chat Keluarga (Obrolan Pet). Dipakai di /app dan /supervisor. */
 import { GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useState } from "react";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import { FamilyFeed, FeedResetBadge } from "@/components/family/FamilyFeed";
 import { FamilyChat } from "@/components/family/FamilyChat";
+import { FamilyLeaderboard } from "@/components/family/FamilyLeaderboard";
 import { soundEffects } from "@/lib/sound-effects";
 import { cn } from "@/lib/utils";
 
-type Tab = "feed" | "chat";
+type Tab = "feed" | "rank" | "chat";
 
 export function FamilyHome({ viewerId, heading = true }: { viewerId: string; heading?: boolean }) {
   const viewer = useBukuDompetStore((s) => s.profiles.find((p) => p.id === viewerId));
@@ -24,11 +25,12 @@ export function FamilyHome({ viewerId, heading = true }: { viewerId: string; hea
           <FeedResetBadge />
         </div>
       )}
-      <div role="tablist" aria-label="Pilih ruang keluarga" className="grid grid-cols-2 gap-2 bg-[#F7F3EB] p-1.5 rounded-2xl border-2 border-[#E6DFD2]">
+      <div role="tablist" aria-label="Pilih ruang keluarga" className="grid grid-cols-3 gap-2 bg-[#F7F3EB] p-1.5 rounded-2xl border-2 border-[#E6DFD2]">
         {(
           [
-            { id: "feed", label: "Beranda Keluarga", icon: "house" },
-            { id: "chat", label: "Chat Keluarga (Obrolan Pet)", icon: "chat" },
+            { id: "feed", label: "Beranda", icon: "house" },
+            { id: "rank", label: "Peringkat", icon: "trophy" },
+            { id: "chat", label: "Chat Keluarga", icon: "chat" },
           ] as const
         ).map((t) => (
           <button
@@ -49,7 +51,9 @@ export function FamilyHome({ viewerId, heading = true }: { viewerId: string; hea
           </button>
         ))}
       </div>
-      {tab === "feed" ? <FamilyFeed viewer={viewer} /> : <FamilyChat viewerId={viewer.id} />}
+      {tab === "feed" && <FamilyFeed viewer={viewer} />}
+      {tab === "rank" && <FamilyLeaderboard viewerId={viewer.id} />}
+      {tab === "chat" && <FamilyChat viewerId={viewer.id} />}
     </section>
   );
 }

@@ -13,16 +13,17 @@ import { MEDAL_BY_ID, MEDAL_TIER_LABEL, type ActiveQuest } from "@/lib/quest-eng
 import { MedalBadge } from "@/components/illustrations/PraiseBadges";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import { CozyCard, TactileButton, ChunkyProgressBar } from "@/components/ui/CozyPrimitives";
+import { notify } from "@/lib/notify";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 
 function QuestCard({ quest, profile, audience }: { quest: ActiveQuest; profile: ProfileData; audience: QuestState["audience"] }) {
   const claimQuest = useFamilyStore((s) => s.claimQuest);
-  const [msg, setMsg] = React.useState<string>("");
   const medal = MEDAL_BY_ID[quest.def.medalId];
 
   const onClaim = () => {
     const res = claimQuest({ profileId: profile.id, audience, claimKey: quest.claimKey });
-    setMsg(res.message);
+    // Berhasil: toast hadiah dari store sudah tampil. Gagal: tampilkan alasannya.
+    if (!res.success) notify.warn("Belum bisa diklaim", res.message);
     if (res.success) {
       soundEffects.comboFanfare();
       fireCozyConfetti("combo");
@@ -60,11 +61,6 @@ function QuestCard({ quest, profile, audience }: { quest: ActiveQuest; profile: 
       <ChunkyProgressBar value={Math.min(quest.value, quest.target)} max={quest.target} variant={quest.done ? "matcha" : "sky"} showFraction />
 
       <div className="flex items-center justify-end gap-2 flex-wrap">
-        {msg && (
-          <span role="status" className="text-xs font-bold text-[#7A6E65] mr-auto">
-            {msg}
-          </span>
-        )}
         {quest.claimed ? (
           <span className="px-3.5 py-2 rounded-xl bg-[#EFFBE6] border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00] inline-flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Hadiah Sudah Diklaim!

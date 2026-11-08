@@ -664,8 +664,8 @@ function OpenedChest({ uid }: { uid: string }) {
     <g>
       <defs>
         <radialGradient id={glow}>
-          <stop offset="0" stopColor={HONEY_SOFT} stopOpacity={0.95} />
-          <stop offset="1" stopColor={C.honey} stopOpacity={0} />
+          <stop offset="0" stopColor={MATCHA_SOFT} stopOpacity={0.9} />
+          <stop offset="1" stopColor={C.matcha} stopOpacity={0} />
         </radialGradient>
         <clipPath id={moundClip}>
           <path d={mound} />
@@ -686,7 +686,7 @@ function OpenedChest({ uid }: { uid: string }) {
         animate={{ rotate: 360 }}
         transition={{ duration: 16, repeat: Infinity, ease: "linear" }}
       >
-        <g transform="translate(100 90)" style={SVG_ATTR_ORIGIN} fill={C.honey} opacity={0.28}>
+        <g transform="translate(100 90)" style={SVG_ATTR_ORIGIN} fill={C.matcha} opacity={0.26}>
           {Array.from({ length: 8 }).map((_, i) => (
             <path key={i} d="M0 0 L-9 -88 L9 -88Z" transform={`rotate(${i * 45})`} style={SVG_ATTR_ORIGIN} />
           ))}

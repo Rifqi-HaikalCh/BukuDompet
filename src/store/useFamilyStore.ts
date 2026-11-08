@@ -27,14 +27,19 @@ import {
   localDateStr,
 } from "@/lib/dates";
 import {
-  ARCADE_CLAIM_POINTS,
-  ARCADE_CLAIM_XP,
-  ARCADE_DAILY_CLAIM_LIMIT,
+  ARCADE_DAILY_REWARD_LIMIT,
+  ARCADE_LEVEL_NAMES,
+  ARCADE_LEVEL_POINTS,
+  ARCADE_LEVEL_XP,
   FEED_CYCLE_DAYS,
   STORY_REWARD_POINTS,
   STORY_REWARD_XP,
   type ArcadeCategoryId,
+  type ArcadeDaily,
+  type ArcadeLimits,
+  type ArcadeModeProgress,
   type ArcadePlay,
+  type ArcadeSession,
   type ChatMessage,
   type FeedComment,
   type FeedPost,
@@ -45,6 +50,18 @@ import {
   type StoryEntry,
 } from "@/lib/family-types";
 import { analyzeStory } from "@/lib/story-utils";
+import { medalUnlock } from "@/lib/badge-catalog";
+import { ARCADE_MODE_BY_ID } from "@/lib/arcade-modes";
+import {
+  applyRoundResult,
+  clampLevel,
+  dailyOf,
+  emptyProgress,
+  limitsOf,
+  limitStatus,
+  progressKey,
+  type LimitBlock,
+} from "@/lib/arcade-progress";
 import type { TransactionRecord } from "@/lib/spending-detective";
 import {
   DAILY_QUEST_REWARD,
@@ -84,8 +101,22 @@ const safeLocalStorage: StateStorage = {
     }
     try {
       const parsed = JSON.parse(value) as {
-        state?: { feedPosts?: FeedPost[] };
+        state?: { feedPosts?: FeedPost[]; chat?: ChatMessage[] };
       };
+      // Foto chat terlama dibuang dulu (paling murah untuk dikorbankan).
+      const chatMsgs = parsed.state?.chat;
+      if (chatMsgs) {
+        for (let i = 0; i < chatMsgs.length; i++) {
+          if (!chatMsgs[i].imageDataUrl) continue;
+          chatMsgs[i] = { ...chatMsgs[i], imageDataUrl: undefined };
+          try {
+            window.localStorage.setItem(name, JSON.stringify(parsed));
+            return;
+          } catch {
+            // lanjut buang foto berikutnya
+          }
+        }
+      }
       const posts = parsed.state?.feedPosts;
       if (posts) {
         // Buang foto dari yang terlama dulu sampai muat.
@@ -128,6 +159,20 @@ async function trySupabaseInsert(table: string, row: Record<string, unknown>) {
 
 /* ───────────────────────── State ───────────────────────── */
 
+export interface ArcadeRoundResult {
+  play: ArcadePlay;
+  passed: boolean;
+  level: number;
+  points: number;
+  xp: number;
+  /** true bila Poin benar-benar diberikan. */
+  rewarded: boolean;
+  /** true bila lulus tetapi batas ronde berhadiah hari ini sudah habis. */
+  rewardCapped: boolean;
+  levelUp: boolean;
+  newLevel: number;
+}
+
 export interface FamilyState {
   stories: StoryEntry[];
   goals: SavingsGoal[];
@@ -159,7 +204,8 @@ export interface FamilyState {
   ) => { success: boolean; message: string };
   sendReminder: (fromId: string, toId: string) => { success: boolean; message: string };
   markRemindersSeen: (toId: string) => void;
-  sendChat: (authorId: string, text: string) => boolean;
+  /** Kirim pesan teks dan/atau foto. Mengembalikan false bila kosong atau kepanjangan. */
+  sendChat: (authorId: string, text: string, imageDataUrl?: string) => boolean;
   /** Siaran otomatis; dilewati bila `dedupeKey` sudah ada. */
   addAutoPost: (post: Omit<FeedPost, "id" | "createdAt" | "day" | "likes" | "comments" | "gifts">) => void;
 
@@ -197,7 +243,28 @@ export interface FamilyState {
     total: number;
     passed: boolean;
   }) => ArcadePlay;
-  claimArcadeReward: (playId: string) => { success: boolean; message: string };
+  /** Versi 5.2: kemajuan level, sesi berjalan, pemakaian harian, dan batas bermain. */
+  arcadeProgress: Record<string, ArcadeModeProgress>;
+  arcadeSessions: Record<string, ArcadeSession>;
+  arcadeDaily: Record<string, ArcadeDaily>;
+  arcadeLimits: Record<string, ArcadeLimits>;
+  /** Mulai ronde baru, atau lanjutkan sesi yang tersimpan (tanpa mengulang soal yang sudah dijawab). */
+  startArcadeRound: (payload: {
+    userId: string;
+    modeId: string;
+    level?: number;
+  }) => { ok: true; session: ArcadeSession; resumed: boolean } | { ok: false; blocked: LimitBlock };
+  /** Simpan langkah: `index` soal sudah dijawab dengan total `score` benar. */
+  saveArcadeStep: (userId: string, modeId: string, index: number, score: number) => void;
+  dropArcadeSession: (userId: string, modeId: string) => void;
+  addArcadeSeconds: (userId: string, seconds: number) => void;
+  finishArcadeRound: (payload: {
+    userId: string;
+    modeId: string;
+    score: number;
+    total: number;
+  }) => ArcadeRoundResult;
+  setArcadeLimits: (userId: string, limits: ArcadeLimits) => void;
 
   claimQuest: (payload: {
     profileId: string;
@@ -211,6 +278,9 @@ export interface FamilyState {
 
   resetFamilyData: () => void;
 }
+
+/** Jumlah foto chat yang disimpan; sisanya dipangkas dari yang terlama. */
+const MAX_CHAT_IMAGES = 12;
 
 let idCounter = 0;
 /** ID unik tanpa Math.random: waktu + penghitung urut (aman untuk beberapa aksi dalam 1 milidetik). */
@@ -258,6 +328,10 @@ export const useFamilyStore = create<FamilyState>()(
       stories: [],
       goals: [],
       arcadePlays: [],
+      arcadeProgress: {},
+      arcadeSessions: {},
+      arcadeDaily: {},
+      arcadeLimits: {},
       questClaims: {},
       medalClaims: {},
       feedPosts: [],
@@ -401,16 +475,27 @@ export const useFamilyStore = create<FamilyState>()(
         }));
       },
 
-      sendChat: (authorId, text) => {
+      sendChat: (authorId, text, imageDataUrl) => {
         const clean = text.trim();
-        if (!clean || clean.length > 300) return false;
+        if ((!clean && !imageDataUrl) || clean.length > 300) return false;
         const msg: ChatMessage = {
           id: newId("chat"),
           authorId,
           text: clean,
+          imageDataUrl,
           createdAt: new Date().toISOString(),
         };
-        set((s) => ({ chat: [...s.chat, msg].slice(-200) }));
+        set((s) => {
+          const next = [...s.chat, msg].slice(-200);
+          // Simpan foto hanya untuk 12 pesan bergambar terbaru; yang lebih lama tinggal teksnya.
+          let kept = 0;
+          for (let i = next.length - 1; i >= 0; i--) {
+            if (!next[i].imageDataUrl) continue;
+            kept += 1;
+            if (kept > MAX_CHAT_IMAGES) next[i] = { ...next[i], imageDataUrl: undefined };
+          }
+          return { chat: next };
+        });
         return true;
       },
 
@@ -622,42 +707,146 @@ export const useFamilyStore = create<FamilyState>()(
         return play;
       },
 
-      claimArcadeReward: (playId) => {
+      startArcadeRound: ({ userId, modeId, level }) => {
         const state = get();
-        const play = state.arcadePlays.find((p) => p.id === playId);
-        if (!play) return { success: false, message: "Permainan tidak ditemukan." };
-        if (!play.passed) {
-          return { success: false, message: "Skor belum cukup. Coba lagi untuk lulus (minimal 60%)." };
-        }
-        if (play.rewardClaimed) {
-          return { success: false, message: "Hadiah permainan ini sudah diklaim." };
-        }
         const today = localDateStr();
-        if (play.date !== today) {
-          return { success: false, message: "Hadiah hanya bisa diklaim di hari yang sama." };
+        const status = limitStatus(dailyOf(state.arcadeDaily[userId], today), limitsOf(state.arcadeLimits[userId]));
+        if (status.blocked) return { ok: false, blocked: status.blocked };
+
+        const key = progressKey(userId, modeId);
+        const progress = state.arcadeProgress[key] ?? emptyProgress();
+        const existing = state.arcadeSessions[key];
+        const wanted = level === undefined ? progress.level : Math.min(clampLevel(level), progress.level);
+        if (existing && existing.level === wanted) {
+          return { ok: true, session: existing, resumed: existing.index > 0 };
         }
-        const claimedToday = state.arcadePlays.filter(
-          (p) => p.userId === play.userId && p.date === today && p.rewardClaimed
-        ).length;
-        if (claimedToday >= ARCADE_DAILY_CLAIM_LIMIT) {
-          return {
-            success: false,
-            message: `Hadiah Poin game maksimal ${ARCADE_DAILY_CLAIM_LIMIT}x sehari. Besok klaim lagi ya!`,
-          };
-        }
-        set((s) => ({
-          arcadePlays: s.arcadePlays.map((p) =>
-            p.id === playId ? { ...p, rewardClaimed: true } : p
-          ),
+
+        const cursor = progress.cursor[wanted] ?? 0;
+        const session: ArcadeSession = {
+          userId,
+          modeId,
+          level: wanted,
+          seed: `${userId}|${modeId}|L${wanted}`,
+          cursor,
+          index: 0,
+          score: 0,
+          startedAt: new Date().toISOString(),
+        };
+        set((st) => ({
+          arcadeSessions: { ...st.arcadeSessions, [key]: session },
+          arcadeProgress: {
+            ...st.arcadeProgress,
+            [key]: { ...progress, cursor: { ...progress.cursor, [wanted]: cursor + 1 } },
+          },
         }));
-        useBukuDompetStore.getState().awardReward({
-          profileId: play.userId,
-          points: ARCADE_CLAIM_POINTS,
-          xp: ARCADE_CLAIM_XP,
-          title: `Hadiah Game! (+${ARCADE_CLAIM_POINTS} Poin & +${ARCADE_CLAIM_XP} Stage XP)`,
-          subtitle: `Klaim ${claimedToday + 1}/${ARCADE_DAILY_CLAIM_LIMIT} hari ini.`,
+        return { ok: true, session, resumed: false };
+      },
+
+      saveArcadeStep: (userId, modeId, index, score) => {
+        const key = progressKey(userId, modeId);
+        const cur = get().arcadeSessions[key];
+        if (!cur) return;
+        set((st) => ({ arcadeSessions: { ...st.arcadeSessions, [key]: { ...cur, index, score } } }));
+      },
+
+      dropArcadeSession: (userId, modeId) => {
+        const key = progressKey(userId, modeId);
+        if (!get().arcadeSessions[key]) return;
+        set((st) => {
+          const next = { ...st.arcadeSessions };
+          delete next[key];
+          return { arcadeSessions: next };
         });
-        return { success: true, message: `+${ARCADE_CLAIM_POINTS} Poin & +${ARCADE_CLAIM_XP} Stage XP diklaim!` };
+      },
+
+      addArcadeSeconds: (userId, seconds) => {
+        if (!(seconds > 0)) return;
+        const today = localDateStr();
+        set((st) => {
+          const d = dailyOf(st.arcadeDaily[userId], today);
+          return { arcadeDaily: { ...st.arcadeDaily, [userId]: { ...d, seconds: d.seconds + seconds } } };
+        });
+      },
+
+      setArcadeLimits: (userId, limits) => {
+        set((st) => ({ arcadeLimits: { ...st.arcadeLimits, [userId]: limits } }));
+      },
+
+      finishArcadeRound: ({ userId, modeId, score, total }) => {
+        const state = get();
+        const mode = ARCADE_MODE_BY_ID[modeId];
+        const key = progressKey(userId, modeId);
+        const playedLevel = state.arcadeSessions[key]?.level ?? state.arcadeProgress[key]?.level ?? 1;
+        const passed = total > 0 && score / total >= 0.6;
+        // Mode "partisipasi" (napas, kebaikan, kartu terima kasih) selalu bisa 100%, jadi skor sempurna
+        // tidak mempercepat naik level di sana; level hanya naik lewat jumlah ronde lulus.
+        const participation = mode?.engine === "breath" || mode?.engine === "kindness" || mode?.engine === "thanks";
+        const perfect = !participation && total >= 3 && score === total;
+        const today = localDateStr();
+
+        const progress = state.arcadeProgress[key] ?? emptyProgress();
+        const { next: nextProgress, levelUp } = applyRoundResult(progress, playedLevel, passed, perfect);
+
+        const rewardedToday = state.arcadePlays.filter((p) => p.userId === userId && p.date === today && p.rewardClaimed).length;
+        const rewardCapped = passed && rewardedToday >= ARCADE_DAILY_REWARD_LIMIT;
+        const rewarded = passed && !rewardCapped;
+        const points = rewarded ? ARCADE_LEVEL_POINTS[playedLevel] : 0;
+        const xp = rewarded ? ARCADE_LEVEL_XP[playedLevel] : 0;
+
+        const play: ArcadePlay = {
+          id: newId("play"),
+          userId,
+          modeId,
+          category: mode?.category ?? "language",
+          score,
+          total,
+          passed,
+          rewardClaimed: rewarded,
+          level: playedLevel,
+          pointsEarned: points,
+          date: today,
+          createdAt: new Date().toISOString(),
+        };
+
+        set((st) => {
+          const sessions = { ...st.arcadeSessions };
+          delete sessions[key];
+          const d = dailyOf(st.arcadeDaily[userId], today);
+          return {
+            arcadePlays: [play, ...st.arcadePlays].slice(0, 400),
+            arcadeSessions: sessions,
+            arcadeProgress: { ...st.arcadeProgress, [key]: nextProgress },
+            arcadeDaily: { ...st.arcadeDaily, [userId]: { ...d, rounds: d.rounds + 1 } },
+          };
+        });
+
+        if (rewarded) {
+          useBukuDompetStore.getState().awardReward({
+            profileId: userId,
+            points,
+            xp,
+            title: `Hadiah Game! (+${points} Poin & +${xp} Stage XP)`,
+            subtitle: `${mode?.title ?? "Arcade"} • Level ${playedLevel} (${ARCADE_LEVEL_NAMES[playedLevel]})`,
+          });
+        }
+
+        // Kabar ke Beranda Keluarga hanya untuk ronde yang lulus.
+        if (passed) {
+          const prof = profileOf(userId);
+          if (prof) {
+            const who = shortName(prof.display_name);
+            const base = `${who} lulus “${mode?.title ?? "Arcade"}” Level ${playedLevel} dengan skor ${score}/${total}`;
+            const tail = rewarded ? ` dan dapat +${points} Poin!` : "!";
+            get().addAutoPost({
+              kind: "arcade",
+              authorId: userId,
+              text: levelUp ? `${base}${tail} Naik ke Level ${nextProgress.level} (${ARCADE_LEVEL_NAMES[nextProgress.level]})!` : `${base}${tail}`,
+              dedupeKey: `arcade:${play.id}`,
+            });
+          }
+        }
+
+        return { play, passed, level: playedLevel, points, xp, rewarded, rewardCapped, levelUp, newLevel: nextProgress.level };
       },
 
       claimQuest: ({ profileId, audience, claimKey }) => {
@@ -703,15 +892,20 @@ export const useFamilyStore = create<FamilyState>()(
           return { success: false, message: "Syarat medali belum terpenuhi." };
         }
         set((s) => ({ medalClaims: { ...s.medalClaims, [key]: localDateStr() } }));
+        const unlocked = useBukuDompetStore.getState().unlockBadgeItems(profileId, medalUnlock(def.id, def.tier));
+        const bonus = [
+          unlocked.titleIds.length > 0 ? `Gelar "${def.title}"` : "",
+          unlocked.bgIds.length > 0 ? `${unlocked.bgIds.length} Latar badge` : "",
+        ].filter(Boolean);
         useBukuDompetStore.getState().awardReward({
           profileId,
           points: def.rewardPoints,
           xp: def.rewardXp,
           isCombo: true,
           title: `Medali "${def.title}" Diklaim!`,
-          subtitle: `Hadiah tonggak: +${def.rewardPoints} Poin & +${def.rewardXp} Stage XP.`,
+          subtitle: `Hadiah tonggak: +${def.rewardPoints} Poin & +${def.rewardXp} Stage XP${bonus.length ? `, plus ${bonus.join(" & ")}` : ""}.`,
         });
-        return { success: true, message: `+${def.rewardPoints} Poin & +${def.rewardXp} Stage XP` };
+        return { success: true, message: `+${def.rewardPoints} Poin & +${def.rewardXp} Stage XP${bonus.length ? ` • ${bonus.join(" & ")}` : ""}` };
       },
 
       resetFamilyData: () => {
@@ -719,6 +913,10 @@ export const useFamilyStore = create<FamilyState>()(
           stories: [],
           goals: [],
           arcadePlays: [],
+          arcadeProgress: {},
+          arcadeSessions: {},
+          arcadeDaily: {},
+          arcadeLimits: {},
           questClaims: {},
           medalClaims: {},
           feedPosts: [],
@@ -730,13 +928,21 @@ export const useFamilyStore = create<FamilyState>()(
     }),
     {
       name: "bukudompet-v5-family",
-      version: 1,
+      // Versi 2 (GO LIVE): cerita, tabungan, skor arcade, feed, dan chat versi lama berasal dari akun demo
+      // yang sudah tidak ada, jadi dibuang. Penyimpanan versi 2 ke atas dipakai apa adanya.
+      version: 2,
+      migrate: (persistedState, fromVersion) =>
+        (fromVersion < 2 ? {} : persistedState) as FamilyState,
       skipHydration: true,
       storage: createJSONStorage(() => safeLocalStorage),
       partialize: (state) => ({
         stories: state.stories,
         goals: state.goals,
         arcadePlays: state.arcadePlays,
+        arcadeProgress: state.arcadeProgress,
+        arcadeSessions: state.arcadeSessions,
+        arcadeDaily: state.arcadeDaily,
+        arcadeLimits: state.arcadeLimits,
         questClaims: state.questClaims,
         medalClaims: state.medalClaims,
         feedPosts: state.feedPosts,

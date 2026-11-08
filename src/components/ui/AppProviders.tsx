@@ -8,6 +8,7 @@ import { useStoresHydrated } from "@/lib/hydration";
 import { localDateStr } from "@/lib/dates";
 import { ColdAmbience } from "@/components/ui/ColdAmbience";
 import { HydrationSplash } from "@/components/ui/PageTransitionLoader";
+import { cozyBgm } from "@/lib/cozy-bgm";
 
 export type AuthRequirement = "required" | "none";
 
@@ -25,9 +26,15 @@ export function homePathForRole(role: string): string {
 export function AppProviders({
   children,
   auth = "required",
+  roles,
 }: {
   children: React.ReactNode;
   auth?: AuthRequirement;
+  /**
+   * Peran yang boleh membuka segmen ini. Peran lain otomatis dikembalikan ke rumahnya sendiri,
+   * jadi mengetik alamat /admin atau /supervisor tidak membuka halaman peran lain.
+   */
+  roles?: string[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -48,13 +55,42 @@ export function AppProviders({
     hydrated && isLoggedIn && isChildRole(currentRole) && viewed?.isColdStreakMode
   );
 
-  // Penjaga sesi
+  const roleAllowed = !roles || roles.includes(currentRole);
+
+  // Penjaga sesi + penjaga peran
   useEffect(() => {
     if (!hydrated) return;
     if (auth === "required" && !isLoggedIn) {
       router.replace("/login");
+    } else if (auth === "required" && isLoggedIn && !roleAllowed) {
+      router.replace(homePathForRole(currentRole));
     }
-  }, [hydrated, auth, isLoggedIn, router, pathname]);
+  }, [hydrated, auth, isLoggedIn, roleAllowed, currentRole, router, pathname]);
+
+  // Backsound semua halaman (Versi 5.2): halaman login senyap; setelah masuk, musik menyala dan terus
+  // mengalir antarhalaman. Musik dimulai saat tombol login ditekan (gestur pengguna). Bila halaman dimuat
+  // ulang saat sudah masuk, peramban memblokir suara otomatis, jadi musik menyambung di sentuhan pertama.
+  useEffect(() => {
+    if (!hydrated) return;
+    if (auth === "none") {
+      // Senyap di halaman login (belum masuk). Begitu login berhasil, isLoggedIn berubah saat halaman
+      // masih tampil sebentar: jangan matikan musik yang baru dinyalakan tombol login.
+      if (!isLoggedIn) cozyBgm.stop(false);
+      return;
+    }
+    if (!isLoggedIn || cozyBgm.isPlaying() || !cozyBgm.wantsMusic()) return;
+    const resume = () => {
+      cozyBgm.start(false);
+      window.removeEventListener("pointerdown", resume);
+      window.removeEventListener("keydown", resume);
+    };
+    window.addEventListener("pointerdown", resume);
+    window.addEventListener("keydown", resume);
+    return () => {
+      window.removeEventListener("pointerdown", resume);
+      window.removeEventListener("keydown", resume);
+    };
+  }, [hydrated, auth, isLoggedIn]);
 
   // Jembatan siaran keluarga (setelah hidrasi)
   useEffect(() => {
@@ -88,6 +124,7 @@ export function AppProviders({
 
   if (!hydrated) return <HydrationSplash />;
   if (auth === "required" && !isLoggedIn) return <HydrationSplash />;
+  if (auth === "required" && !roleAllowed) return <HydrationSplash />;
 
   return (
     <>

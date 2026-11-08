@@ -12,6 +12,8 @@ import { EmotionWheelIcon, PiggyVaultIllustration, EMOTION_KEYS, EMOTION_LABEL }
 import { CozyCard, ChunkyProgressBar, formatRupiah } from "@/components/ui/CozyPrimitives";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import { ARCADE_CATEGORIES, ARCADE_MODE_BY_ID } from "@/lib/arcade-modes";
+import { ARCADE_LEVEL_NAMES, ARCADE_LIMIT_MINUTE_OPTIONS, ARCADE_LIMIT_ROUND_OPTIONS } from "@/lib/family-types";
+import { dailyOf, formatClock, limitsOf } from "@/lib/arcade-progress";
 import { STORY_CATEGORY_BY_ID } from "@/lib/story-utils";
 import { addDaysStr, localDateStr, shortDateLabel } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -21,6 +23,10 @@ export function KidMonitorPanel({ user }: { user: ProfileData }) {
   const goals = useFamilyStore((s) => s.goals);
   const plays = useFamilyStore((s) => s.arcadePlays);
   const transactions = useBukuDompetStore((s) => s.transactions);
+  const arcadeDaily = useFamilyStore((s) => s.arcadeDaily);
+  const arcadeLimits = useFamilyStore((s) => s.arcadeLimits);
+  const arcadeProgress = useFamilyStore((s) => s.arcadeProgress);
+  const setArcadeLimits = useFamilyStore((s) => s.setArcadeLimits);
   const [openStory, setOpenStory] = useState<string | null>(null);
 
   const myStories = useMemo(() => stories.filter((s) => s.userId === user.id), [stories, user.id]);
@@ -56,6 +62,19 @@ export function KidMonitorPanel({ user }: { user: ProfileData }) {
     [myPlays]
   );
   const recentPlays = myPlays.slice(0, 6);
+  const limits = limitsOf(arcadeLimits[user.id]);
+  const usage = dailyOf(arcadeDaily[user.id], today);
+  const topLevels = useMemo(
+    () =>
+      Object.entries(arcadeProgress)
+        .filter(([k, v]) => k.startsWith(`${user.id}|`) && v.level > 1)
+        .map(([k, v]) => ({ modeId: k.slice(user.id.length + 1), level: v.level }))
+        .sort((a, b) => b.level - a.level)
+        .slice(0, 4),
+    [arcadeProgress, user.id]
+  );
+  const limitSelect =
+    "px-2.5 py-1.5 rounded-xl border-2 border-[#E6DFD2] border-b-[3px] border-b-[#D4C9B4] bg-white font-display text-xs font-extrabold text-[#3D352E] cursor-pointer";
 
   return (
     <div className="space-y-4 min-w-0">
@@ -160,12 +179,58 @@ export function KidMonitorPanel({ user }: { user: ProfileData }) {
               </div>
             ))}
           </div>
+          <div className="rounded-2xl bg-[#FFFBEB] border-2 border-[#FDE08D] p-3 space-y-2 min-w-0">
+            <p className="font-display text-xs font-extrabold text-[#4A3500] leading-snug">Batas Main Hari Ini (Screen Time)</p>
+            <p className="text-xs font-bold text-[#7A6E65] tabular-nums leading-snug">
+              Terpakai {usage.rounds}/{limits.maxRoundsPerDay} ronde • {formatClock(usage.seconds)} dari {limits.maxMinutesPerDay} menit
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label className="flex items-center justify-between gap-2 text-xs font-bold text-[#3D352E]">
+                Maks. ronde / hari
+                <select
+                  className={limitSelect}
+                  value={limits.maxRoundsPerDay}
+                  onChange={(e) => setArcadeLimits(user.id, { ...limits, maxRoundsPerDay: Number(e.target.value) })}
+                >
+                  {ARCADE_LIMIT_ROUND_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} ronde
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-2 text-xs font-bold text-[#3D352E]">
+                Maks. waktu / hari
+                <select
+                  className={limitSelect}
+                  value={limits.maxMinutesPerDay}
+                  onChange={(e) => setArcadeLimits(user.id, { ...limits, maxMinutesPerDay: Number(e.target.value) })}
+                >
+                  {ARCADE_LIMIT_MINUTE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} menit
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+          {topLevels.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {topLevels.map((t) => (
+                <span key={t.modeId} className="px-2 py-1 rounded-full bg-[#F8F0FF] border-2 border-[#E2C6FF] text-[11px] font-display font-extrabold text-[#8A3FC2] break-words">
+                  {ARCADE_MODE_BY_ID[t.modeId]?.title ?? t.modeId}: Level {t.level} ({ARCADE_LEVEL_NAMES[t.level]})
+                </span>
+              ))}
+            </div>
+          )}
           {recentPlays.length > 0 && (
             <ul className="space-y-1">
               {recentPlays.map((p) => (
                 <li key={p.id} className="flex items-center justify-between gap-2 text-xs font-bold text-[#3D352E] min-w-0">
                   <span className="break-words min-w-0">
                     {ARCADE_MODE_BY_ID[p.modeId] && <GlyphInline name={ARCADE_MODE_BY_ID[p.modeId].icon} />} {ARCADE_MODE_BY_ID[p.modeId]?.title ?? p.modeId}
+                    {p.level ? <span className="text-[#8A3FC2]"> • Lv {p.level}</span> : null}
                   </span>
                   <span className={cn("tabular-nums shrink-0", p.passed ? "text-[#2E6F00]" : "text-[#C83E2B]")}>
                     {p.score}/{p.total} <GlyphInline name={p.passed ? "check" : "cross"} />

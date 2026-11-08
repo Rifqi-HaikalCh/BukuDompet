@@ -10489,3 +10489,7 @@ export const AccessoryPreviewIcon = memo(function AccessoryPreviewIcon({ accesso
     </MotionConfig>
   );
 });
+
+// __AUDIT_EXPORT_START (khusus harness audit di cloud; DIHAPUS sebelum sinkron ke repo)
+export const __AUDIT = { SPECIES_ART, GROUND, VB_W, VB_H };
+// __AUDIT_EXPORT_END

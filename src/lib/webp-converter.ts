@@ -14,7 +14,6 @@ export const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
 /** Batas hasil WebP (data URL) agar localStorage tidak penuh (±350 KB). */
 export const MAX_OUTPUT_CHARS = 480_000;
 
-export const WEBP_INDICATOR_TEXT = "Foto otomatis dikompresi ke WebP hemat memori!";
 
 export interface WebpResult {
   dataUrl: string;
@@ -34,7 +33,19 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export async function convertImageToWebp(file: File): Promise<WebpResult> {
+export interface WebpOptions {
+  maxWidth?: number;
+  quality?: number;
+  maxOutputChars?: number;
+}
+
+/** Pengaturan hemat untuk foto di Chat Keluarga: lebih kecil dari foto Beranda. */
+export const CHAT_WEBP_OPTIONS: Required<WebpOptions> = { maxWidth: 720, quality: 0.72, maxOutputChars: 200_000 };
+
+export async function convertImageToWebp(file: File, options: WebpOptions = {}): Promise<WebpResult> {
+  const maxWidth = options.maxWidth ?? WEBP_MAX_WIDTH;
+  const quality = options.quality ?? WEBP_QUALITY;
+  const maxChars = options.maxOutputChars ?? MAX_OUTPUT_CHARS;
   if (!file.type.startsWith("image/")) {
     throw new Error("Berkas harus berupa gambar (JPG, PNG, atau WebP).");
   }
@@ -49,7 +60,7 @@ export async function convertImageToWebp(file: File): Promise<WebpResult> {
     const naturalH = img.naturalHeight || img.height;
     if (!naturalW || !naturalH) throw new Error("Ukuran foto tidak valid.");
 
-    const scale = naturalW > WEBP_MAX_WIDTH ? WEBP_MAX_WIDTH / naturalW : 1;
+    const scale = naturalW > maxWidth ? maxWidth / naturalW : 1;
     const width = Math.max(1, Math.round(naturalW * scale));
     const height = Math.max(1, Math.round(naturalH * scale));
 
@@ -61,11 +72,11 @@ export async function convertImageToWebp(file: File): Promise<WebpResult> {
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(img, 0, 0, width, height);
 
-    const dataUrl = canvas.toDataURL("image/webp", WEBP_QUALITY);
+    const dataUrl = canvas.toDataURL("image/webp", quality);
     if (!dataUrl.startsWith("data:image/webp")) {
       throw new Error("Browser ini belum bisa mengompres ke WebP. Coba browser lain.");
     }
-    if (dataUrl.length > MAX_OUTPUT_CHARS) {
+    if (dataUrl.length > maxChars) {
       throw new Error("Foto masih terlalu besar setelah dikompres. Pilih foto yang lebih sederhana.");
     }
 

@@ -121,6 +121,11 @@ CREATE TABLE IF NOT EXISTS point_redemptions (
   approved_at TIMESTAMPTZ
 );
 
+/* ===== DATA DEMO DINONAKTIFKAN (Versi 5.4 - GO LIVE) =====
+   Akun & catatan contoh (adik, bima, citra, orangtua, wali, abang) tidak lagi dibuat.
+   Akun asli dibuat oleh 004_v5_4_go_live.sql.
+   Skema (CREATE/ALTER) di atas tetap berlaku. Blok seed di bawah sengaja dikomentari.
+
 -- ============================================================
 -- SEED DATA MULTI-USER BUKUDOMPET VERSI 3.0
 -- (1 Admin, 2 Supervisor, 3 User dengan Pemetaan Assignment)
@@ -513,3 +518,4 @@ ON CONFLICT (id) DO UPDATE SET
   points_redeemed = EXCLUDED.points_redeemed,
   rupiah_value = EXCLUDED.rupiah_value,
   note = EXCLUDED.note;
+*/

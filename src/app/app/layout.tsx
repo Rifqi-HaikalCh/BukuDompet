@@ -7,7 +7,7 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AppProviders auth="required">
+    <AppProviders auth="required" roles={["user", "schoolchild"]}>
       <UserAppShell>{children}</UserAppShell>
     </AppProviders>
   );

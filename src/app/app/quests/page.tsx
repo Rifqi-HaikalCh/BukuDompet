@@ -14,7 +14,6 @@ import { PointsWalletSection } from "@/components/quests/PointsWalletSection";
 import { MissionsSection } from "@/components/quests/MissionsSection";
 import { MedalShowcase } from "@/components/quests/MedalShowcase";
 import { HarvestGuide } from "@/components/quests/HarvestGuide";
-import { SchoolArcadeHub } from "@/components/schoolchild/SchoolArcadeHub";
 
 export default function QuestsPage() {
   const activeProfileId = useBukuDompetStore((s) => s.activeProfileId);
@@ -57,7 +56,6 @@ export default function QuestsPage() {
       </CozyCard>
 
       <MissionsSection profile={profile} state={state} />
-      {profile.role === "schoolchild" && <SchoolArcadeHub profile={profile} />}
       <MedalShowcase profile={profile} state={state} />
       <HarvestGuide isKid={profile.role === "schoolchild"} />
     </div>

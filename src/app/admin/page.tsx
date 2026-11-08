@@ -39,7 +39,6 @@ import {
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { GamificationFX } from "@/components/ui/GamificationFX";
-import { TransactionDrawer } from "@/components/user/TransactionDrawer";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
 import { useCozyBgm } from "@/lib/cozy-bgm";
 import { cn, formatCompactRupiah } from "@/lib/utils";
@@ -52,17 +51,12 @@ export default function AdminCommandCenterPage() {
     supervisorAssignments,
     transactions,
     redemptions,
-    isSandboxMode,
-    toggleSandboxMode,
-    setTransactionDrawerOpen,
     approveOrRejectCashout,
     updateBudgetSettings,
     addCustomMission,
     registerNewAccount,
     toggleSupervisorAssignment,
     switchRoleDirect,
-    resetToDemoSeed,
-    setColdStreakMode,
     logout,
   } = useBukuDompetStore();
 
@@ -132,7 +126,7 @@ export default function AdminCommandCenterPage() {
 
   // 4. Custom Mission Injector State
   const [missionTitle, setMissionTitle] = useState<string>(
-    "Tantangan Spesial Abang: Catat Struk Kantin"
+    "Tantangan Spesial: Catat Struk Kantin"
   );
   const [missionDesc, setMissionDesc] = useState<string>(
     "Catat pengeluaran makan siang dengan rincian jujur hari ini!"
@@ -148,7 +142,6 @@ export default function AdminCommandCenterPage() {
       | "approve_cashout"
       | "reject_cashout"
       | "save_budget"
-      | "reset_demo"
       | "exit_login";
     redemptionId?: string;
     amount?: number;
@@ -209,9 +202,6 @@ export default function AdminCommandCenterPage() {
         Number(savingInput) || 350000,
         targetUserProfile.id
       );
-    } else if (pendingAction.type === "reset_demo") {
-      soundEffects.tactileClick();
-      resetToDemoSeed();
     } else if (pendingAction.type === "exit_login") {
       logout();
       router.push("/login");
@@ -240,7 +230,6 @@ export default function AdminCommandCenterPage() {
       <PageTransitionLoader />
       <GamificationFX />
       <FloatingRewardBanner />
-      <TransactionDrawer />
 
       {/* Universal Admin Confirm Modal */}
       <CozyConfirmModal
@@ -254,8 +243,6 @@ export default function AdminCommandCenterPage() {
             ? "Tolak Tiket Pencairan Poin?"
             : pendingAction?.type === "save_budget"
             ? `Simpan Target Budget ${targetUserProfile.display_name}?`
-            : pendingAction?.type === "reset_demo"
-            ? "Reset Seluruh Data Demo?"
             : "Keluar ke Halaman Login?"
         }
         description={
@@ -271,8 +258,6 @@ export default function AdminCommandCenterPage() {
               )} dengan target tabungan ${formatRupiah(
                 Number(savingInput) || 0
               )}. Rumus DSSL akan otomatis menyesuaikan.`
-            : pendingAction?.type === "reset_demo"
-            ? "Seluruh akun tambahan, transaksi, poin, misi, dan evolusi akan dikembalikan ke data awal (Seed Data)."
             : "Anda akan kembali ke layar Login Kredensial."
         }
         confirmLabel={
@@ -282,7 +267,6 @@ export default function AdminCommandCenterPage() {
         }
         confirmVariant={
           pendingAction?.type === "reject_cashout" ||
-          pendingAction?.type === "reset_demo" ||
           pendingAction?.type === "exit_login"
             ? "peach"
             : "matcha"
@@ -291,7 +275,7 @@ export default function AdminCommandCenterPage() {
         mochiMood={
           pendingAction?.type === "reject_cashout" ? "worried" : "proud_combo"
         }
-        badgeText="Konfirmasi Admin Abang"
+        badgeText="Konfirmasi Admin"
       />
 
       {/* Top Sticky Admin Command Bar & Role View Switcher */}
@@ -310,7 +294,7 @@ export default function AdminCommandCenterPage() {
             />
             <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E3F4FF] border-2 border-[#9AD2FF] text-xs font-display font-extrabold text-[#1565C0] truncate">
               <CozyIcon name="crown_sultan" size={18} />
-              Command Center Abang (Admin Multi-User)
+              Command Center Admin (Multi-User)
             </span>
           </div>
 
@@ -378,7 +362,7 @@ export default function AdminCommandCenterPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6 min-w-0 max-w-full overflow-hidden">
-        {/* 1. Sandbox / Simulasi Pencatatan Banner (Single Soft Pastel Sky Hero Card) */}
+        {/* 1. Banner Pusat Kendali (Single Soft Pastel Sky Hero Card) */}
         <CozyCard
           tone="sky"
           className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
@@ -398,9 +382,7 @@ export default function AdminCommandCenterPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-2.5 py-0.5 rounded-full bg-white border border-[#BCE3FF] text-xs font-display font-extrabold text-[#1565C0] inline-flex items-center gap-1">
                   <CozyIcon name="combo_sparkle" size={16} />
-                  {isSandboxMode
-                    ? "Mode Simulasi Sandbox: AKTIF"
-                    : "Mode Live Buku Kas: AKTIF"}
+                  Mode Live Buku Kas: AKTIF
                 </span>
                 <span className="text-xs font-display font-extrabold tabular-nums text-[#4A3500] bg-[#FFFBEB] px-2.5 py-0.5 rounded-full border border-[#FDE08D]">
                   Total Akun Terdaftar: {profiles.length} Akun (
@@ -419,50 +401,6 @@ export default function AdminCommandCenterPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto shrink-0">
-            <TactileButton
-              variant="cream"
-              size="md"
-              onClick={toggleSandboxMode}
-            >
-              <CozyIcon name="combo_sparkle" size={18} />
-              {isSandboxMode ? "Matikan Sandbox" : "Aktifkan Simulasi"}
-            </TactileButton>
-
-            <TactileButton
-              variant="matcha"
-              size="md"
-              onClick={() => setTransactionDrawerOpen(true)}
-            >
-              <CozyIcon name="plus_record" size={20} /> + Uji Catat Kas
-            </TactileButton>
-
-            <TactileButton
-              variant="sky"
-              size="sm"
-              onClick={() => {
-                soundEffects.tactileClick();
-                setColdStreakMode(
-                  targetUserProfile.id,
-                  !targetUserProfile.isColdStreakMode
-                );
-              }}
-              title="Menyalakan / mematikan mode Streak Padam pada akun yang dipilih"
-            >
-              {targetUserProfile.isColdStreakMode
-                ? <><GlyphInline name="sun" /> Hangatkan Lagi</>
-                : <><GlyphInline name="snowflake" /> Uji Mode Streak Padam (Cold Ambience)</>}
-            </TactileButton>
-
-            <TactileButton
-              variant="peach"
-              size="sm"
-              onClick={() => setPendingAction({ type: "reset_demo" })}
-              title="Reset seluruh data kembali ke Seed Awal"
-            >
-              Reset Demo
-            </TactileButton>
-          </div>
         </CozyCard>
 
         {/* ============================================================

@@ -52,6 +52,7 @@ import { soundEffects } from "@/lib/sound-effects";
 import { useCozyBgm } from "@/lib/cozy-bgm";
 import { totalShieldsFor } from "@/lib/streak-shields";
 import { cn } from "@/lib/utils";
+import { TitleBadge } from "@/components/badges/TitleBadge";
 
 interface NavItem {
   href: string;
@@ -98,9 +99,7 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
     monitoredUserId,
     profiles,
     transactions,
-    equippedTitle,
     isProudComboActive,
-    isSandboxMode,
     particleBurstKey,
     setTransactionDrawerOpen,
     setCashoutModalOpen,
@@ -108,7 +107,6 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
     setStoryModalOpen,
     setSavingsModalOpen,
     triggerActionLoading,
-    setColdStreakMode,
     logout,
   } = useBukuDompetStore();
   const stories = useFamilyStore((s) => s.stories);
@@ -218,9 +216,7 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
       <GlyphInline name="pen" /> Tulis Cerita
     </>
   ) : (
-    <>
-      <GlyphInline name="plus" /> Catat Kas Sekarang
-    </>
+    <>Catat Kas</>
   );
 
   return (
@@ -268,13 +264,6 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
             <span className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-display font-extrabold text-[#3D352E]">
               @{userProfile.username} • {petName}
             </span>
-
-            {isSandboxMode && (
-              <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-2xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] text-xs font-display font-extrabold text-[#3D352E] shrink-0">
-                <CozyIcon name="combo_sparkle" size={18} />
-                Simulasi
-              </span>
-            )}
 
             <button
               type="button"
@@ -386,7 +375,7 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
               >
                 <CozyIcon name="xp_star" size={20} />
                 <span className="font-display text-xs sm:text-sm font-extrabold text-[#1565C0]">
-                  Fase {currentStage}/8
+                  {stageMeta.name}
                 </span>
               </Link>
             </motion.div>
@@ -505,54 +494,6 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
               {isKid ? "Buka Kalender Streak dan Rekap Catatan" : "Buka Kalender & Rekap Kas"}
             </TactileButton>
           </CozyCard>
-
-          {/* Pintu Keluarga + Uji Streak Padam */}
-          <CozyCard tone="white" className="p-3.5 space-y-2">
-            <p className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#7A6E65]">
-              Pintu Keluarga (Demo Cepat)
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                href="/supervisor"
-                onClick={(e) => handleNavClick(e, "/supervisor")}
-                className="px-2.5 py-2 rounded-xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center justify-center gap-1.5 hover:bg-white text-[#3D352E]"
-              >
-                <CozyIcon name="parent_heart" size={18} /> Supervisor
-              </Link>
-              <Link
-                href="/admin"
-                onClick={(e) => handleNavClick(e, "/admin")}
-                className="px-2.5 py-2 rounded-xl bg-[#F7F3EB] border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] text-xs font-display font-extrabold flex items-center justify-center gap-1.5 hover:bg-white text-[#3D352E]"
-              >
-                <CozyIcon name="crown_sultan" size={18} /> Admin
-              </Link>
-            </div>
-            <button
-              type="button"
-              aria-pressed={isCold}
-              onClick={() => {
-                soundEffects.tactileClick();
-                setColdStreakMode(userProfile.id, !isCold);
-              }}
-              className={cn(
-                "w-full px-2.5 py-2 rounded-xl border-2 border-b-[4px] text-xs font-display font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-colors",
-                isCold
-                  ? "bg-[#FFF2F0] border-[#FFCDC6] border-b-[#FFA89C] text-[#8F2A1B]"
-                  : "bg-[#EBF3F9] border-[#B8D4E8] border-b-[#8DB8D6] text-[#1B4F7A] hover:bg-[#DDEBF5]"
-              )}
-            >
-              <Snowflake className="w-4 h-4" aria-hidden="true" />
-              {isCold ? (
-                <>
-                  <GlyphInline name="sun" /> Hangatkan Lagi (Kembali Normal)
-                </>
-              ) : (
-                <>
-                  <GlyphInline name="snowflake" /> Uji Mode Streak Padam (Cold Ambience)
-                </>
-              )}
-            </button>
-          </CozyCard>
         </aside>
 
         {/* CENTER STAGE */}
@@ -571,9 +512,7 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
             <CozyCard tone="white" className="p-4 space-y-3">
               <div className="flex items-center justify-between gap-2 min-w-0">
                 <div className="min-w-0">
-                  <span className="text-[11px] font-display font-extrabold uppercase tracking-wider text-[#8A3FC2] block leading-snug break-words">
-                    {equippedTitle} • Fase {currentStage}/8
-                  </span>
+                  <TitleBadge profileId={userProfile.id} size="xs" className="mb-1" />
                   <h3 className="font-display text-lg font-extrabold text-[#3D352E] leading-snug break-words">
                     {petName} — {stageMeta.name}
                   </h3>
@@ -654,7 +593,8 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
                   <GlyphInline name="pen" /> Tulis Cerita
                 </TactileButton>
               </CozyCard>
-            ) : (
+            ) : pathname?.startsWith("/app/journey") ? null : (
+              // Di halaman Jalur Kas, ringkasan Inspektur Saku sudah tampil lengkap di tengah: sidebar tidak mengulangnya.
               <CozyCard tone="white" className="p-4 space-y-2.5">
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   <span className="font-display text-base font-extrabold flex items-center gap-1.5 leading-snug break-words">
