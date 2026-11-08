@@ -2,13 +2,13 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Volume2, VolumeX } from "@/components/illustrations/UiGlyphs";
 import { GlyphIcon, type GlyphName } from "@/components/illustrations/GlyphIcons";
 import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import { PersonaDisc, personaVariantFromId } from "@/components/illustrations/PersonaAvatars";
 import { FloatingRewardBanner } from "@/components/ui/CozyPrimitives";
+import { useSafeLogout } from "@/components/ui/SafeLogout";
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { GamificationFX } from "@/components/ui/GamificationFX";
@@ -45,11 +45,10 @@ export function SupervisorShell({
   children: React.ReactNode;
   mainClassName?: string;
 }) {
-  const router = useRouter();
   const { isPlaying: isBgmPlaying, toggleBgm } = useCozyBgm();
   const profiles = useBukuDompetStore((s) => s.profiles);
   const activeProfileId = useBukuDompetStore((s) => s.activeProfileId);
-  const logout = useBukuDompetStore((s) => s.logout);
+  const safeLogout = useSafeLogout();
   const [confirmExitOpen, setConfirmExitOpen] = useState<boolean>(false);
 
   const supervisorProfiles = useMemo(() => profiles.filter((p) => p.role === "supervisor"), [profiles]);
@@ -71,12 +70,12 @@ export function SupervisorShell({
       <GamificationFX />
       <FloatingRewardBanner />
 
+      {safeLogout.overlay}
       <CozyConfirmModal
         open={confirmExitOpen}
         onClose={() => setConfirmExitOpen(false)}
         onConfirm={() => {
-          logout();
-          router.push("/login");
+          void safeLogout.run();
         }}
         title="Keluar ke Halaman Login?"
         description="Anda akan kembali ke halaman Login Kredensial untuk beralih akun."

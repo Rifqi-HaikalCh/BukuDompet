@@ -8,10 +8,9 @@
  * Hadiah Poin/XP selalu lewat aksi store utama (`awardReward`, `transferPoints`,
  * `addSavingDeposit`) sehingga ekonomi, level, dan fase pet tetap satu sumber kebenaran.
  *
- * Catatan arsitektur jujur: aplikasi ini berjalan di satu browser (login hanya berganti profil
- * aktif), jadi "keluarga" berbagi data lewat localStorage perangkat yang sama. Penyimpanan
- * lintas-perangkat membutuhkan Supabase Realtime; di sini tersedia penyisipan best-effort bila
- * `NEXT_PUBLIC_SUPABASE_URL` diatur, tetapi sinkronisasi dua arah belum dibangun.
+ * Penyimpanan (Versi 5.5): store ini tetap "local-first" (cepat & tahan offline), tetapi seluruh isinya
+ * disinkronkan ke database lewat mesin sinkron (`src/lib/sync`) melalui server. Aksi di sini TIDAK
+ * menulis ke Supabase sendiri; mesin sinkron membandingkan state dengan salinan server dan mengirim selisihnya.
  */
 
 import { create } from "zustand";
@@ -50,6 +49,7 @@ import {
   type StoryEntry,
 } from "@/lib/family-types";
 import { analyzeStory } from "@/lib/story-utils";
+import { isSyncApplying } from "@/lib/sync/apply-flag";
 import { medalUnlock } from "@/lib/badge-catalog";
 import { ARCADE_MODE_BY_ID } from "@/lib/arcade-modes";
 import {
@@ -74,7 +74,6 @@ import {
 } from "@/lib/quest-engine";
 import type { EmotionKey } from "@/components/illustrations/DetectiveAndStoryAssets";
 import { EMOTION_LABEL } from "@/components/illustrations/DetectiveAndStoryAssets";
-import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /* ───────────────────────── Penyimpanan aman ───────────────────────── */
 
@@ -146,16 +145,6 @@ const safeLocalStorage: StateStorage = {
     }
   },
 };
-
-async function trySupabaseInsert(table: string, row: Record<string, unknown>) {
-  try {
-    if (typeof window === "undefined" || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
-    const supabase = createSupabaseBrowserClient();
-    await supabase.from(table).insert(row);
-  } catch {
-    // Tetap lokal bila tabel belum dimigrasi
-  }
-}
 
 /* ───────────────────────── State ───────────────────────── */
 
@@ -505,7 +494,8 @@ export const useFamilyStore = create<FamilyState>()(
         }
         const full: FeedPost = {
           ...post,
-          id: newId("auto"),
+          // Id dari dedupeKey: dua perangkat yang menyiarkan kejadian yang sama menghasilkan satu dokumen yang sama.
+          id: post.dedupeKey ? `auto:${post.dedupeKey}` : newId("auto"),
           createdAt: new Date().toISOString(),
           day: localDateStr(),
           likes: [],
@@ -594,16 +584,6 @@ export const useFamilyStore = create<FamilyState>()(
           emotion,
           streak: res.newStreak,
           dedupeKey: `story:${story.id}`,
-        });
-
-        trySupabaseInsert("daily_stories", {
-          user_id: userId,
-          story_date: story.date,
-          category: story.category,
-          emotion: story.emotion ?? null,
-          title: story.title,
-          body: story.body,
-          word_count: story.wordCount,
         });
 
         return {
@@ -991,6 +971,11 @@ export function startFamilyBridge(): () => void {
   const unsub = main.subscribe((state) => {
     if (state.profiles === prevProfiles) return;
     prevProfiles = state.profiles;
+    if (isSyncApplying()) {
+      // Perubahan dari server (bukan aksi pengguna di perangkat ini): perbarui pembanding tanpa menyiarkan apa pun.
+      prev = snapshotProfiles(state.profiles);
+      return;
+    }
     const today = localDateStr();
     const family = useFamilyStore.getState();
 

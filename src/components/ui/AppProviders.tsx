@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useBukuDompetStore, isChildRole } from "@/store/useBukuDompetStore";
 import { startFamilyBridge, useFamilyStore } from "@/store/useFamilyStore";
@@ -8,6 +8,8 @@ import { useStoresHydrated } from "@/lib/hydration";
 import { localDateStr } from "@/lib/dates";
 import { ColdAmbience } from "@/components/ui/ColdAmbience";
 import { HydrationSplash } from "@/components/ui/PageTransitionLoader";
+import { SyncStatusPill } from "@/components/ui/SyncStatusPill";
+import { bootSession } from "@/lib/sync/client";
 import { cozyBgm } from "@/lib/cozy-bgm";
 
 export type AuthRequirement = "required" | "none";
@@ -56,6 +58,23 @@ export function AppProviders({
   );
 
   const roleAllowed = !roles || roles.includes(currentRole);
+
+  // Sesi server: pastikan cookie masih sah (401 → kembali ke layar masuk, data lokal utuh) lalu nyalakan sinkron.
+  // Jaringan putus ≠ sesi habis: aplikasi tetap bisa dipakai offline dengan identitas terakhir yang sah.
+  const [booted, setBooted] = useState<boolean>(false);
+  useEffect(() => {
+    if (!hydrated || auth !== "required" || !isLoggedIn) {
+      setBooted(false);
+      return;
+    }
+    let cancelled = false;
+    void bootSession().then(() => {
+      if (!cancelled) setBooted(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, auth, isLoggedIn]);
 
   // Penjaga sesi + penjaga peran
   useEffect(() => {
@@ -125,11 +144,13 @@ export function AppProviders({
   if (!hydrated) return <HydrationSplash />;
   if (auth === "required" && !isLoggedIn) return <HydrationSplash />;
   if (auth === "required" && !roleAllowed) return <HydrationSplash />;
+  if (auth === "required" && !booted) return <HydrationSplash />;
 
   return (
     <>
       <ColdAmbience active={coldActive} />
       {children}
+      {auth === "required" && <SyncStatusPill />}
     </>
   );
 }

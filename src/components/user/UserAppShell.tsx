@@ -3,7 +3,7 @@
 import { GlyphIcon, GlyphInline } from "@/components/illustrations/GlyphIcons";
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { Volume2, VolumeX, Snowflake } from "@/components/illustrations/UiGlyphs";
 import { useBukuDompetStore, isChildRole } from "@/store/useBukuDompetStore";
@@ -37,6 +37,7 @@ import {
   FloatingRewardBanner,
   formatRupiah,
 } from "@/components/ui/CozyPrimitives";
+import { useSafeLogout } from "@/components/ui/SafeLogout";
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { GamificationFX } from "@/components/ui/GamificationFX";
@@ -90,7 +91,6 @@ function isNavActive(pathname: string | null, href: string): boolean {
 
 export function UserAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { isPlaying: isBgmPlaying, toggleBgm } = useCozyBgm();
 
   const {
@@ -107,8 +107,8 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
     setStoryModalOpen,
     setSavingsModalOpen,
     triggerActionLoading,
-    logout,
   } = useBukuDompetStore();
+  const safeLogout = useSafeLogout();
   const stories = useFamilyStore((s) => s.stories);
   const markRemindersSeen = useFamilyStore((s) => s.markRemindersSeen);
 
@@ -231,16 +231,15 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
       <SavingsVaultModal />
       <StoryTimeModal />
 
+      {safeLogout.overlay}
       <CozyConfirmModal
         open={confirmExitOpen}
         onClose={() => setConfirmExitOpen(false)}
         onConfirm={() => {
-          triggerActionLoading(6000);
-          logout();
-          router.push("/login");
+          void safeLogout.run();
         }}
         title="Keluar & Ganti Akun?"
-        description="Kamu akan kembali ke Brankas Login. Kartu profilmu tetap tersimpan, jadi masuk lagi cukup dengan 4 angka PIN."
+        description="Catatan terakhirmu disimpan ke server dulu, lalu kamu kembali ke Brankas Login. Kartu profilmu tetap tersimpan, jadi masuk lagi cukup dengan 4 angka PIN."
         confirmLabel="Ya, Ke Brankas Login"
         confirmVariant="peach"
         mochiStage={report.mochiStage}
