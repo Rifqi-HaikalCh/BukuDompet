@@ -1,18 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { Outfit, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-const outfit = Outfit({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["600", "700", "800", "900"],
-});
+/**
+ * Font dimuat lewat <link> Google Fonts (di peramban), bukan next/font/google. next/font mengunduh font saat
+ * build dan gagal total bila respons Google Fonts berubah bentuk atau tidak terjangkau, sehingga seluruh deploy
+ * ikut gagal. Dengan <link>, build tidak bergantung pada jaringan; bila font tak termuat, teks memakai system-ui.
+ */
+const FONT_HREF =
+  "https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap";
 
-const plusJakartaSans = Plus_Jakarta_Sans({
-  variable: "--font-sans",
-  subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
-});
+const FONT_VARS = {
+  "--font-display": "'Outfit', system-ui, sans-serif",
+  "--font-sans": "'Plus Jakarta Sans', system-ui, sans-serif",
+} as React.CSSProperties;
 
 export const metadata: Metadata = {
   title: {
@@ -48,9 +48,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
-      <body
-        className={`${outfit.variable} ${plusJakartaSans.variable} antialiased text-[#3D352E] min-h-screen`}
-      >
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link rel="stylesheet" href={FONT_HREF} />
+      </head>
+      <body style={FONT_VARS} className="antialiased text-[#3D352E] min-h-screen">
         {children}
       </body>
     </html>
