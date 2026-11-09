@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * BiomeEnvironment — 12-Month Dynamic Biome Map, Weather Particles & Growing Ecosystem Engine.
+ * BiomeEnvironment — 12-Wilayah (Tahap Eksplorasi) Dynamic Biome Map, Weather Particles & Growing Ecosystem Engine.
  * Gaya: Duolingo × Finch Cozy Pastel (outline hangat #3D352E, duotone vector layers).
  */
 
@@ -32,10 +32,14 @@ export type WeatherType =
   | "cozy_rain"
   | "crystal_snow";
 
-export interface BiomeMonthMeta {
-  monthIndex: number; // 0..11
-  monthName: string;
-  shortName: string;
+/**
+ * Satu tema ekosistem. Bioma melambangkan TAHAP EKSPLORASI (Wilayah I, II, ...), bukan bulan kalender:
+ * bab perjalanan ke-c memakai tema `c % 12`, lalu berulang. Pemilihan bulan buku kas ada di `lib/dates.ts`.
+ */
+export interface BiomeRegionMeta {
+  regionIndex: number; // 0..11, urutan tema
+  /** Angka Romawi tema ini (mis. "II"). Nama bab sebenarnya dibentuk `regionLabelForChapter`. */
+  regionNumeral: string;
   biomeTitle: string;
   subtitle: string;
   weatherType: WeatherType;
@@ -52,13 +56,12 @@ export interface BiomeMonthMeta {
   treeFoliageLight: string;
 }
 
-export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
+export const BIOME_REGIONS: readonly BiomeRegionMeta[] = [
   {
-    monthIndex: 0,
-    monthName: "Januari",
-    shortName: "Jan",
+    regionIndex: 0,
+    regionNumeral: "I",
     biomeTitle: "Lembah Embun Pagi",
-    subtitle: "Awal tahun yang segar dengan embun berkilau dan tunas harapan baru.",
+    subtitle: "Pagi yang segar dengan embun berkilau dan tunas harapan baru.",
     weatherType: "sparkle_dew",
     weatherLabel: "Embun Pagi Berkilau",
     resourceName: "Pohon Pinus Koin",
@@ -73,9 +76,8 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#8EE04A",
   },
   {
-    monthIndex: 1,
-    monthName: "Februari",
-    shortName: "Feb",
+    regionIndex: 1,
+    regionNumeral: "II",
     biomeTitle: "Kebun Teh Berkabut",
     subtitle: "Perbukitan teh hijau yang sejuk dengan aroma matcha menenangkan.",
     weatherType: "warm_mist",
@@ -92,13 +94,12 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#7AD63B",
   },
   {
-    monthIndex: 2,
-    monthName: "Maret",
-    shortName: "Mar",
+    regionIndex: 2,
+    regionNumeral: "III",
     biomeTitle: "Padang Rumput Pelangi",
-    subtitle: "Hamparan bunga matahari dan semilir angin musim semi yang ceria.",
+    subtitle: "Hamparan bunga matahari dan semilir angin sepoi yang ceria.",
     weatherType: "breeze_leaf",
-    weatherLabel: "Angin Sepoi Musim Semi",
+    weatherLabel: "Angin Sepoi Berbunga",
     resourceName: "Bunga Matahari Emas",
     bgTop: "#FFFDF2",
     bgBottom: "#EFFBE6",
@@ -111,9 +112,8 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#9EE070",
   },
   {
-    monthIndex: 3,
-    monthName: "April",
-    shortName: "Apr",
+    regionIndex: 3,
+    regionNumeral: "IV",
     biomeTitle: "Taman Sakura Pastel",
     subtitle: "Kelopak bunga merah muda berguguran lembut di sepanjang jalur kas.",
     weatherType: "sakura_petal",
@@ -130,9 +130,8 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#FFC4C4",
   },
   {
-    monthIndex: 4,
-    monthName: "Mei",
-    shortName: "Mei",
+    regionIndex: 4,
+    regionNumeral: "V",
     biomeTitle: "Hutan Bambu Zamrud",
     subtitle: "Rimbun bambu teduh ditemani kunang-kunang emas penjaga tabungan.",
     weatherType: "firefly_glow",
@@ -149,11 +148,10 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#8EE04A",
   },
   {
-    monthIndex: 5,
-    monthName: "Juni",
-    shortName: "Jun",
+    regionIndex: 5,
+    regionNumeral: "VI",
     biomeTitle: "Pantai Pasir Koral",
-    subtitle: "Suasana liburan pesisir hangat dengan kerang mutiara dan pohon kelapa.",
+    subtitle: "Suasana pesisir yang hangat dengan kerang mutiara dan pohon kelapa.",
     weatherType: "sea_bubble",
     weatherLabel: "Gelembung Angin Laut",
     resourceName: "Kelapa Gading & Mutiara",
@@ -168,9 +166,8 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#9EE070",
   },
   {
-    monthIndex: 6,
-    monthName: "Juli",
-    shortName: "Jul",
+    regionIndex: 6,
+    regionNumeral: "VII",
     biomeTitle: "Dataran Tinggi Awan",
     subtitle: "Padang savana biru langit dengan kincir angin yang berputar tenang.",
     weatherType: "fluffy_cloud",
@@ -187,11 +184,10 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#89CAFF",
   },
   {
-    monthIndex: 7,
-    monthName: "Agustus",
-    shortName: "Agu",
+    regionIndex: 7,
+    regionNumeral: "VIII",
     biomeTitle: "Kebun Panen Raya",
-    subtitle: "Bulan kemerdekaan finansial dengan ladang gandum dan pohon buah emas.",
+    subtitle: "Kemerdekaan finansial terasa di ladang gandum dan pohon buah emas.",
     weatherType: "golden_harvest",
     weatherLabel: "Kilau Panen Raya",
     resourceName: "Pohon Apel Emas",
@@ -206,11 +202,10 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#FFD166",
   },
   {
-    monthIndex: 8,
-    monthName: "September",
-    shortName: "Sep",
+    regionIndex: 8,
+    regionNumeral: "IX",
     biomeTitle: "Lembah Maple Senja",
-    subtitle: "Nuansa musim gugur yang hangat dengan dedaunan maple jingga keemasan.",
+    subtitle: "Nuansa senja yang hangat dengan dedaunan maple jingga keemasan.",
     weatherType: "maple_fall",
     weatherLabel: "Daun Maple Gugur",
     resourceName: "Hutan Maple Keemasan",
@@ -225,9 +220,8 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#FF8B7B",
   },
   {
-    monthIndex: 9,
-    monthName: "Oktober",
-    shortName: "Okt",
+    regionIndex: 9,
+    regionNumeral: "X",
     biomeTitle: "Taman Lentera Hangat",
     subtitle: "Malam pastel bertabur lentera apung dan tanaman labu madu yang subur.",
     weatherType: "lantern_star",
@@ -244,9 +238,8 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#CE82FF",
   },
   {
-    monthIndex: 10,
-    monthName: "November",
-    shortName: "Nov",
+    regionIndex: 10,
+    regionNumeral: "XI",
     biomeTitle: "Danau Hujan Rintik",
     subtitle: "Suasana teduh hujan rintik yang menyuburkan bunga teratai dan pohon kas.",
     weatherType: "cozy_rain",
@@ -263,14 +256,13 @@ export const BIOME_MONTHS: readonly BiomeMonthMeta[] = [
     treeFoliageLight: "#8EE04A",
   },
   {
-    monthIndex: 11,
-    monthName: "Desember",
-    shortName: "Des",
+    regionIndex: 11,
+    regionNumeral: "XII",
     biomeTitle: "Puncak Salju Kristal",
-    subtitle: "Penutup tahun berkilau salju lembut dengan pohon cemara bertabur berlian.",
+    subtitle: "Puncak berkilau salju lembut dengan pohon cemara bertabur berlian.",
     weatherType: "crystal_snow",
     weatherLabel: "Salju Kristal Lembut",
-    resourceName: "Cemara Berlian Akhir Tahun",
+    resourceName: "Cemara Berlian Kristal",
     bgTop: "#F0F9FF",
     bgBottom: "#FFFFFF",
     hillBack: "#D6EEFF",
@@ -292,12 +284,33 @@ export interface BiomeResourceStatus {
   progressPercent: number;
 }
 
+const ROMAN: [number, string][] = [[1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"], [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]];
+
+/** Angka Romawi untuk penomoran Wilayah (1 → "I"). Di luar 1..3999 dikembalikan sebagai angka biasa. */
+export function toRoman(n: number): string {
+  if (!Number.isInteger(n) || n < 1 || n > 3999) return String(n);
+  let rest = n;
+  let out = "";
+  for (const [v, sym] of ROMAN) {
+    while (rest >= v) {
+      out += sym;
+      rest -= v;
+    }
+  }
+  return out;
+}
+
+/** Nama tahap untuk bab perjalanan ke-`chapterIndex` (mulai 0): "Wilayah I", "Wilayah II", dst. */
+export function regionLabelForChapter(chapterIndex: number): string {
+  return `Wilayah ${toRoman(Math.max(0, Math.floor(chapterIndex)) + 1)}`;
+}
+
 export function getBiomeResourceStatus(
-  monthIndex: number,
+  regionIndex: number,
   completedStepsCount: number
 ): BiomeResourceStatus {
-  const safeIdx = ((monthIndex % 12) + 12) % 12;
-  const biome = BIOME_MONTHS[safeIdx];
+  const safeIdx = ((regionIndex % 12) + 12) % 12;
+  const biome = BIOME_REGIONS[safeIdx];
   const steps = Math.max(0, completedStepsCount);
 
   if (steps >= 20) {
@@ -306,7 +319,7 @@ export function getBiomeResourceStatus(
       stageTitle: "Panen Pohon Koin Berbuah",
       nextTargetDays: 28,
       daysRemainingToNext: Math.max(0, 28 - steps),
-      bannerText: `Ekosistem ${biome.monthName}: Level 4 (Panen ${biome.resourceName}) — Pohon Koin telah berbuah lebat!`,
+      bannerText: `Ekosistem ${biome.biomeTitle}: Level 4 (Panen ${biome.resourceName}) — Pohon Koin telah berbuah lebat!`,
       progressPercent: 100,
     };
   }
@@ -317,7 +330,7 @@ export function getBiomeResourceStatus(
       stageTitle: "Taman Berbunga",
       nextTargetDays: 20,
       daysRemainingToNext: rem,
-      bannerText: `Ekosistem Bulan Ini: Level 3 (Taman Berbunga) — Catat ${rem} hari lagi agar Pohon Koin berbuah!`,
+      bannerText: `Ekosistem Wilayah Ini: Level 3 (Taman Berbunga) — Catat ${rem} hari lagi agar Pohon Koin berbuah!`,
       progressPercent: Math.min(100, Math.round((steps / 20) * 100)),
     };
   }
@@ -328,7 +341,7 @@ export function getBiomeResourceStatus(
       stageTitle: "Tunas Rimbun",
       nextTargetDays: 10,
       daysRemainingToNext: rem,
-      bannerText: `Ekosistem Bulan Ini: Level 2 (Tunas Rimbun) — Catat ${rem} hari lagi menuju Taman Berbunga!`,
+      bannerText: `Ekosistem Wilayah Ini: Level 2 (Tunas Rimbun) — Catat ${rem} hari lagi menuju Taman Berbunga!`,
       progressPercent: Math.min(100, Math.round((steps / 10) * 100)),
     };
   }
@@ -338,7 +351,7 @@ export function getBiomeResourceStatus(
     stageTitle: "Bibit Awal",
     nextTargetDays: 4,
     daysRemainingToNext: rem,
-    bannerText: `Ekosistem Bulan Ini: Level 1 (Bibit Awal) — Catat ${rem} hari lagi agar tunas ekosistem tumbuh!`,
+    bannerText: `Ekosistem Wilayah Ini: Level 1 (Bibit Awal) — Catat ${rem} hari lagi agar tunas ekosistem tumbuh!`,
     progressPercent: Math.min(100, Math.round((steps / 4) * 100)),
   };
 }
@@ -562,20 +575,20 @@ export function GrowingResourceTree({
 }
 
 export interface BiomeMapSectionProps {
-  monthIndex: number; // 0..11
+  regionIndex: number; // 0..11, tema ekosistem
   completedStepsCount: number;
   children: React.ReactNode;
   className?: string;
 }
 
 export function BiomeMapSection({
-  monthIndex,
+  regionIndex,
   completedStepsCount,
   children,
   className,
 }: BiomeMapSectionProps) {
-  const safeIdx = ((monthIndex % 12) + 12) % 12;
-  const biome = BIOME_MONTHS[safeIdx];
+  const safeIdx = ((regionIndex % 12) + 12) % 12;
+  const biome = BIOME_REGIONS[safeIdx];
   const eco = getBiomeResourceStatus(safeIdx, completedStepsCount);
 
   return (
@@ -642,27 +655,34 @@ export function BiomeMapSection({
 }
 
 export interface BiomeTransitionDividerProps {
-  previousMonthIndex?: number;
-  currentMonthIndex: number;
+  previousRegionIndex?: number;
+  currentRegionIndex: number;
+  /** Nama tahap bab ini / sebelumnya, mis. "Wilayah II". Bila kosong dipakai penomoran tema. */
+  regionLabel?: string;
+  previousRegionLabel?: string;
   dayNumber: number;
   isStartGate?: boolean;
 }
 
 /**
  * Gerbang Perbatasan Bioma (Biome Transition Divider Banner)
- * Muncul otomatis saat perjalanan melewati kelipatan 30 hari atau pergantian bulan kalender.
+ * Muncul otomatis saat perjalanan melewati kelipatan 30 hari (pindah Wilayah).
  */
 export function BiomeTransitionDivider({
-  previousMonthIndex,
-  currentMonthIndex,
+  previousRegionIndex,
+  currentRegionIndex,
+  regionLabel,
+  previousRegionLabel,
   dayNumber,
   isStartGate = false,
 }: BiomeTransitionDividerProps) {
-  const currBiome = BIOME_MONTHS[((currentMonthIndex % 12) + 12) % 12];
+  const currBiome = BIOME_REGIONS[((currentRegionIndex % 12) + 12) % 12];
   const prevBiome =
-    previousMonthIndex !== undefined
-      ? BIOME_MONTHS[((previousMonthIndex % 12) + 12) % 12]
+    previousRegionIndex !== undefined
+      ? BIOME_REGIONS[((previousRegionIndex % 12) + 12) % 12]
       : null;
+  const currLabel = regionLabel ?? `Wilayah ${currBiome.regionNumeral}`;
+  const prevLabel = previousRegionLabel ?? (prevBiome ? `Wilayah ${prevBiome.regionNumeral}` : "");
 
   return (
     <div className="w-full max-w-md mx-auto my-3 px-2">
@@ -680,9 +700,9 @@ export function BiomeTransitionDivider({
         </div>
 
         <p className="font-display text-sm sm:text-base font-extrabold text-[#3D352E] leading-snug break-words">
-          {prevBiome && prevBiome.monthIndex !== currBiome.monthIndex
-            ? <>{prevBiome.biomeTitle} <GlyphInline name="arrow_right" /> {currBiome.biomeTitle}</>
-            : `Memasuki Wilayah: ${currBiome.biomeTitle} (${currBiome.monthName})`}
+          {prevBiome
+            ? <>{prevLabel} <GlyphInline name="arrow_right" /> {currLabel}: {currBiome.biomeTitle}</>
+            : `Memasuki ${currLabel}: ${currBiome.biomeTitle}`}
         </p>
 
         <p className="text-[11px] font-bold text-[#7A6E65] mt-0.5 leading-snug break-words">

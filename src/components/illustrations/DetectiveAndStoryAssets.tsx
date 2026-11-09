@@ -1361,7 +1361,7 @@ export function PiggyVaultIllustration({ progressPercent, isShaking = false, cla
   const pct = clampPercent(progressPercent);
   const level = VAULT_BOTTOM - (VAULT_BOTTOM - VAULT_TOP) * (pct / 100);
   const full = pct >= 100;
-  const label = `Celengan kaca dan emas terisi ${pct} persen${full ? ", sudah penuh" : ""}`;
+  const label = `Celengan babi terisi ${pct} persen${full ? ", sudah penuh" : ""}`;
 
   return (
     <MotionConfig reducedMotion="user">
@@ -1411,20 +1411,28 @@ export function PiggyVaultIllustration({ progressPercent, isShaking = false, cla
           }
           transition={isShaking ? loop(0.12) : loop(2.8)}
         >
-          {/* ekor melingkar emas */}
-          <path d="M66 190 Q40 178 48 154 Q56 134 74 148" fill="none" stroke={INK} strokeWidth={11} strokeLinecap="round" />
-          <path d="M66 190 Q40 178 48 154 Q56 134 74 148" fill="none" stroke={C.honey} strokeWidth={5} strokeLinecap="round" />
+          {/* ekor keriting (bergoyang) */}
+          <motion.g style={fb(1, 1)} animate={{ rotate: [0, -14, 6, 0] }} transition={loop(2.6)}>
+            <path d="M68 196 C36 202 26 168 50 160 C70 154 80 174 62 176" fill="none" stroke={INK} strokeWidth={11} strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M68 196 C36 202 26 168 50 160 C70 154 80 174 62 176" fill="none" stroke={C.peach} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
+          </motion.g>
 
           {/* kaki belakang */}
-          <rect x={92} y={262} width={42} height={46} rx={16} fill={C.honey} {...O3} />
-          <rect x={246} y={262} width={42} height={46} rx={16} fill={C.honey} {...O3} />
+          <rect x={92} y={262} width={42} height={46} rx={18} fill={C.peach} {...O3} />
+          <rect x={246} y={262} width={42} height={46} rx={18} fill={C.peach} {...O3} />
 
-          {/* telinga */}
-          <path d="M262 112 Q272 70 306 80 Q310 108 290 128Z" fill={C.honeySoft} {...O3} />
-          <path d="M272 108 Q278 88 296 90" fill="none" stroke={C.peachSoft} strokeWidth={5} strokeLinecap="round" />
+          {/* telinga lembut (bergerak) */}
+          <motion.g style={fb(0.15, 1)} animate={{ rotate: [0, -9, 0, 0] }} transition={loop(3.4)}>
+            <path d="M236 108 Q238 66 272 66 Q290 84 276 118Z" fill={C.peach} {...O3} />
+            <path d="M248 100 Q250 80 266 78" fill="none" stroke={C.peachSoft} strokeWidth={5} strokeLinecap="round" />
+          </motion.g>
+          <motion.g style={fb(0.1, 1)} animate={{ rotate: [0, 7, 0, 0] }} transition={loop(3.4, { delay: 0.5 })}>
+            <path d="M262 112 Q268 62 310 72 Q320 104 292 130Z" fill={C.peach} {...O3} />
+            <path d="M274 108 Q280 86 300 86" fill="none" stroke={C.peachSoft} strokeWidth={6} strokeLinecap="round" />
+          </motion.g>
 
           {/* badan kaca */}
-          <ellipse cx={190} cy={198} rx={128} ry={98} fill={C.skySoft} fillOpacity={0.4} />
+          <ellipse cx={190} cy={198} rx={128} ry={98} fill={C.peachSoft} fillOpacity={0.5} />
           <ellipse cx={190} cy={198} rx={128} ry={98} fill={C.cream} fillOpacity={0.35} />
 
           {/* isi: koin & uang kertas naik sesuai persen */}
@@ -1481,22 +1489,38 @@ export function PiggyVaultIllustration({ progressPercent, isShaking = false, cla
           <path d="M152 100 Q160 98 170 98" fill="none" stroke={C.cream} strokeWidth={2.5} strokeLinecap="round" opacity={0.9} />
 
           {/* kaki depan */}
-          <rect x={112} y={270} width={44} height={46} rx={16} fill={C.honey} {...O3} />
-          <rect x={226} y={270} width={44} height={46} rx={16} fill={C.honey} {...O3} />
-          <path d="M126 306 V316 M140 306 V316 M240 306 V316 M254 306 V316" fill="none" stroke={C.honeyDark} strokeWidth={2.5} strokeLinecap="round" />
+          <rect x={112} y={270} width={44} height={46} rx={18} fill={C.peach} {...O3} />
+          <rect x={226} y={270} width={44} height={46} rx={18} fill={C.peach} {...O3} />
+          <path d="M127 306 V316 M141 306 V316 M241 306 V316 M255 306 V316" fill="none" stroke={C.peachDark} strokeWidth={2.5} strokeLinecap="round" />
 
-          {/* moncong emas */}
-          <ellipse cx={322} cy={204} rx={28} ry={24} fill={C.honey} {...O} />
-          <ellipse cx={322} cy={204} rx={19} ry={15} fill={C.honeySoft} />
-          <ellipse cx={314} cy={204} rx={3.6} ry={6} fill={INK} />
-          <ellipse cx={332} cy={204} rx={3.6} ry={6} fill={INK} />
-          <path d="M306 190 Q314 184 324 187" fill="none" stroke={C.cream} strokeWidth={3} strokeLinecap="round" opacity={0.9} />
+          {/* pipi merona */}
+          <ellipse cx={266} cy={202} rx={17} ry={10.5} fill={C.peach} opacity={0.85} />
+          <path d="M258 200 l3 -3 M266 200 l3 -3 M274 200 l3 -3" fill="none" stroke={C.cream} strokeWidth={2} strokeLinecap="round" opacity={0.9} />
 
-          {/* mata + pipi */}
-          <ellipse cx={278} cy={168} rx={7.5} ry={9.5} fill={INK} />
-          <circle cx={275.5} cy={164.5} r={2.8} fill={C.cream} />
-          <ellipse cx={268} cy={198} rx={14} ry={8.5} fill={C.peach} opacity={0.75} />
-          <path d="M268 226 Q282 236 298 228" fill="none" {...O3} />
+          {/* moncong */}
+          <motion.g style={fb()} animate={{ scaleX: [1, 1.06, 1], scaleY: [1, 0.96, 1] }} transition={loop(2.2)}>
+            <ellipse cx={328} cy={208} rx={30} ry={25} fill={C.peach} {...O} />
+            <ellipse cx={328} cy={208} rx={21} ry={17} fill={C.peachSoft} />
+            <ellipse cx={319} cy={208} rx={3.8} ry={6.5} fill={INK} />
+            <ellipse cx={337} cy={208} rx={3.8} ry={6.5} fill={INK} />
+            <path d="M311 193 Q319 187 330 190" fill="none" stroke={C.cream} strokeWidth={3} strokeLinecap="round" opacity={0.9} />
+          </motion.g>
+
+          {/* mata besar berkilau (berkedip), atau mata bahagia bila penuh */}
+          {full ? (
+            <path d="M270 176 Q284 158 298 176" fill="none" stroke={INK} strokeWidth={5} strokeLinecap="round" />
+          ) : (
+            <motion.g style={fb()} animate={{ scaleY: [1, 1, 0.1, 1, 1] }} transition={loop(4.2, { times: [0, 0.9, 0.94, 0.98, 1] })}>
+              <ellipse cx={284} cy={170} rx={11} ry={14} fill={INK} />
+              <circle cx={280.5} cy={164} r={4.6} fill={C.cream} />
+              <circle cx={289} cy={176} r={2.3} fill={C.cream} />
+              <path d="M272 158 l-6 -4 M276 154 l-3 -6 M296 156 l4 -5" fill="none" stroke={INK} strokeWidth={2.8} strokeLinecap="round" />
+            </motion.g>
+          )}
+
+          {/* senyum lebar */}
+          <path d="M276 230 Q294 248 314 232" fill="none" {...O} />
+          {pct === 0 && !full && <path d="M288 238 Q294 252 302 240" fill={C.peachDark} stroke={INK} strokeWidth={2.5} strokeLinejoin="round" />}
         </Pivot>
 
         {/* penuh: kilau emas */}
@@ -1507,6 +1531,18 @@ export function PiggyVaultIllustration({ progressPercent, isShaking = false, cla
             <Sparkle x={190} y={44} size={13} color={C.honey} delay={0.8} />
             <Sparkle x={350} y={270} size={8} color={C.honeySoft} delay={1.2} />
             <Sparkle x={34} y={250} size={8} color={C.honey} delay={0.6} />
+            {[0, 1, 2].map((i) => (
+              <motion.g
+                key={i}
+                style={fb()}
+                animate={{ y: [0, -46], opacity: [0, 1, 0], scale: [0.6, 1, 0.8] }}
+                transition={loop(2.4, { delay: i * 0.8, ease: "easeOut" })}
+              >
+                <g transform={`translate(${300 + i * 22} ${72 - (i % 2) * 14})`} style={SVG_ATTR_ORIGIN}>
+                  <path d="M0 6 C-12 -4 -8 -14 0 -8 C8 -14 12 -4 0 6Z" fill={C.peach} {...O25} />
+                </g>
+              </motion.g>
+            ))}
           </g>
         )}
         {!full && pct > 0 && (

@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import { useFamilyStore } from "@/store/useFamilyStore";
+import { useFinanceStore } from "@/store/useFinanceStore";
 
 /**
- * Hidrasi manual kedua store (`skipHydration: true`).
+ * Hidrasi manual ketiga store (utama, keluarga, keuangan) (`skipHydration: true`).
  *
  * Alasan: bila persist membaca localStorage secara sinkron saat store dibuat, render pertama di
  * klien berbeda dari HTML server (data pengguna vs data seed) dan React melaporkan galat
@@ -20,6 +21,7 @@ export function hydrateStores(): Promise<void> {
     hydrationPromise = Promise.all([
       Promise.resolve(useBukuDompetStore.persist.rehydrate()),
       Promise.resolve(useFamilyStore.persist.rehydrate()),
+      Promise.resolve(useFinanceStore.persist.rehydrate()),
     ])
       .then(() => undefined)
       .catch(() => undefined)

@@ -9,21 +9,17 @@ import {
   ChevronUp,
   ChevronLeft,
   ChevronRight,
-  Users,
-  Heart,
 } from "@/components/illustrations/UiGlyphs";
 import { useBukuDompetStore, isChildRole } from "@/store/useBukuDompetStore";
 import { SupervisorShell } from "@/components/supervisor/SupervisorShell";
 import { KidMonitorPanel } from "@/components/supervisor/KidMonitorPanel";
+import { SupervisorFinancePanel } from "@/components/supervisor/SupervisorFinancePanel";
+import { ChildSummaryCard } from "@/components/supervisor/ChildSummaryCard";
 import { localDateStr } from "@/lib/dates";
 import {
   analyzeSpendingDetective,
   getLevelFromXp,
 } from "@/lib/spending-detective";
-import {
-  CustomizablePetAvatar,
-  GROWTH_STAGE_META,
-} from "@/components/illustrations/PetAvatarSystem";
 import { CozyIcon, CategoryIcon } from "@/components/illustrations/CozyIcons";
 import {
   TactileButton,
@@ -77,7 +73,7 @@ export default function SupervisorDashboardPage() {
         .map((a) => a.userId)
     );
     return profiles.filter(
-      (p) => isChildRole(p.role) && allowedUserIds.has(p.id)
+      (p) => isChildRole(p.role) && p.isActive !== false && allowedUserIds.has(p.id)
     );
   }, [profiles, supervisorAssignments, activeSupervisor.id]);
 
@@ -447,136 +443,25 @@ export default function SupervisorDashboardPage() {
             ZONA 1 — KARTU KESIMPULAN CEPAT ORANG TUA (EXECUTIVE SUMMARY)
            ============================================================ */}
         <section className="space-y-4 min-w-0 max-w-full">
-          {/* Single Hero Card (Matcha Soft) - Fixed Anti-Jebol Layout (Tugas 1.2) */}
-          <CozyCard tone="matcha" className="p-4 sm:p-5 space-y-4 w-full max-w-full overflow-hidden">
-            <div className="flex flex-col xl:flex-row items-start justify-between gap-4 w-full max-w-full min-w-0">
-              <div className="flex flex-col sm:flex-row items-start gap-3.5 w-full max-w-full min-w-0 flex-1">
-                {/* Karakter anak = tanda pengenal utama bagi orang tua: besar di ponsel (tengah, ±176px), ringkas di layar lebar. */}
-                <div className="w-44 h-48 sm:w-28 sm:h-32 mx-auto sm:mx-0 rounded-3xl bg-white border-2 border-[#C3EFA4] border-b-4 flex items-center justify-center shrink-0 p-1.5 sm:p-1">
-                  <CustomizablePetAvatar
-                    species={inspectedUser.activeSpecies || "chubby_cat"}
-                    stage={currentStage}
-                    mood={report.petMood}
-                    customName={petName}
-                    equippedAccessories={inspectedUser.equippedAccessories}
-                    className="w-full h-full"
-                  />
-                </div>
-                <div className="space-y-2 w-full max-w-full min-w-0 flex-1">
-                  {/* Strict RBAC Monitored User Selector (Tugas 1.2: flex-wrap w-full max-w-full) */}
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap w-full max-w-full">
-                    <span className="px-2.5 py-1 rounded-full bg-white border border-[#C3EFA4] text-xs font-display font-extrabold text-[#2E6F00] inline-flex items-center gap-1.5 w-fit max-w-full break-words">
-                      <Users className="w-3.5 h-3.5 shrink-0" />
-                      <span>User Ditugaskan Admin ({assignedUsers.length}):</span>
-                    </span>
-                    <select
-                      value={inspectedUser.id}
-                      onChange={(e) => {
-                        soundEffects.tactileClick();
-                        setMonitoredUserId(e.target.value);
-                      }}
-                      className="w-full sm:w-auto max-w-full px-3 py-1.5 rounded-xl bg-white border-2 border-[#C3EFA4] font-display text-xs font-extrabold text-[#3D352E] focus:outline-none cursor-pointer"
-                    >
-                      {assignedUsers.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.display_name} — Pet: {u.petCustomName || "Mochi"} (
-                          {GROWTH_STAGE_META[u.currentStage || 1].name})
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEffects.tactileClick();
-                        router.push("/supervisor/pilih");
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#FFFDF9] border-2 border-[#C3EFA4] border-b-[3px] text-xs font-display font-extrabold text-[#2E6F00] cursor-pointer inline-flex items-center justify-center gap-1.5"
-                    >
-                      <GlyphInline name="swap" /> Ganti Anak
-                    </button>
-                  </div>
-
-                  <div className="space-y-1 w-full max-w-full break-words">
-                    {isKid ? (
-                      <>
-                        <h1 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
-                          Jurnal Cerita {inspectedUser.display_name}
-                        </h1>
-                        <p className="text-xs sm:text-sm font-bold text-[#7A6E65] break-words">
-                          Anak SD Kelas 3 • Streak {inspectedUser.current_streak} hari
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <h1 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
-                          Sisa Uang Saku {inspectedUser.display_name}:{" "}
-                          <span className="text-[#2E6F00] tabular-nums">
-                            {formatRupiah(report.remainingTotalBalanceThisMonth)}
-                          </span>
-                        </h1>
-                        <p className="text-xs sm:text-sm font-bold text-[#7A6E65] break-words">
-                          Batas Aman Harian: {formatRupiah(report.dssl)}/hari
-                        </p>
-                      </>
-                    )}
-                  </div>
-
-                  {isKid ? (
-                    <p className="text-xs font-bold text-[#3D352E]/85 leading-relaxed break-words">
-                      {inspectedUser.display_name} bersama pet <strong>{petName}</strong> menulis cerita harian dan belajar mengelola celengan. Pantau perkembangannya di bawah.
-                    </p>
-                  ) : (
-                  <p className="text-xs font-bold text-[#3D352E]/85 leading-relaxed break-words">
-                    {inspectedUser.display_name} bersama pet{" "}
-                    <strong>{petName}</strong> konsisten mencatat kas{" "}
-                    <strong>
-                      {inspectedUser.current_streak} hari berturut-turut
-                    </strong>{" "}
-                    (Fase #{currentStage}: {GROWTH_STAGE_META[currentStage].name}) dan
-                    mengunci tabungan{" "}
-                    <strong className="tabular-nums">
-                      {formatRupiah(report.monthlySavingTarget)}
-                    </strong>
-                    .
-                  </p>
-                  )}
-                  {cheerMessage && (
-                    <div className="w-full max-w-full">
-                      <p className="text-xs font-extrabold text-[#2E6F00] bg-white px-3 py-1.5 rounded-xl border border-[#C3EFA4] break-words leading-snug">
-                        {cheerMessage}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Corner CTA: Kirim Stiker Apresiasi Visual (0 Poin) */}
-              <div className="w-full xl:w-72 max-w-full shrink-0 space-y-2 pt-2 xl:pt-0 border-t xl:border-t-0 border-[#C3EFA4]/60">
-                <input
-                  type="text"
-                  value={customCheerNote}
-                  onChange={(e) => setCustomCheerNote(e.target.value)}
-                  placeholder="Pesan semangat singkat..."
-                  className="w-full max-w-full px-3 py-2 rounded-xl bg-white border border-[#C3EFA4] text-xs font-bold text-[#3D352E] focus:outline-none"
-                />
-                <TactileButton
-                  variant={alreadyCheeredToday ? "white" : "honey"}
-                  size="md"
-                  fullWidth
-                  onClick={() => setConfirmCheerOpen(true)}
-                >
-                  <Heart className="w-4 h-4 fill-current shrink-0" />
-                  <span className="break-words">
-                    {alreadyCheeredToday
-                      ? `Kirim Lagi Stiker Apresiasi (${supervisorCheersCount}x)`
-                      : "Kirim Stiker Apresiasi (0 Poin)"}
-                  </span>
-                </TactileButton>
-              </div>
-            </div>
-          </CozyCard>
+          <ChildSummaryCard
+            user={inspectedUser}
+            assignedUsers={assignedUsers}
+            isKid={isKid}
+            report={report}
+            petName={petName}
+            stage={currentStage}
+            level={levelInfo.level}
+            onPick={setMonitoredUserId}
+            onSwap={() => {
+              soundEffects.tactileClick();
+              router.push("/supervisor/pilih");
+            }}
+            cheer={{ note: customCheerNote, setNote: setCustomCheerNote, already: alreadyCheeredToday, count: supervisorCheersCount, message: cheerMessage, onSend: () => setConfirmCheerOpen(true) }}
+          />
 
           {isKid && <KidMonitorPanel user={inspectedUser} />}
+
+          {isChildRole(inspectedUser.role) && <SupervisorFinancePanel user={inspectedUser} />}
 
           {/* 3 Clean White Metric Cards below Executive Summary (No truncate on Rupiah!) */}
           {!isKid && (

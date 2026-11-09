@@ -51,6 +51,10 @@ const KIND_META: Record<FeedPost["kind"], { label: string; icon: IconName | null
   pride: { label: "Bangga", icon: "parent_heart", tone: "bg-[#FFF2F0] border-[#FFCDC6] text-[#8F2A1B]" },
   saving: { label: "Menabung", icon: "cat_saving", tone: "bg-[#EEF8FF] border-[#BCE3FF] text-[#1565C0]" },
   arcade: { label: "Arcade Sekolah", icon: "combo_sparkle", tone: "bg-[#FFFBEB] border-[#FDE08D] text-[#4A3500]" },
+  income: { label: "Uang Masuk", icon: "coin_rupiah", tone: "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]" },
+  grant: { label: "Kebutuhan Darurat Cair", icon: "coin_rupiah", tone: "bg-[#EEF8FF] border-[#BCE3FF] text-[#1565C0]" },
+  closing: { label: "Tutup Buku", icon: "cat_saving", tone: "bg-[#FFFBEB] border-[#FDE08D] text-[#4A3500]" },
+  wallet: { label: "Buka Dompet", icon: "coin_rupiah", tone: "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]" },
 };
 
 /* ───────────────────────── Lencana siklus 7 hari ───────────────────────── */
@@ -298,7 +302,8 @@ function PostCard({ post, viewer }: { post: FeedPost; viewer: ProfileData }) {
 
   const author = profiles.find((p) => p.id === post.authorId);
   if (!author) return null;
-  const meta = KIND_META[post.kind];
+  // Jenis posting dari versi aplikasi yang lebih baru tidak boleh membuat perangkat lama error.
+  const meta = KIND_META[post.kind] ?? KIND_META.user;
   const liked = post.likes.includes(viewer.id);
   const isAuthor = post.authorId === viewer.id;
   const canGift = isChildRole(viewer.role) && !isAuthor;

@@ -9,6 +9,7 @@
 
 import { INITIAL_PROFILES, INITIAL_SUPERVISOR_ASSIGNMENTS, useBukuDompetStore } from "@/store/useBukuDompetStore";
 import { useFamilyStore } from "@/store/useFamilyStore";
+import { useFinanceStore } from "@/store/useFinanceStore";
 import { canon, type Doc } from "./canon";
 import type { CollectionAdapter } from "./engine";
 import { getSessionUser } from "./session-ref";
@@ -140,6 +141,7 @@ const SEED_ASSIGNMENTS = new Set(INITIAL_SUPERVISOR_ASSIGNMENTS.map((a) => `${a.
 
 const main = useBukuDompetStore;
 const fam = useFamilyStore;
+const fin = useFinanceStore;
 
 const RAW_ADAPTERS: CollectionAdapter[] = [
   arrayAdapter({
@@ -303,6 +305,63 @@ const RAW_ADAPTERS: CollectionAdapter[] = [
     order: "desc",
     orderKey: "createdAt",
   }),
+  /* ── Versi 5.6: keuangan berlapis. Pemilik = `userId`; Supervisor boleh menulis (kecuali koleksi privat anak). ── */
+  arrayAdapter({
+    name: "budget_configs",
+    get: () => fin.getState().budgetConfigs as unknown as Rec[],
+    set: (v) => fin.setState({ budgetConfigs: v as never }),
+    order: "append",
+    ownerOf: fieldOwner("userId"),
+  }),
+  arrayAdapter({
+    name: "sub_wallets",
+    get: () => fin.getState().subWallets as unknown as Rec[],
+    set: (v) => fin.setState({ subWallets: v as never }),
+    order: "append",
+    ownerOf: fieldOwner("userId"),
+  }),
+  arrayAdapter({
+    name: "grant_requests",
+    get: () => fin.getState().grantRequests as unknown as Rec[],
+    set: (v) => fin.setState({ grantRequests: v as never }),
+    order: "desc",
+    orderKey: "createdAt",
+    ownerOf: fieldOwner("userId"),
+  }),
+  arrayAdapter({
+    name: "monthly_closings",
+    get: () => fin.getState().monthlyClosings as unknown as Rec[],
+    set: (v) => fin.setState({ monthlyClosings: v as never }),
+    order: "desc",
+    orderKey: "closedAt",
+    ownerOf: fieldOwner("userId"),
+  }),
+  arrayAdapter({
+    name: "vault_loans",
+    get: () => fin.getState().vaultLoans as unknown as Rec[],
+    set: (v) => fin.setState({ vaultLoans: v as never }),
+    order: "desc",
+    orderKey: "createdAt",
+    ownerOf: fieldOwner("userId"),
+  }),
+  arrayAdapter({
+    name: "wishlist_items",
+    get: () => fin.getState().wishlistItems as unknown as Rec[],
+    set: (v) => fin.setState({ wishlistItems: v as never }),
+    order: "desc",
+    orderKey: "createdAt",
+    ownerOf: fieldOwner("userId"),
+    ownerOnly: true,
+  }),
+  arrayAdapter({
+    name: "reconciliations",
+    get: () => fin.getState().reconciliations as unknown as Rec[],
+    set: (v) => fin.setState({ reconciliations: v as never }),
+    order: "desc",
+    orderKey: "createdAt",
+    ownerOf: fieldOwner("userId"),
+    ownerOnly: true,
+  }),
   {
     // State per-pengguna yang di store berupa variabel global perangkat: disimpan sebagai satu dokumen milik akun yang masuk.
     name: "user_state",
@@ -339,13 +398,18 @@ const RAW_ADAPTERS: CollectionAdapter[] = [
 ];
 
 /** Bagian state yang disinkronkan — dipakai untuk mendeteksi perubahan lokal tanpa memindai tiap klik UI. */
-export function syncedSlicesChanged(): { main: (keyof ReturnType<typeof main.getState>)[]; fam: (keyof ReturnType<typeof fam.getState>)[] } {
+export function syncedSlicesChanged(): {
+  main: (keyof ReturnType<typeof main.getState>)[];
+  fam: (keyof ReturnType<typeof fam.getState>)[];
+  fin: (keyof ReturnType<typeof fin.getState>)[];
+} {
   return {
     main: ["profiles", "supervisorAssignments", "transactions", "missions", "badges", "redemptions", "deletedRewardLedger"],
     fam: [
       "stories", "goals", "arcadePlays", "arcadeProgress", "arcadeSessions", "arcadeDaily", "arcadeLimits",
       "questClaims", "medalClaims", "feedPosts", "chat", "reminders", "feedCycleStartDate",
     ],
+    fin: ["budgetConfigs", "subWallets", "grantRequests", "monthlyClosings", "wishlistItems", "reconciliations", "vaultLoans"],
   };
 }
 

@@ -73,6 +73,8 @@ export interface ProfileData {
    * Opsional agar data lama tetap valid; bila kosong, peta memakai catatan paling awal atau hari ini.
    */
   createdAt?: string;
+  /** V5.6.1: `false` = dinonaktifkan Admin (tidak bisa masuk). Kosong = aktif. Diisi server lewat dokumen profil. */
+  isActive?: boolean;
   avatar_theme: string;
   xp: number;
   level: number;
@@ -609,12 +611,24 @@ interface BukuDompetState {
     total_amount: number;
     transaction_date?: string;
     items?: { item_name: string; quantity: number; unit_price: number }[];
+    /** Versi 5.6: sub-dompet sumber, patungan teman, dan tautan hibah. */
+    walletId?: string;
+    isReimbursable?: boolean;
+    linkedGrantId?: string;
   }) => {
     pointsEarned: number;
     xpEarned: number;
     isCombo: boolean;
     dailyCapReached: boolean;
   };
+
+  /**
+   * Versi 5.6: tambahkan transaksi utuh buatan sistem/Supervisor (pemasukan terverifikasi, penyesuaian kas,
+   * setoran tutup buku). TIDAK memberi poin/XP dan tidak menyentuh streak.
+   */
+  appendTransaction: (tx: TransactionRecord) => void;
+  /** Versi 5.6: ubah bidang tertentu sebuah transaksi (verifikasi Supervisor, tandai sudah diganti teman). */
+  patchTransaction: (id: string, patch: Partial<TransactionRecord>) => void;
 
   /** Versi 5.4: ubah catatan HARI INI milik sendiri. Poin & XP yang sudah didapat tidak berubah. */
   updateTransaction: (
@@ -1894,6 +1908,14 @@ export const useBukuDompetStore = create<BukuDompetState>()(
         };
       },
 
+      appendTransaction: (tx) => {
+        set((state) => (state.transactions.some((t) => t.id === tx.id) ? state : { transactions: [tx, ...state.transactions] }));
+      },
+
+      patchTransaction: (id, patch) => {
+        set((state) => ({ transactions: state.transactions.map((t) => (t.id === id ? { ...t, ...patch } : t)) }));
+      },
+
       addTransaction: (payload) => {
         const state = get();
         const userProf = getActiveUserProfile(state);
@@ -1976,6 +1998,13 @@ export const useBukuDompetStore = create<BukuDompetState>()(
           transaction_date: todayStr,
           created_at: new Date().toISOString(),
           items: formattedItems,
+          ...(payload.walletId ? { walletId: payload.walletId } : {}),
+          ...(payload.isReimbursable ? { isReimbursable: true } : {}),
+          ...(payload.linkedGrantId ? { linkedGrantId: payload.linkedGrantId } : {}),
+          // Pemasukan yang dicatat anak sendiri menunggu konfirmasi Supervisor (saldo tetap naik optimistis).
+          ...(isChildRole(state.currentRole) && payload.type === "income"
+            ? { createdByRole: "child" as const, verificationStatus: "pending_supervisor" as const }
+            : {}),
         };
 
         const newXp = userProf.xp + totalXpEarned;

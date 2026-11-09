@@ -29,7 +29,9 @@ export type BadgeSource =
   | { kind: "shop"; price: number }
   | { kind: "medal"; medalId: string }
   | { kind: "medal_tier"; tier: MedalTier }
-  | { kind: "journey"; day: number };
+  | { kind: "journey"; day: number }
+  /** Gelar khusus yang dibuka lewat perilaku tertentu (bukan dibeli). */
+  | { kind: "special"; how: string };
 
 export interface TitleDef {
   id: string;
@@ -91,6 +93,9 @@ const JOURNEY_TITLES: [string, string, Rarity, number][] = [
 
 const TIER_RARITY: Record<MedalTier, Rarity> = { bronze: "umum", silver: "langka", gold: "epik", diamond: "mitos" };
 
+/** Lencana pengendalian diri (Versi 5.6): membatalkan pembelian impulsif setelah masa tunggu 48 jam. */
+export const SELF_CONTROL_TITLE_ID = "t_penahan_diri";
+
 export const MEDAL_TITLE_ID = (medalId: string): string => `m:${medalId}`;
 
 export const TITLES: TitleDef[] = [
@@ -98,6 +103,7 @@ export const TITLES: TitleDef[] = [
   { id: "t_pemula_ceria", name: "Pemula Ceria", rarity: "umum", source: { kind: "start" } },
   ...SHOP_TITLES.map(([k, name, rarity, price]): TitleDef => ({ id: `t_${k}`, name, rarity, source: { kind: "shop", price } })),
   ...JOURNEY_TITLES.map(([k, name, rarity, day]): TitleDef => ({ id: `t_${k}`, name, rarity, source: { kind: "journey", day } })),
+  { id: SELF_CONTROL_TITLE_ID, name: "Penahan Diri", rarity: "langka", source: { kind: "special", how: "Batalkan keinginan belanja setelah masa tunggu 48 jam" } },
   ...MEDAL_CATALOG.map(
     (m): TitleDef => ({ id: MEDAL_TITLE_ID(m.id), name: m.title, rarity: TIER_RARITY[m.tier], source: { kind: "medal", medalId: m.id } })
   ),
@@ -209,5 +215,7 @@ export function sourceLabel(src: BadgeSource): string {
       return "Klaim medali tingkat ini di Misi";
     case "journey":
       return `Peti Harta Hari ke-${src.day}`;
+    case "special":
+      return src.how;
   }
 }

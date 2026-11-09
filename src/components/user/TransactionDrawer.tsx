@@ -3,9 +3,16 @@
 import { ChipScroller } from "@/components/ui/ChipScroller";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Drawer } from "vaul";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Trash2, X } from "@/components/illustrations/UiGlyphs";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
+import { useFinanceStore } from "@/store/useFinanceStore";
+import { useEnsureWallets, useFinanceContext } from "@/lib/use-finance";
+import { pickWalletForCategory } from "@/lib/finance/wallets";
+import { needsCoolingOff } from "@/lib/finance/habits";
+import { CoolingOffPanel, ReimbursableToggle, ShortBalancePanel, WalletPicker } from "@/components/user/SpendGuards";
+import { notify } from "@/lib/notify";
 import { pickViewedChild } from "@/lib/active-child";
 import {
   EXPENSE_CATEGORIES,
@@ -44,6 +51,20 @@ export function TransactionDrawer() {
 
   const currentStage = userProfile.currentStage || 1;
   const petName = userProfile.petCustomName || "Mochi";
+
+  // Versi 5.6: dompet sumber, patungan teman, dan penjaga (tunda 48 jam / saldo kurang)
+  const isCashbookUser = userProfile.role !== "schoolchild";
+  useEnsureWallets(userProfile.id, isCashbookUser);
+  const fin = useFinanceContext(isCashbookUser ? userProfile.id : undefined);
+  const addWishlist = useFinanceStore((s) => s.addWishlist);
+  const checkSpend = useFinanceStore((s) => s.checkSpend);
+  const transferBalance = useFinanceStore((s) => s.transferBalance);
+  const autoSplit = useFinanceStore((s) => s.autoSplit);
+  const [walletId, setWalletId] = useState<string | undefined>(undefined);
+  const [walletTouched, setWalletTouched] = useState<boolean>(false);
+  const [isReimbursable, setIsReimbursable] = useState<boolean>(false);
+  const [guard, setGuard] = useState<"cooling" | "short" | null>(null);
+  const [guardMsg, setGuardMsg] = useState<string | null>(null);
 
   const [txType, setTxType] = useState<"expense" | "income">("expense");
   const [inputMode, setInputMode] = useState<"detailed" | "quick">("detailed");
@@ -160,9 +181,28 @@ export function TransactionDrawer() {
     }
   };
 
+  // Dompet otomatis mengikuti kategori (kecuali anak sudah memilih sendiri).
+  const spendWallets = useMemo(() => fin?.wallets.filter((w) => w.type !== "savings") ?? [], [fin]);
+  const autoWalletId = useMemo(
+    () => pickWalletForCategory(category, spendWallets, userProfile.id)?.id,
+    [category, spendWallets, userProfile.id]
+  );
+  const activeWalletId = walletTouched && walletId ? walletId : autoWalletId;
+  // V5.6.1: dompet tidak dibuat otomatis. Selama belum dibuka, catatan tetap boleh disimpan tanpa dompet.
+  const noWallets = Boolean(fin) && spendWallets.length === 0;
+  const activeWallet = [...spendWallets, ...(fin?.grantWallets ?? [])].find((w) => w.id === activeWalletId);
+
+  const resetGuards = () => {
+    setGuard(null);
+    setGuardMsg(null);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    commit(false);
+  };
 
+  const commit = (skipCooling: boolean) => {
     const finalAmount =
       inputMode === "detailed" && txType === "expense"
         ? itemizedTotal
@@ -173,6 +213,28 @@ export function TransactionDrawer() {
     const selectedExpCat = EXPENSE_CATEGORIES.find((c) => c.name === category);
     const needOrWant =
       txType === "income" ? "income" : selectedExpCat?.group || "want";
+
+    if (txType === "expense" && isCashbookUser && fin && !noWallets) {
+      // 1) keinginan besar: tawarkan masa tunggu 48 jam
+      if (!skipCooling && needsCoolingOff({ type: "expense", need_or_want: needOrWant, amount: finalAmount })) {
+        setGuardMsg(null);
+        setGuard("cooling");
+        return;
+      }
+      // 2) saldo dompet harus cukup; bila kurang, catatan ditahan dan anak diminta menggeser saldo
+      const chk = checkSpend(userProfile.id, activeWalletId, finalAmount, category);
+      if (!chk.ok) {
+        if (chk.code === "insufficient") {
+          setGuardMsg(null);
+          setGuard("short");
+        } else {
+          setGuard(null);
+          setGuardMsg(chk.message);
+        }
+        return;
+      }
+    }
+    resetGuards();
 
     const finalTitle =
       inputMode === "detailed" && txType === "expense"
@@ -187,7 +249,17 @@ export function TransactionDrawer() {
       total_amount: finalAmount,
       items:
         inputMode === "detailed" && txType === "expense" ? items : undefined,
+      ...(txType === "expense" && isCashbookUser && activeWalletId
+        ? {
+            walletId: activeWalletId,
+            ...(isReimbursable ? { isReimbursable: true } : {}),
+            ...(activeWallet?.type === "grant" && activeWallet.linkedGrantId ? { linkedGrantId: activeWallet.linkedGrantId } : {}),
+          }
+        : {}),
     });
+    if (txType === "income" && isCashbookUser) {
+      notify.info("Menunggu konfirmasi Supervisor", "Saldo sudah naik, dan catatan masuk antrean konfirmasi.");
+    }
 
     if (result.isCombo) {
       soundEffects.comboFanfare();
@@ -200,8 +272,35 @@ export function TransactionDrawer() {
     setCustomTitle("");
     setQuickAmount("");
     setSmartSplitInput("");
+    setIsReimbursable(false);
+    setWalletTouched(false);
     setTransactionDrawerOpen(false);
   };
+
+  const postpone = () => {
+    const amt =
+      inputMode === "detailed" && txType === "expense" ? itemizedTotal : Number(quickAmount.replace(/\D/g, "")) || 0;
+    const title = customTitle.trim() || (inputMode === "detailed" ? autoGeneratedTitle : category);
+    const res = addWishlist({ userId: userProfile.id, title, amount: amt, category, need_or_want: "want", walletId: activeWalletId });
+    if (res.success) {
+      notify.success("Masuk Daftar Tunggu", "Pikirkan lagi 48 jam. Kalau batal beli setelah itu, kamu dapat bonus!");
+      resetGuards();
+      setCustomTitle("");
+      setQuickAmount("");
+      setSmartSplitInput("");
+      setTransactionDrawerOpen(false);
+    } else notify.warn("Belum bisa ditunda", res.message);
+  };
+
+  const shortInfo = (() => {
+    if (!fin || !activeWallet) return null;
+    const amt = finalTotalPreviewValue();
+    return { shortBy: Math.max(0, amt - activeWallet.balance) };
+  })();
+
+  function finalTotalPreviewValue(): number {
+    return inputMode === "detailed" && txType === "expense" ? itemizedTotal : Number(quickAmount.replace(/\D/g, "")) || 0;
+  }
 
   const comboTierLabel =
     comboStatus.validItemsCount >= 2
@@ -579,6 +678,36 @@ export function TransactionDrawer() {
                       })}
                     </ChipScroller>
                   </div>
+
+                  {/* 5. Versi 5.6 — Dompet sumber & patungan teman (hanya pengeluaran) */}
+                  {txType === "expense" && isCashbookUser && noWallets && (
+                    <div className="rounded-2xl bg-[#EEF8FF] border-2 border-[#BCE3FF] p-3 space-y-1">
+                      <p className="font-display text-xs font-extrabold text-[#3D352E]">Kamu belum membuka dompet</p>
+                      <p className="text-xs font-bold text-[#7A6E65] leading-relaxed">Catatan ini tetap tersimpan, tapi belum memotong jatah dompet mana pun.</p>
+                      <Link href="/app/journey?tab=dompet" onClick={() => setTransactionDrawerOpen(false)} className="inline-block text-xs font-extrabold text-[#1E88E5] underline">
+                        Buka dompet sekarang
+                      </Link>
+                    </div>
+                  )}
+                  {txType === "expense" && isCashbookUser && fin && !noWallets && (
+                    <div className="space-y-3">
+                      <WalletPicker
+                        wallets={[...spendWallets, ...fin.grantWallets.filter((w) => !w.archived)]}
+                        value={activeWalletId}
+                        onChange={(id) => {
+                          setWalletTouched(true);
+                          setWalletId(id);
+                          resetGuards();
+                        }}
+                      />
+                      <ReimbursableToggle checked={isReimbursable} onChange={setIsReimbursable} />
+                    </div>
+                  )}
+                  {txType === "income" && isCashbookUser && (
+                    <p className="text-xs font-bold text-[#7A6E65] leading-relaxed rounded-2xl bg-[#FFFBEB] border-2 border-[#FDE08D] p-3">
+                      Pemasukan yang kamu catat sendiri langsung menambah saldo, lalu menunggu konfirmasi Supervisor.
+                    </p>
+                  )}
                 </div>
 
                 {/* KOLOM KANAN (5 cols on Desktop) / Sticky Preview on Mobile: Live Struk Kas Digital + Mini Pet + Combo Meter */}
@@ -693,6 +822,47 @@ export function TransactionDrawer() {
                       </div>
                     </div>
                   </div>
+
+                  {guardMsg && (
+                    <p className="rounded-2xl bg-[#FFF2F0] border-2 border-[#FFCDC6] p-3 text-xs font-bold text-[#8F2A1B] leading-relaxed" role="alert">
+                      {guardMsg}
+                    </p>
+                  )}
+                  {guard === "cooling" && (
+                    <CoolingOffPanel amount={finalTotalPreview} onPostpone={postpone} onBought={() => commit(true)} />
+                  )}
+                  {guard === "short" && fin && fin.unallocated > 0 && (
+                    <TactileButton
+                      type="button"
+                      variant="matcha"
+                      size="md"
+                      fullWidth
+                      onClick={() => {
+                        const r = autoSplit(userProfile.id);
+                        if (r.success) {
+                          notify.success("Uang dibagi ke dompet", r.message);
+                          commit(true);
+                        } else notify.warn("Belum bisa dibagi", r.message);
+                      }}
+                    >
+                      Bagi Uang Otomatis ({formatRupiah(fin.unallocated)} belum dibagi)
+                    </TactileButton>
+                  )}
+                  {guard === "short" && activeWallet && fin && shortInfo && (
+                    <ShortBalancePanel
+                      target={activeWallet}
+                      shortBy={shortInfo.shortBy}
+                      wallets={spendWallets}
+                      onCancel={resetGuards}
+                      onTransfer={(fromId, amount, reason) => {
+                        const res = transferBalance(userProfile.id, fromId, activeWallet.id, amount, reason);
+                        if (!res.success) return res.message;
+                        notify.success("Saldo digeser", res.message);
+                        commit(true);
+                        return null;
+                      }}
+                    />
+                  )}
 
                   {/* Primary Submit CTA (Matcha Green Exclusive) */}
                   <TactileButton

@@ -30,6 +30,13 @@ const COLS: Array<[string, ((id: string, d: Doc) => string | null) | undefined, 
   ["stories", (_i, d) => String(d.userId), true],
   ["feed_posts", undefined],
   ["kv", undefined],
+  // Versi 5.6 (migrasi 006): aturan tulis sama seperti schema.ts
+  ["budget_configs", (_i, d) => String(d.userId)],
+  ["sub_wallets", (_i, d) => String(d.userId)],
+  ["grant_requests", (_i, d) => String(d.userId)],
+  ["monthly_closings", (_i, d) => String(d.userId)],
+  ["vault_loans", (_i, d) => String(d.userId)],
+  ["wishlist_items", (_i, d) => String(d.userId), true],
 ];
 
 function device(actor: string, role: string, ver = 1, seedIds: string[] = []) {
@@ -301,6 +308,101 @@ await t("kehilangan akses (penugasan dicabut): salinan lokal yang tak diubah dib
   admin.cols.assignments.delete(`${ID(3)}:${SOFIA}`);
   await admin.engine.syncNow(); await sv.engine.syncNow();
   assert.equal(sv.cols.stories.has("sf1"), false, "hilang setelah dicabut");
+});
+
+console.log("Versi 5.6 — pemasukan dua arah, hibah, dompet & tutup buku (database sungguhan)");
+const serverDoc = async (collection: string, id: string) =>
+  (await pool.query("select data, deleted from sync_docs where collection=$1 and id=$2", [collection, id])).rows[0] as { data: Doc; deleted: boolean } | undefined;
+const incomeBase = (id: string, extra: Doc = {}): Doc => txd(id, TIARA, { type: "income", total_amount: 100000, transaction_date: "2026-11-09", ...extra });
+
+await t("pemasukan dua arah: anak mencatat, Supervisor memverifikasi catatan yang SAMA → satu pemasukan", async () => {
+  const kid = device(TIARA, "user"), sv = device(SV, "supervisor");
+  kid.cols.transactions.set("v56-in1", incomeBase("v56-in1", { createdByRole: "child", verificationStatus: "pending_supervisor" }));
+  await kid.engine.syncNow(); await sv.engine.syncNow();
+  assert.ok(sv.cols.transactions.has("v56-in1"));
+  sv.cols.transactions.set("v56-in1", { ...sv.cols.transactions.get("v56-in1")!, verificationStatus: "verified", verifiedBy: SV, verifiedAt: "2026-11-09T06:00:00Z" });
+  await sv.engine.syncNow(); await kid.engine.syncNow();
+  assert.equal(kid.cols.transactions.get("v56-in1")!.verificationStatus, "verified");
+  assert.equal((await pool.query("select count(*)::int c from sync_docs where collection='transactions' and id like 'v56-in%' and not deleted and data->>'type'='income'")).rows[0].c, 1);
+});
+await t("anak tidak bisa memverifikasi pemasukannya sendiri atau memalsukan catatan Supervisor (ditolak trigger)", async () => {
+  const kid = device(TIARA, "user");
+  kid.cols.transactions.set("v56-fake1", incomeBase("v56-fake1", { createdByRole: "child", verificationStatus: "verified" }));
+  kid.cols.transactions.set("v56-fake2", incomeBase("v56-fake2", { createdByRole: "supervisor", verificationStatus: "verified" }));
+  await kid.engine.syncNow();
+  assert.equal((await serverDoc("transactions", "v56-fake1"))?.deleted ?? true, true, "verifikasi sendiri ditolak");
+  assert.equal((await serverDoc("transactions", "v56-fake2"))?.deleted ?? true, true, "catatan palsu Supervisor ditolak");
+});
+await t("pemasukan terverifikasi dikunci: anak tidak bisa mengubah nominalnya", async () => {
+  const kid = device(TIARA, "user"), sv = device(SV, "supervisor");
+  sv.cols.transactions.set("v56-lock", incomeBase("v56-lock", { createdByRole: "supervisor", verificationStatus: "verified", createdBy: SV }));
+  await sv.engine.syncNow(); await kid.engine.syncNow();
+  kid.cols.transactions.set("v56-lock", { ...kid.cols.transactions.get("v56-lock")!, total_amount: 900000 });
+  await kid.engine.syncNow();
+  assert.equal((await serverDoc("transactions", "v56-lock"))?.data.total_amount, 100000);
+});
+await t("anggaran hanya diatur Supervisor: push anak ke budget_configs ditolak, Supervisor diterima", async () => {
+  const kid = device(TIARA, "user"), sv = device(SV, "supervisor");
+  const cfg = (extra: Doc = {}): Doc => ({ id: `bc-${TIARA}`, userId: TIARA, monthlyBudget: 1000000, mandatorySavingsTarget: 200000, cycleStartDay: 1, rolloverPolicy: "split_choice", updatedAt: "2026-11-09T05:00:00Z", ...extra });
+  kid.cols.budget_configs.set(`bc-${TIARA}`, cfg({ monthlyBudget: 9000000 }));
+  await kid.engine.syncNow();
+  assert.equal((await serverDoc("budget_configs", `bc-${TIARA}`))?.deleted ?? true, true, "anak ditolak");
+  sv.cols.budget_configs.set(`bc-${TIARA}`, cfg());
+  await sv.engine.syncNow();
+  assert.equal((await serverDoc("budget_configs", `bc-${TIARA}`))?.data.monthlyBudget, 1000000);
+});
+await t("dompet (V5.6.1, migrasi 007): Supervisor tidak bisa mengubah dompet biasa anak, tetapi bisa mencairkan dompet hibah", async () => {
+  const kid = device(TIARA, "user"), sv = device(SV, "supervisor");
+  const w = (key: string, type: string, allocated: number, extra: Doc = {}): Doc => ({ id: `sw-${TIARA}-${key}`, userId: TIARA, key, name: key, type, allocated, cycleKey: "2026-11", categories: [], openedVia: "manual", createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-09T05:00:00Z", ...extra });
+  kid.cols.sub_wallets.set(`sw-${TIARA}-v561`, w("v561", "operational", 100000));
+  await kid.engine.syncNow(); await sv.engine.syncNow();
+  assert.equal((await serverDoc("sub_wallets", `sw-${TIARA}-v561`))?.data.openedVia, "manual", "anak membuka dompet");
+  sv.cols.sub_wallets.set(`sw-${TIARA}-v561`, w("v561", "operational", 999999, { updatedAt: "2026-11-09T06:00:00Z" }));
+  await sv.engine.syncNow();
+  assert.equal((await serverDoc("sub_wallets", `sw-${TIARA}-v561`))?.data.allocated, 100000, "Supervisor ditolak mengubah dompet biasa");
+  sv.cols.sub_wallets.set(`sw-${TIARA}-grant-v561`, w("grant-v561", "grant", 80000, { linkedGrantId: "v561" }));
+  await sv.engine.syncNow();
+  assert.equal((await serverDoc("sub_wallets", `sw-${TIARA}-grant-v561`))?.data.type, "grant", "dompet hibah boleh dicairkan Supervisor");
+});
+await t("hibah: anak mengajukan, hanya Supervisor yang memutuskan; status tidak mundur", async () => {
+  const kid = device(TIARA, "user"), sv = device(SV, "supervisor");
+  const g: Doc = { id: "v56-g1", userId: TIARA, title: "Buku", category: "Pendidikan", items: [{ label: "Buku", amount: 100000 }], requestedAmount: 100000, note: "", status: "pending", createdAt: "2026-11-09T05:00:00Z", updatedAt: "2026-11-09T05:00:00Z" };
+  kid.cols.grant_requests.set("v56-g1", g);
+  await kid.engine.syncNow(); await sv.engine.syncNow();
+  assert.ok(sv.cols.grant_requests.has("v56-g1"));
+  // anak mencoba menyetujui sendiri → ditolak server, kembali 'pending'
+  kid.cols.grant_requests.set("v56-g1", { ...g, status: "disbursed", approvedAmount: 100000, updatedAt: "2026-11-09T05:30:00Z" });
+  await kid.engine.syncNow();
+  assert.equal((await serverDoc("grant_requests", "v56-g1"))?.data.status, "pending");
+  sv.cols.grant_requests.set("v56-g1", { ...g, status: "disbursed", approvedAmount: 80000, supervisorNote: "disesuaikan", walletId: `sw-${TIARA}-grant-v56-g1`, updatedAt: "2026-11-09T06:00:00Z" });
+  await sv.engine.syncNow(); await kid.engine.syncNow();
+  assert.equal(kid.cols.grant_requests.get("v56-g1")!.status, "disbursed");
+  assert.equal(kid.cols.grant_requests.get("v56-g1")!.approvedAmount, 80000);
+});
+await t("sub-dompet & tutup buku: tersinkron ke perangkat kedua; tutup buku ganda tidak membuat catatan kedua", async () => {
+  const A = device(TIARA, "user"), B = device(TIARA, "user"), sv = device(SV, "supervisor");
+  const w = (key: string, allocated: number): Doc => ({ id: `sw-${TIARA}-${key}`, userId: TIARA, key, name: key, type: "operational", allocated, cycleKey: "2026-11", categories: [], createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-09T05:00:00Z" });
+  A.cols.sub_wallets.set(`sw-${TIARA}-food`, w("food", 400000));
+  A.cols.sub_wallets.set(`sw-${TIARA}-fun`, w("fun", 50000));
+  const closing = (by: string, at: string): Doc => ({ id: `mc-${TIARA}-2026-10`, userId: TIARA, cycleKey: "2026-10", policy: "split_choice", monthlyCash: 1000000, mandatorySavingsTarget: 200000, mandatorySecured: 200000, ownSpent: 500000, surplus: 300000, savedToVaultAmount: 100000, rolledOverAmount: 200000, bonusPoints: 40, closedAt: at, closedBy: by });
+  A.cols.monthly_closings.set(`mc-${TIARA}-2026-10`, closing(TIARA, "2026-11-01T08:00:00Z"));
+  await A.engine.syncNow(); await B.engine.syncNow();
+  assert.equal(B.cols.sub_wallets.size, 2);
+  // Supervisor menutup siklus yang sama sedikit lebih lambat
+  await sv.engine.syncNow();
+  sv.cols.monthly_closings.set(`mc-${TIARA}-2026-10`, closing(SV, "2026-11-01T09:00:00Z"));
+  await sv.engine.syncNow(); await A.engine.syncNow(); await B.engine.syncNow();
+  assert.equal((await pool.query("select count(*)::int c from sync_docs where collection='monthly_closings' and id like $1 and not deleted", [`mc-${TIARA}-%`])).rows[0].c, 1);
+  assert.equal(A.cols.monthly_closings.get(`mc-${TIARA}-2026-10`)!.closedBy, TIARA, "yang lebih dulu menang");
+});
+await t("daftar tunggu hanya milik pemilik: Supervisor tidak bisa menulis wishlist anak", async () => {
+  const kid = device(TIARA, "user"), sv = device(SV, "supervisor");
+  const w: Doc = { id: "v56-w1", userId: TIARA, title: "Sepatu", amount: 400000, category: "Fashion", need_or_want: "want", createdAt: "2026-11-09T05:00:00Z", coolUntil: "2026-11-11T05:00:00Z", status: "cooling", updatedAt: "2026-11-09T05:00:00Z" };
+  kid.cols.wishlist_items.set("v56-w1", w);
+  await kid.engine.syncNow(); await sv.engine.syncNow();
+  sv.cols.wishlist_items.set("v56-w1", { ...w, status: "bought" });
+  await sv.engine.syncNow();
+  assert.equal((await serverDoc("wishlist_items", "v56-w1"))?.data.status, "cooling");
 });
 
 console.log("Ketahanan");

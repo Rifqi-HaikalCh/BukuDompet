@@ -46,6 +46,7 @@ import { PointCashoutModal } from "@/components/user/PointCashoutModal";
 import { StreakCalendarModal } from "@/components/user/StreakCalendarModal";
 import { AccessoryDropModal } from "@/components/user/AccessoryDropModal";
 import { SavingsVaultModal } from "@/components/user/SavingsVaultModal";
+import { FinanceNotifier } from "@/components/user/FinanceNotifier";
 import { StoryTimeModal } from "@/components/schoolchild/StoryTimeModal";
 import { useQuestState } from "@/lib/use-quest-state";
 import { localDateStr } from "@/lib/dates";
@@ -229,6 +230,7 @@ export function UserAppShell({ children }: { children: React.ReactNode }) {
       <StreakCalendarModal />
       <AccessoryDropModal />
       <SavingsVaultModal />
+      <FinanceNotifier userId={userProfile.id} enabled={isOwner && !isKid} />
       <StoryTimeModal />
 
       {safeLogout.overlay}

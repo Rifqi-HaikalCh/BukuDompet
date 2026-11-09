@@ -8,6 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { useBukuDompetStore } from "@/store/useBukuDompetStore";
 import { useFamilyStore } from "@/store/useFamilyStore";
+import { useFinanceStore } from "@/store/useFinanceStore";
 import {
   SyncEngine,
   SyncHttpError,
@@ -179,6 +180,7 @@ export function wipeLocalData(): void {
   const keepSaved = main.getState().savedProfileIds;
   main.setState({ ...main.getInitialState(), savedProfileIds: keepSaved, isLoggedIn: false }, true);
   useFamilyStore.setState(useFamilyStore.getInitialState(), true);
+  useFinanceStore.setState(useFinanceStore.getInitialState(), true);
 }
 
 /* ───────────── siklus otomatis ───────────── */
@@ -220,6 +222,9 @@ export function startAutoSync(): void {
   const unsubFam = useFamilyStore.subscribe((s, prev) => {
     if (slices.fam.some((k) => s[k] !== prev[k])) onLocalChange();
   });
+  const unsubFin = useFinanceStore.subscribe((s, prev) => {
+    if (slices.fin.some((k) => s[k] !== prev[k])) onLocalChange();
+  });
   const onOnline = () => kick(100);
   const onVisible = () => {
     if (document.visibilityState === "visible") kick(100);
@@ -237,6 +242,7 @@ export function startAutoSync(): void {
     window.clearTimeout(countTimer);
     unsubMain();
     unsubFam();
+    unsubFin();
     window.removeEventListener("online", onOnline);
     window.removeEventListener("focus", onOnline);
     document.removeEventListener("visibilitychange", onVisible);
@@ -465,11 +471,55 @@ export async function adminCreateAccount(a: {
   display_name: string;
   role: SessionUser["role"];
   pin: string;
+  /** Nilai awal anggaran anak (hanya divalidasi server; anggaran lanjutan diatur Supervisor). */
+  initial_budget?: number;
+  initial_saving?: number;
 }): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
   try {
     const r = await api<{ ok: boolean; id?: string; reason?: string; error?: string }>("/api/admin/accounts", a, 15_000);
     if (r.json?.ok && r.json.id) return { ok: true, id: r.json.id };
     return { ok: false, reason: r.json?.reason ?? r.json?.error ?? "server_error" };
+  } catch {
+    return { ok: false, reason: "offline" };
+  }
+}
+
+type AdminResult = { ok: boolean; reason?: string };
+
+async function adminManage(body: Record<string, unknown>): Promise<AdminResult> {
+  try {
+    const r = await api<{ ok: boolean; reason?: string; error?: string }>("/api/admin/accounts/manage", body, 15_000);
+    if (r.json?.ok) {
+      // Perubahan tiba lewat dokumen profil; tarik sekarang supaya daftar akun langsung ikut berubah.
+      await Promise.race([getEngine().syncNow(), wait(6_000)]);
+    }
+    return { ok: Boolean(r.json?.ok), reason: r.json?.reason ?? r.json?.error };
+  } catch {
+    return { ok: false, reason: "offline" };
+  }
+}
+
+/** Admin: ubah nama tampilan & username (peran tidak bisa diubah). */
+export const adminUpdateAccount = (target: string, display_name: string, username: string) => adminManage({ action: "update", target, display_name, username });
+/** Admin: nonaktifkan / aktifkan akun (menonaktifkan langsung mengakhiri semua sesinya; data tetap utuh). */
+export const adminSetAccountActive = (target: string, active: boolean) => adminManage({ action: "active", target, active });
+/** Admin: hapus permanen akun yang SUDAH nonaktif; wajib mengetik ulang username-nya. */
+export const adminDeleteAccount = (target: string, confirm: string) => adminManage({ action: "delete", target, confirm });
+
+export interface AdminAuditRow {
+  at: string;
+  action: string;
+  target: string | null;
+  actor_username: string | null;
+  detail: Record<string, unknown>;
+}
+
+/** Admin: jejak tindakan terakhir. */
+export async function adminAuditLog(limit = 30): Promise<{ ok: true; rows: AdminAuditRow[] } | { ok: false; reason: string }> {
+  try {
+    const r = await api<{ ok: boolean; reason?: string; rows?: AdminAuditRow[] }>("/api/admin/audit", { limit }, 15_000);
+    if (r.json?.ok) return { ok: true, rows: r.json.rows ?? [] };
+    return { ok: false, reason: r.json?.reason ?? "server_error" };
   } catch {
     return { ok: false, reason: "offline" };
   }

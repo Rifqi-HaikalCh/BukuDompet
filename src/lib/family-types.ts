@@ -110,7 +110,12 @@ export type FeedPostKind =
   | "story"
   | "pride"
   | "saving"
-  | "arcade";
+  | "arcade"
+  /** Versi 5.6: uang masuk dari Supervisor, hibah cair, dan tutup buku bulanan. */
+  | "income"
+  | "grant"
+  | "closing"
+  | "wallet";
 
 export interface FeedComment {
   id: string;

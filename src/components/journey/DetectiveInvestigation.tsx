@@ -7,6 +7,7 @@
  * - Anak SD: versi lembut (tabungan celengan + ringkasan perasaan), tanpa istilah boros/bengkak.
  */
 import { GlyphInline } from "@/components/illustrations/GlyphIcons";
+import { CashReconcileCard } from "@/components/user/FinanceHabitCards";
 import React, { useMemo } from "react";
 import { InspectorSakuOwl, EmotionWheelIcon, PiggyVaultIllustration, EMOTION_KEYS, EMOTION_LABEL, type InspectorSakuMood } from "@/components/illustrations/DetectiveAndStoryAssets";
 import { CozyIcon, CategoryIcon } from "@/components/illustrations/CozyIcons";
@@ -24,8 +25,6 @@ interface Props {
   petName: string;
   report: SpendingDetectiveReport;
   owlMood: InspectorSakuMood;
-  /** Hanya dipakai pengguna dewasa untuk tombol "Uji Alarm Boros". */
-  onSimulateOverburn?: () => void;
   onOpenSavings: () => void;
 }
 
@@ -42,7 +41,7 @@ export function DetectiveInvestigation(props: Props) {
 
 /* ───────────────────────── Versi dewasa ───────────────────────── */
 
-function AdultInvestigation({ petName, report, owlMood, onSimulateOverburn }: Props) {
+function AdultInvestigation({ profileId, petName, report, owlMood }: Props) {
   const tone = report.statusColor === "matcha" ? "matcha" : report.statusColor === "honey" ? "honey" : "peach";
   return (
     <div className="space-y-5 min-w-0">
@@ -102,11 +101,6 @@ function AdultInvestigation({ petName, report, owlMood, onSimulateOverburn }: Pr
               </p>
             </div>
           </div>
-          {report.walletStatus !== "BENGKAK" && onSimulateOverburn && (
-            <TactileButton variant="peach" size="sm" onClick={onSimulateOverburn}>
-              <CozyIcon name="warning_siren" size={18} /> Uji Alarm Boros
-            </TactileButton>
-          )}
         </div>
 
         {report.microLeaks.length === 0 ? (
@@ -172,6 +166,7 @@ function AdultInvestigation({ petName, report, owlMood, onSimulateOverburn }: Pr
           ))}
         </div>
       </CozyCard>
+      <CashReconcileCard userId={profileId} />
     </div>
   );
 }

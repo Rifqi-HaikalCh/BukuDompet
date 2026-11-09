@@ -5,6 +5,7 @@
  * Versi 5.0: menggabungkan Peta Perjalanan + Celengan dan Detektif Kas (Inspektur Saku) dalam satu halaman.
  */
 import { GlyphInline } from "@/components/illustrations/GlyphIcons";
+import { WalletHub } from "@/components/wallet/WalletHub";
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
 import { AnimatePresence } from "framer-motion";
@@ -20,9 +21,9 @@ import {
   ACCESSORY_BY_ID,
   type PetMood,
 } from "@/components/illustrations/PetAvatarSystem";
-import { InspectorSakuOwl, PiggyVaultIllustration } from "@/components/illustrations/DetectiveAndStoryAssets";
+import { InspectorSakuOwl } from "@/components/illustrations/DetectiveAndStoryAssets";
 import { previewPathDrops } from "@/lib/path-drop";
-import { BIOME_MONTHS, BiomeMapSection, BiomeTransitionDivider, getBiomeResourceStatus } from "@/components/illustrations/BiomeEnvironment";
+import { BIOME_REGIONS, BiomeMapSection, BiomeTransitionDivider, getBiomeResourceStatus, regionLabelForChapter } from "@/components/illustrations/BiomeEnvironment";
 import { SteppingStoneNode, AnimatedTreasureChest, type StoneStatus, type ChestState } from "@/components/illustrations/AdventureNodes";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import { TactileButton, CozyCard, ChunkyProgressBar, RollingNumber } from "@/components/ui/CozyPrimitives";
@@ -48,7 +49,7 @@ type JourneyNode = PodSummary & {
   isMilestoneDay: boolean;
 };
 
-type MainTab = "map" | "detective" | "games" | "piggy";
+type MainTab = "map" | "dompet" | "detective" | "games" | "piggy";
 
 /** Teks bonus badge pada Peti Harta hari ke-N (Gelar atau Latar, sesuai katalog). */
 function chestBonusLabel(day: number): string {
@@ -71,10 +72,8 @@ export default function JourneyPage() {
     setSavingsModalOpen,
     claimPathMilestoneDrop,
     renamePet,
-    addTransaction,
   } = useBukuDompetStore();
   const stories = useFamilyStore((s) => s.stories);
-  const goals = useFamilyStore((s) => s.goals);
 
   const userProfile =
     (isChildRole(currentRole)
@@ -133,6 +132,7 @@ export default function JourneyPage() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search).get("tab");
     if (q === "detective") setMainTab(isKid ? "piggy" : "detective");
+    else if ((q === "dompet" || q === "wallet") && !isKid) setMainTab("dompet");
     else if (q === "games" && isKid) setMainTab("games");
     else if (q === "piggy" && isKid) setMainTab("piggy");
   }, [isKid]);
@@ -225,13 +225,13 @@ export default function JourneyPage() {
     return nodes;
   }, [userTransactions, userStories, journeyStartStr, todayStep, report.dssl, isKid]);
 
-  /** Bab perjalanan (30 hari per bab). Bioma bab ke-c = BIOME_MONTHS[c % 12]; setelah setahun kembali ke bioma awal. */
+  /** Bab perjalanan (30 hari per bab). Wilayah ke-(c+1) memakai tema BIOME_REGIONS[c % 12]; setelah 12 Wilayah temanya berulang (nomornya terus naik). */
   const chapters = useMemo(() => {
     const list: { index: number; biomeIndex: number; nodes: JourneyNode[]; recordedDays: number }[] = [];
     for (const node of journeyNodes) {
       let ch = list[list.length - 1];
       if (!ch || ch.index !== node.chapterIndex) {
-        ch = { index: node.chapterIndex, biomeIndex: node.chapterIndex % BIOME_MONTHS.length, nodes: [], recordedDays: 0 };
+        ch = { index: node.chapterIndex, biomeIndex: node.chapterIndex % BIOME_REGIONS.length, nodes: [], recordedDays: 0 };
         list.push(ch);
       }
       ch.nodes.push(node);
@@ -241,8 +241,9 @@ export default function JourneyPage() {
   }, [journeyNodes]);
 
   const currentChapterIndex = Math.floor((todayStep - 1) / JOURNEY_CHAPTER_DAYS);
-  const currentBiomeIndex = currentChapterIndex % BIOME_MONTHS.length;
-  const activeBiome = BIOME_MONTHS[currentBiomeIndex] || BIOME_MONTHS[0];
+  const currentBiomeIndex = currentChapterIndex % BIOME_REGIONS.length;
+  const activeBiome = BIOME_REGIONS[currentBiomeIndex] || BIOME_REGIONS[0];
+  const activeRegionLabel = regionLabelForChapter(currentChapterIndex);
   const chapterFirstDay = currentChapterIndex * JOURNEY_CHAPTER_DAYS + 1;
   const chapterLastDay = chapterFirstDay + JOURNEY_CHAPTER_DAYS - 1;
 
@@ -288,27 +289,7 @@ export default function JourneyPage() {
     }
   };
 
-  const handleSimulateOverburn = () => {
-    soundEffects.detectiveBuzz();
-    addTransaction({
-      type: "expense",
-      category: "Nongkrong",
-      need_or_want: "want",
-      title: "Nongkrong Cafe & Dessert Impulsif",
-      total_amount: 65000,
-      items: [
-        { item_name: "Caramel Macchiato Large", quantity: 1, unit_price: 38000 },
-        { item_name: "Croissant Coklat Lumer", quantity: 1, unit_price: 27000 },
-      ],
-    });
-  };
-
   const latestCheer = userProfile.supervisorCheers && userProfile.supervisorCheers.length > 0 ? userProfile.supervisorCheers[0] : null;
-
-  // Tujuan celengan aktif (untuk kartu celengan di bawah peta)
-  const myGoals = goals.filter((g) => g.userId === userProfile.id);
-  const activeGoal = myGoals.find((g) => !g.completedAt) ?? myGoals[0];
-  const goalPct = activeGoal && activeGoal.targetAmount > 0 ? Math.min(100, Math.round((activeGoal.savedAmount / activeGoal.targetAmount) * 100)) : 0;
 
   const petMood: PetMood = isCold ? "shivering_cold" : report.petMood;
   const petSpeech = isCold
@@ -327,33 +308,7 @@ export default function JourneyPage() {
     else setTransactionDrawerOpen(true);
   };
 
-  const mapTabLabel = "Peta Perjalanan & Celengan";
-
-  const piggyCard = (
-  <CozyCard tone="white" className="p-4 flex flex-col sm:flex-row items-center gap-4 min-w-0">
-    <PiggyVaultIllustration progressPercent={goalPct} className="w-28 h-28 shrink-0" />
-    <div className="flex-1 min-w-0 w-full space-y-2">
-      <h3 className="font-display text-base font-extrabold text-[#3D352E] leading-snug break-words">
-        <GlyphInline name="piggy" /> Celengan{activeGoal ? `: ${activeGoal.name}` : ""}
-      </h3>
-      {activeGoal ? (
-        <ChunkyProgressBar value={activeGoal.savedAmount} max={activeGoal.targetAmount} variant="honey" label="Tabungan terkumpul" showFraction />
-      ) : (
-        <p className="text-xs font-bold text-[#7A6E65] leading-relaxed">Belum ada tujuan celengan. Menabung tidak dihitung sebagai pengeluaran boros.</p>
-      )}
-      <TactileButton
-        variant="sky"
-        size="sm"
-        onClick={() => {
-          soundEffects.tactileClick();
-          setSavingsModalOpen(true);
-        }}
-      >
-        <CozyIcon name="cat_saving" size={18} /> Catat Tabungan
-      </TactileButton>
-    </div>
-  </CozyCard>
-  );
+  const mapTabLabel = "Peta Perjalanan";
 
   return (
     <div className="space-y-5 min-w-0 max-w-full overflow-hidden">
@@ -481,7 +436,7 @@ export default function JourneyPage() {
       <div
         role="tablist"
         aria-label="Pilih tampilan jalur"
-        className={cn("grid gap-2 bg-[#F7F3EB] p-1.5 rounded-2xl border-2 border-[#E6DFD2]", isKid ? "grid-cols-3" : "grid-cols-1 sm:grid-cols-2")}
+        className={cn("grid gap-2 bg-[#F7F3EB] p-1.5 rounded-2xl border-2 border-[#E6DFD2]", isKid ? "grid-cols-3" : "grid-cols-1 sm:grid-cols-3")}
       >
         {(isKid
           ? ([
@@ -491,6 +446,7 @@ export default function JourneyPage() {
             ] as const)
           : ([
               { id: "map", label: mapTabLabel },
+              { id: "dompet", label: "Dompet & Celengan" },
               { id: "detective", label: "Investigasi Inspektur Saku (Detektif Kas)" },
             ] as const)
         ).map((tab) => (
@@ -522,10 +478,11 @@ export default function JourneyPage() {
           petName={petName}
           report={report}
           owlMood={owlMood}
-          onSimulateOverburn={handleSimulateOverburn}
           onOpenSavings={() => setSavingsModalOpen(true)}
         />
       )}
+
+      {!isKid && mainTab === "dompet" && <WalletHub userId={userProfile.id} />}
 
       {!isKid && mainTab === "detective" && (
         <DetectiveInvestigation
@@ -534,7 +491,6 @@ export default function JourneyPage() {
           petName={petName}
           report={report}
           owlMood={owlMood}
-          onSimulateOverburn={handleSimulateOverburn}
           onOpenSavings={() => setSavingsModalOpen(true)}
         />
       )}
@@ -629,7 +585,7 @@ export default function JourneyPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#3D352E] leading-snug break-words">
-                          {isKid ? "Peta Jalur Cerita" : "Peta Perjalanan Kas"}: {activeBiome.biomeTitle}
+                          {isKid ? "Peta Jalur Cerita" : "Peta Perjalanan Kas"}: {activeRegionLabel} • {activeBiome.biomeTitle}
                         </h2>
                         <span className="px-2.5 py-0.5 rounded-full bg-[#EEF8FF] border border-[#BCE3FF] text-[11px] font-display font-extrabold text-[#1E88E5]">
                           Bab {currentChapterIndex + 1} • Hari {chapterFirstDay}–{chapterLastDay}
@@ -678,7 +634,7 @@ export default function JourneyPage() {
                     {chapters.map((chapter, chapterPos) => (
                     <BiomeMapSection
                       key={chapter.index}
-                      monthIndex={chapter.biomeIndex}
+                      regionIndex={chapter.biomeIndex}
                       completedStepsCount={Math.max(1, chapter.recordedDays)}
                       className={cn("border-0 rounded-none", chapterPos === chapters.length - 1 && "min-h-full")}
                     >
@@ -709,8 +665,10 @@ export default function JourneyPage() {
                             <React.Fragment key={node.dateStr}>
                               {node.showBiomeGateBefore && (
                                 <BiomeTransitionDivider
-                                  previousMonthIndex={node.dayIndex === 1 ? undefined : (chapter.index - 1) % BIOME_MONTHS.length}
-                                  currentMonthIndex={chapter.biomeIndex}
+                                  previousRegionIndex={node.dayIndex === 1 ? undefined : (chapter.index - 1) % BIOME_REGIONS.length}
+                                  currentRegionIndex={chapter.biomeIndex}
+                                  previousRegionLabel={node.dayIndex === 1 ? undefined : regionLabelForChapter(chapter.index - 1)}
+                                  regionLabel={regionLabelForChapter(chapter.index)}
                                   dayNumber={node.dayIndex}
                                   isStartGate={node.dayIndex === 1}
                                 />
@@ -743,7 +701,6 @@ export default function JourneyPage() {
                                     {!isKid && node.totalSpent > 0 && <span className="tabular-nums text-[#C83E2B]">• -{formatCompactRupiah(node.totalSpent)}</span>}
                                     {!isKid && node.totalSpent === 0 && node.totalIncome > 0 && <span className="tabular-nums text-[#2E6F00]">• +{formatCompactRupiah(node.totalIncome)}</span>}
                                     {isKid && node.stories.length > 0 && <span className="text-[#2E6F00]">• <GlyphInline name="book_open" /> {node.stories.length}</span>}
-                                    {node.totalSaved > 0 && <span className="tabular-nums text-[#1565C0]">• <GlyphInline name="piggy" /></span>}
                                   </div>
                                 </button>
                               </div>
@@ -852,8 +809,6 @@ export default function JourneyPage() {
                   </button>
                 </div>
               </CozyCard>
-
-              {!isKid && piggyCard}
 
               {isKid ? (
                 <KidDayFeed dateStr={selectedDateStr} stories={selectedDayStories} savedAmount={selectedDaySaved} onWrite={handlePrimaryAction} />

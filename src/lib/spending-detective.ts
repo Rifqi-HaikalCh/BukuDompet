@@ -1,4 +1,5 @@
 import { addDaysStr, localDateStr } from "@/lib/dates";
+import { scoreableTransactions } from "@/lib/finance/ledger";
 import type { MochiMood, MochiStage } from "@/components/illustrations/MochiCompanion";
 import type {
   CasteStage,
@@ -12,7 +13,7 @@ import {
 } from "@/components/illustrations/PetAvatarSystem";
 
 /** `saving` = setoran celengan (Versi 5.0). Bukan pengeluaran, jadi tidak pernah dihitung boros. */
-export type TransactionType = "income" | "expense" | "saving";
+export type TransactionType = "income" | "expense" | "saving" | "adjustment";
 export type NeedOrWant = "need" | "want" | "income";
 
 export interface TransactionItem {
@@ -38,6 +39,23 @@ export interface TransactionRecord {
   transaction_date: string; // YYYY-MM-DD
   created_at: string;
   items?: TransactionItem[];
+  /* ── Versi 5.6 — semua opsional agar catatan lama tetap valid ── */
+  /** Sub-dompet sumber pengeluaran. */
+  walletId?: string;
+  /** Pemasukan dari anak berstatus `pending_supervisor` sampai dikonfirmasi Supervisor. */
+  verificationStatus?: "verified" | "pending_supervisor" | "rejected";
+  createdByRole?: "child" | "supervisor";
+  /** Terisi bila pengeluaran berasal dari dompet hibah: tidak dihitung dalam laju pembakaran/skor detektif. */
+  linkedGrantId?: string;
+  /** Patungan/titip bayar teman: tetap mengurangi dompet, tetapi bukan pemborosan pribadi. */
+  isReimbursable?: boolean;
+  reimbursedAt?: string;
+  /** Hanya `type: "adjustment"`: arah selisih kas. */
+  adjustmentDirection?: "loss" | "gain";
+  claimedAmount?: number;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  createdBy?: string;
 }
 
 export const EXPENSE_CATEGORIES: {
@@ -374,7 +392,7 @@ export function analyzeSpendingDetective(params: {
   referenceDateStr?: string;
 }): SpendingDetectiveReport {
   const {
-    transactions,
+    transactions: rawTransactions,
     monthlyBudgetTarget,
     monthlySavingTarget,
     userLevel,
@@ -385,6 +403,7 @@ export function analyzeSpendingDetective(params: {
   } = params;
 
   const petName = petCustomName.trim() || "Mochi";
+  const transactions = scoreableTransactions(rawTransactions);
 
   const todayStr = referenceDateStr || localDateStr();
   const todayDate = new Date(todayStr + "T12:00:00");

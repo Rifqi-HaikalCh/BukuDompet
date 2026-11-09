@@ -3,14 +3,14 @@
 /**
  * Bioma Hidup (Versi 5.0): lapisan dekorasi yang bergerak di belakang & tepi peta perjalanan.
  * - Awan melayang pelan, kolam kecil dengan riak air.
- * - Partikel cuaca sesuai bulan (hujan, salju, kelopak, kunang-kunang, gelembung, dst.).
+ * - Partikel cuaca sesuai tema Wilayah (hujan, salju, kelopak, kunang-kunang, gelembung, dst.).
  * - Pohon di tepi peta: diketuk akan bergoyang; Pohon Koin (level 4) menjatuhkan koin hiasan.
  * Semua posisi berasal dari tabel tetap (tanpa acak) sehingga SSR/CSR konsisten.
  * Gerakan CSS dimatikan oleh `prefers-reduced-motion`; gerakan framer oleh MotionConfig.
  */
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { GrowingResourceTree, type BiomeMonthMeta, type WeatherType } from "./BiomeEnvironment";
+import { GrowingResourceTree, type BiomeRegionMeta, type WeatherType } from "./BiomeEnvironment";
 
 interface Particle {
   left: number; // %
@@ -124,7 +124,7 @@ function glowColor(type: WeatherType): string {
 }
 
 /** Lapisan di belakang konten peta (awan, kolam, cuaca). */
-export function LivingBiomeBackdrop({ biome }: { biome: BiomeMonthMeta }) {
+export function LivingBiomeBackdrop({ biome }: { biome: BiomeRegionMeta }) {
   const type = biome.weatherType;
   const isFalling = FALLING.includes(type);
   const isRising = type === "sea_bubble";
@@ -279,7 +279,7 @@ function InteractiveTree({
 }
 
 /** Pohon tepi peta yang bisa diketuk (di atas konten, hanya area pohon yang menangkap sentuhan). */
-export function LivingBiomeTrees({ biome, level }: { biome: BiomeMonthMeta; level: 1 | 2 | 3 | 4 }) {
+export function LivingBiomeTrees({ biome, level }: { biome: BiomeRegionMeta; level: 1 | 2 | 3 | 4 }) {
   return (
     <div className="absolute inset-0 z-20 pointer-events-none">
       {TREE_SPOTS.map((t, i) => (

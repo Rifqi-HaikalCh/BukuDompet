@@ -23,10 +23,8 @@ import {
   analyzeSpendingDetective,
   getLevelFromXp,
 } from "@/lib/spending-detective";
-import {
-  CustomizablePetAvatar,
-  GROWTH_STAGE_META,
-} from "@/components/illustrations/PetAvatarSystem";
+import { validateBudgetInput } from "@/lib/finance/budget";
+import { GROWTH_STAGE_META } from "@/components/illustrations/PetAvatarSystem";
 import { BukuDompetLogo } from "@/components/illustrations/BukuDompetLogo";
 import { CozyIcon } from "@/components/illustrations/CozyIcons";
 import {
@@ -37,7 +35,11 @@ import {
 } from "@/components/ui/CozyPrimitives";
 import { CozyConfirmModal } from "@/components/ui/CozyConfirmModal";
 import { useSafeLogout } from "@/components/ui/SafeLogout";
-import { adminCreateAccount, adminSetPin } from "@/lib/sync/client";
+import { adminCreateAccount } from "@/lib/sync/client";
+import { AdminActionProvider, useAdminAction } from "@/components/admin/AdminActionModal";
+import { AdminOverview } from "@/components/admin/AdminOverview";
+import { AccountManager } from "@/components/admin/AccountManager";
+import { accountError } from "@/components/admin/account-errors";
 import { PageTransitionLoader } from "@/components/ui/PageTransitionLoader";
 import { GamificationFX } from "@/components/ui/GamificationFX";
 import { soundEffects, fireCozyConfetti } from "@/lib/sound-effects";
@@ -45,6 +47,17 @@ import { useCozyBgm } from "@/lib/cozy-bgm";
 import { cn, formatCompactRupiah } from "@/lib/utils";
 
 export default function AdminCommandCenterPage() {
+  return (
+    <AdminActionProvider>
+      <AdminCommandCenter />
+    </AdminActionProvider>
+  );
+}
+
+const ROLE_NAME: Record<string, string> = { admin: "Admin", supervisor: "Supervisor", user: "User", schoolchild: "Anak SD" };
+
+function AdminCommandCenter() {
+  const { ask, busy } = useAdminAction();
   const { isPlaying: isBgmPlaying, toggleBgm } = useCozyBgm();
   const {
     profiles,
@@ -52,7 +65,6 @@ export default function AdminCommandCenterPage() {
     transactions,
     redemptions,
     approveOrRejectCashout,
-    updateBudgetSettings,
     addCustomMission,
     registerNewAccount,
     toggleSupervisorAssignment,
@@ -61,11 +73,11 @@ export default function AdminCommandCenterPage() {
   const safeLogout = useSafeLogout();
 
   const userProfiles = useMemo(
-    () => profiles.filter((p) => isChildRole(p.role)),
+    () => profiles.filter((p) => isChildRole(p.role) && p.isActive !== false),
     [profiles]
   );
   const supervisorProfiles = useMemo(
-    () => profiles.filter((p) => p.role === "supervisor"),
+    () => profiles.filter((p) => p.role === "supervisor" && p.isActive !== false),
     [profiles]
   );
 
@@ -100,19 +112,13 @@ export default function AdminCommandCenterPage() {
   const [newPinCode, setNewPinCode] = useState<string>("");
   const [newRole, setNewRole] = useState<UserRole>("user");
   const [newBudgetTarget, setNewBudgetTarget] = useState<string>("1500000");
+  const [newSavingTarget, setNewSavingTarget] = useState<string>("300000");
   const [newPetName, setNewPetName] = useState<string>("Mochi");
   const [newSupervisorId, setNewSupervisorId] = useState<string>("");
   const [registerFeedback, setRegisterFeedback] = useState<{
     success: boolean;
     message: string;
   } | null>(null);
-  const [registering, setRegistering] = useState<boolean>(false);
-
-  // Ubah PIN akun (PIN hanya ada di database, ter-hash; Admin tidak pernah bisa melihat PIN lama)
-  const [pinTargetId, setPinTargetId] = useState<string>("");
-  const [pinNew, setPinNew] = useState<string>("");
-  const [pinBusy, setPinBusy] = useState<boolean>(false);
-  const [pinFeedback, setPinFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
   // 2. Matriks Penugasan Supervisor State
   const [selectedSupervisorId, setSelectedSupervisorId] = useState<string>(
@@ -122,14 +128,6 @@ export default function AdminCommandCenterPage() {
   const activeSelectedSupervisor =
     supervisorProfiles.find((s) => s.id === selectedSupervisorId) ||
     supervisorProfiles[0];
-
-  // 3. Budget Configurator Form State
-  const [budgetInput, setBudgetInput] = useState<string>(
-    String(targetUserProfile.monthly_budget_target)
-  );
-  const [savingInput, setSavingInput] = useState<string>(
-    String(targetUserProfile.monthly_saving_target)
-  );
 
   // 4. Custom Mission Injector State
   const [missionTitle, setMissionTitle] = useState<string>(
@@ -144,15 +142,7 @@ export default function AdminCommandCenterPage() {
   const [showAllHistory, setShowAllHistory] = useState<boolean>(false);
 
   // Confirm Modal States
-  const [pendingAction, setPendingAction] = useState<{
-    type:
-      | "approve_cashout"
-      | "reject_cashout"
-      | "save_budget"
-      | "exit_login";
-    redemptionId?: string;
-    amount?: number;
-  } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: "exit_login" } | null>(null);
 
   const pendingRedemptions = redemptions.filter((r) => r.status === "pending");
   const historyRedemptions = redemptions.filter((r) => r.status !== "pending");
@@ -160,126 +150,171 @@ export default function AdminCommandCenterPage() {
     ? historyRedemptions
     : historyRedemptions.slice(0, 5);
 
-  const ACCOUNT_ERRORS: Record<string, string> = {
-    username_taken: "Username sudah dipakai. Gunakan username lain.",
-    bad_username: "Username hanya boleh huruf kecil, angka, dan garis bawah (3–24 karakter).",
-    bad_pin: "PIN harus tepat 4 angka.",
-    bad_name: "Nama tampilan wajib diisi (maks. 40 karakter).",
-    bad_role: "Peran akun tidak valid.",
-    forbidden: "Hanya Admin yang boleh melakukan ini.",
-    session_invalid: "Sesimu berakhir. Masuk lagi sebagai Admin.",
-    offline: "Tidak bisa tersambung ke server. Periksa internet lalu coba lagi.",
-    not_found: "Akun tidak ditemukan.",
-  };
-  const accountError = (reason: string) =>
-    ACCOUNT_ERRORS[reason] ?? "Server sedang bermasalah. Coba lagi sebentar lagi.";
-
-  const handleRegisterAccount = async (e: React.FormEvent) => {
+  const handleRegisterAccount = (e: React.FormEvent) => {
     e.preventDefault();
-    if (registering) return;
-    setRegistering(true);
-    setRegisterFeedback(null);
-    // Akun & PIN dibuat DI SERVER dulu (PIN di-hash di database). Hanya bila berhasil, profil lokal dibuat.
-    const created = await adminCreateAccount({
-      username: newUsername.trim().toLowerCase().replace(/\s+/g, "_"),
-      display_name: newDisplayName.trim(),
-      role: newRole,
-      pin: newPinCode.trim(),
-    });
-    if (!created.ok) {
-      setRegistering(false);
+    if (busy) return;
+    const name = newDisplayName.trim();
+    const username = newUsername.trim().toLowerCase().replace(/\s+/g, "_");
+    const pin = newPinCode.trim();
+    const role = newRole;
+    const child = isChildRole(role);
+    if (child) {
+      // Admin hanya menetapkan nilai awal. Anggaran lanjutan diatur Supervisor.
+      const v = validateBudgetInput({
+        monthlyBudget: Number(newBudgetTarget),
+        mandatorySavingsTarget: Number(newSavingTarget),
+        cycleStartDay: 1,
+        rolloverPolicy: "split_choice",
+        effectiveScope: "current_month",
+      });
+      if (!v.ok) {
+        soundEffects.detectiveBuzz();
+        setRegisterFeedback({ success: false, message: Object.values(v.errors)[0] ?? "Anggaran awal belum benar." });
+        return;
+      }
+    }
+    if (!name || !username || pin.length !== 4) {
       soundEffects.detectiveBuzz();
-      setRegisterFeedback({ success: false, message: accountError(created.reason) });
+      setRegisterFeedback({ success: false, message: "Nama, username, dan PIN 4 angka wajib diisi." });
       return;
     }
-    const res = registerNewAccount({
-      id: created.id,
-      displayName: newDisplayName,
-      username: newUsername,
-      role: newRole,
-      monthlyBudgetTarget: isChildRole(newRole)
-        ? Number(newBudgetTarget) || (newRole === "schoolchild" ? 150000 : 1500000)
-        : undefined,
-      petCustomName: isChildRole(newRole) ? newPetName : undefined,
-      supervisorId: isChildRole(newRole)
-        ? newSupervisorId || supervisorProfiles[0]?.id
-        : undefined,
+    setRegisterFeedback(null);
+    const budget = Number(newBudgetTarget);
+    const saving = Number(newSavingTarget);
+    const pet = newPetName;
+    const supId = child ? newSupervisorId || supervisorProfiles[0]?.id : undefined;
+    const supName = supervisorProfiles.find((x) => x.id === supId)?.display_name;
+    ask({
+      title: `Daftarkan akun ${name}?`,
+      description: "Akun dibuat di database dan PIN disimpan terenkripsi. Setelah ini akun bisa langsung dipakai masuk.",
+      rows: [
+        { label: "Nama tampilan", to: name },
+        { label: "Username", to: `@${username}` },
+        { label: "Peran", to: ROLE_NAME[role] ?? role },
+        { label: "PIN", to: "••••" },
+        ...(child ? [{ label: "Anggaran awal", to: formatRupiah(budget) }, { label: "Tabungan wajib awal", to: formatRupiah(saving) }] : []),
+        ...(supName ? [{ label: "Dipantau oleh", to: supName }] : []),
+      ],
+      confirmLabel: "Ya, Daftarkan",
+      run: async () => {
+        // Akun & PIN dibuat DI SERVER dulu (PIN di-hash di database). Hanya bila berhasil, profil lokal dibuat.
+        const created = await adminCreateAccount({
+          username,
+          display_name: name,
+          role,
+          pin,
+          ...(child ? { initial_budget: budget, initial_saving: saving } : {}),
+        });
+        if (!created.ok) return { ok: false, message: accountError(created.reason) };
+        const res = registerNewAccount({
+          id: created.id,
+          displayName: name,
+          username,
+          role,
+          monthlyBudgetTarget: child ? budget : undefined,
+          monthlySavingTarget: child ? saving : undefined,
+          petCustomName: child ? pet : undefined,
+          supervisorId: supId,
+        });
+        if (res.success) {
+          soundEffects.comboFanfare();
+          fireCozyConfetti("combo");
+          setNewDisplayName("");
+          setNewUsername("");
+          setNewPinCode("");
+          setRegisterFeedback(null);
+        }
+        return { ok: res.success, message: res.message };
+      },
     });
-    setRegistering(false);
-    setRegisterFeedback(res);
-    if (res.success) {
-      soundEffects.comboFanfare();
-      fireCozyConfetti("combo");
-      setNewDisplayName("");
-      setNewUsername("");
-      setNewPinCode("");
-    } else {
-      soundEffects.detectiveBuzz();
-    }
   };
 
-  const handleChangePin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pinBusy || !pinTargetId) return;
-    setPinBusy(true);
-    setPinFeedback(null);
-    const r = await adminSetPin(pinTargetId, pinNew.trim());
-    setPinBusy(false);
-    if (r.ok) {
-      const who = profiles.find((p) => p.id === pinTargetId);
-      soundEffects.comboFanfare();
-      setPinNew("");
-      setPinFeedback({
-        success: true,
-        message: `PIN ${who ? who.display_name : "akun"} diganti. Semua sesi lama akun itu otomatis berakhir.`,
-      });
-    } else {
-      soundEffects.detectiveBuzz();
-      setPinFeedback({ success: false, message: accountError(r.reason ?? "") });
-    }
+  const askToggleAssignment = (
+    sup: (typeof profiles)[number],
+    usr: (typeof profiles)[number],
+    isAssigned: boolean
+  ) =>
+    ask({
+      title: isAssigned ? `Cabut akses pantau ${sup.display_name}?` : `Beri akses pantau ke ${sup.display_name}?`,
+      description: isAssigned
+        ? "Supervisor ini tidak akan melihat data akun tersebut lagi."
+        : "Supervisor ini akan bisa memantau dan mengatur anggaran akun tersebut.",
+      rows: [
+        { label: "Supervisor", to: sup.display_name },
+        { label: "Akun dipantau", to: `${usr.display_name} (@${usr.username})` },
+        { label: "Akses", from: isAssigned ? "Dipantau" : "Tidak dipantau", to: isAssigned ? "Tidak dipantau" : "Dipantau" },
+      ],
+      confirmLabel: isAssigned ? "Ya, Cabut Akses" : "Ya, Beri Akses",
+      variant: isAssigned ? "peach" : "matcha",
+      run: async () => {
+        toggleSupervisorAssignment(sup.id, usr.id);
+        return { ok: true, message: isAssigned ? "Akses pantau dicabut." : "Akses pantau diberikan." };
+      },
+    });
+
+  const askCashout = (req: (typeof redemptions)[number], action: "approved" | "rejected") => {
+    const requester = profiles.find((p) => p.id === req.user_id);
+    const approve = action === "approved";
+    ask({
+      title: approve ? `Setujui pencairan ${formatRupiah(req.rupiah_value)}?` : "Tolak tiket pencairan poin?",
+      description: approve
+        ? "Sistem otomatis membuat transaksi pemasukan 'Hadiah Tukar Poin Gamifikasi' di Buku Kas pengguna."
+        : "Tiket dibatalkan dan poin dikembalikan utuh ke pengguna.",
+      rows: [
+        { label: "Pemohon", to: requester?.display_name ?? "User" },
+        { label: "Nilai", to: `${formatRupiah(req.rupiah_value)} (${req.points_redeemed.toLocaleString("id-ID")} poin)` },
+        { label: "Keputusan", to: approve ? "Setujui" : "Tolak & kembalikan poin" },
+      ],
+      confirmLabel: approve ? "Ya, Setujui" : "Ya, Tolak Tiket",
+      variant: approve ? "matcha" : "peach",
+      run: async () => {
+        if (approve) {
+          soundEffects.comboFanfare();
+          fireCozyConfetti("jackpot");
+        } else {
+          soundEffects.detectiveBuzz();
+        }
+        approveOrRejectCashout(req.id, action);
+        return { ok: true, message: approve ? "Pencairan disetujui." : "Tiket ditolak, poin dikembalikan." };
+      },
+    });
   };
 
   const executePendingConfirm = () => {
-    if (!pendingAction) return;
-    if (
-      pendingAction.type === "approve_cashout" &&
-      pendingAction.redemptionId
-    ) {
-      soundEffects.comboFanfare();
-      fireCozyConfetti("jackpot");
-      approveOrRejectCashout(pendingAction.redemptionId, "approved");
-    } else if (
-      pendingAction.type === "reject_cashout" &&
-      pendingAction.redemptionId
-    ) {
-      soundEffects.detectiveBuzz();
-      approveOrRejectCashout(pendingAction.redemptionId, "rejected");
-    } else if (pendingAction.type === "save_budget") {
-      soundEffects.coinChime();
-      updateBudgetSettings(
-        Number(budgetInput) || 1800000,
-        Number(savingInput) || 350000,
-        targetUserProfile.id
-      );
-    } else if (pendingAction.type === "exit_login") {
-      void safeLogout.run();
-    }
+    if (pendingAction?.type === "exit_login") void safeLogout.run();
     setPendingAction(null);
   };
 
   const handleAddMission = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!missionTitle.trim()) return;
-    soundEffects.comboFanfare();
-    fireCozyConfetti("normal");
-    addCustomMission({
-      title: missionTitle.trim(),
-      description: missionDesc.trim(),
-      mission_type: "saving_challenge",
-      target_value: 1,
-      reward_points: Number(missionPoints) || 150,
-      reward_xp: 120,
-      targetUserId: targetUserProfile.id,
+    if (busy || !missionTitle.trim()) return;
+    const title = missionTitle.trim();
+    const desc = missionDesc.trim();
+    const points = Number(missionPoints) || 150;
+    const target = targetUserProfile;
+    ask({
+      title: `Kirim misi ke ${target.display_name}?`,
+      description: "Misi langsung muncul di daftar misi pengguna.",
+      rows: [
+        { label: "Judul", to: title },
+        { label: "Penerima", to: `${target.display_name} (@${target.username})` },
+        { label: "Hadiah", to: `${points.toLocaleString("id-ID")} poin` },
+      ],
+      confirmLabel: "Ya, Kirim Misi",
+      run: async () => {
+        soundEffects.comboFanfare();
+        fireCozyConfetti("normal");
+        addCustomMission({
+          title,
+          description: desc,
+          mission_type: "saving_challenge",
+          target_value: 1,
+          reward_points: points,
+          reward_xp: 120,
+          targetUserId: target.id,
+        });
+        return { ok: true, message: "Misi terkirim." };
+      },
     });
   };
 
@@ -290,50 +325,17 @@ export default function AdminCommandCenterPage() {
       <GamificationFX />
       <FloatingRewardBanner />
 
-      {/* Universal Admin Confirm Modal */}
+      {/* Konfirmasi keluar ke halaman login (aksi data lain memakai AdminActionModal) */}
       <CozyConfirmModal
         open={Boolean(pendingAction)}
         onClose={() => setPendingAction(null)}
         onConfirm={executePendingConfirm}
-        title={
-          pendingAction?.type === "approve_cashout"
-            ? `Setujui Pencairan ${formatRupiah(pendingAction.amount || 0)}?`
-            : pendingAction?.type === "reject_cashout"
-            ? "Tolak Tiket Pencairan Poin?"
-            : pendingAction?.type === "save_budget"
-            ? `Simpan Target Budget ${targetUserProfile.display_name}?`
-            : "Keluar ke Halaman Login?"
-        }
-        description={
-          pendingAction?.type === "approve_cashout"
-            ? "Saat disetujui, sistem otomatis membuat transaksi pemasukan 'Hadiah Tukar Poin Gamifikasi' di Buku Kas pengguna terkait!"
-            : pendingAction?.type === "reject_cashout"
-            ? "Tiket akan dibatalkan dan saldo Poin akan dikembalikan utuh ke dompet pengguna."
-            : pendingAction?.type === "save_budget"
-            ? `Uang saku bulanan ${
-                targetUserProfile.display_name
-              } akan diatur ke ${formatRupiah(
-                Number(budgetInput) || 0
-              )} dengan target tabungan ${formatRupiah(
-                Number(savingInput) || 0
-              )}. Rumus DSSL akan otomatis menyesuaikan.`
-            : "Anda akan kembali ke layar Login Kredensial."
-        }
-        confirmLabel={
-          pendingAction?.type === "reject_cashout"
-            ? "Ya, Tolak Tiket"
-            : "Ya, Lanjutkan!"
-        }
-        confirmVariant={
-          pendingAction?.type === "reject_cashout" ||
-          pendingAction?.type === "exit_login"
-            ? "peach"
-            : "matcha"
-        }
+        title="Keluar ke Halaman Login?"
+        description="Anda akan kembali ke layar Login Kredensial."
+        confirmLabel="Ya, Lanjutkan!"
+        confirmVariant="peach"
         mochiStage={5}
-        mochiMood={
-          pendingAction?.type === "reject_cashout" ? "worried" : "proud_combo"
-        }
+        mochiMood="proud_combo"
         badgeText="Konfirmasi Admin"
       />
 
@@ -351,10 +353,6 @@ export default function AdminCommandCenterPage() {
               size="sm"
               className="hidden sm:block h-10 w-auto shrink-0"
             />
-            <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E3F4FF] border-2 border-[#9AD2FF] text-xs font-display font-extrabold text-[#1565C0] truncate">
-              <CozyIcon name="crown_sultan" size={18} />
-              Command Center Admin (Multi-User)
-            </span>
           </div>
 
           {/* Instant Role View Switcher + BGM Toggle */}
@@ -421,51 +419,22 @@ export default function AdminCommandCenterPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6 min-w-0 max-w-full overflow-hidden">
-        {/* 1. Banner Pusat Kendali (Single Soft Pastel Sky Hero Card) */}
-        <CozyCard
-          tone="sky"
-          className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
-        >
-          <div className="flex items-center gap-4 min-w-0">
-            <div className="w-18 h-20 rounded-2xl bg-white border-2 border-[#E6DFD2] border-b-[4px] border-b-[#D4C9B4] flex items-center justify-center shrink-0 p-1">
-              <CustomizablePetAvatar
-                species={targetUserProfile.activeSpecies || "chubby_cat"}
-                stage={targetUserProfile.currentStage || 1}
-                mood="happy"
-                customName={targetUserProfile.petCustomName || "Mochi"}
-                equippedAccessories={targetUserProfile.equippedAccessories}
-                className="w-16 h-18"
-              />
-            </div>
-            <div className="space-y-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-full bg-white border border-[#BCE3FF] text-xs font-display font-extrabold text-[#1565C0] inline-flex items-center gap-1">
-                  <CozyIcon name="combo_sparkle" size={16} />
-                  Mode Live Buku Kas: AKTIF
-                </span>
-                <span className="text-xs font-display font-extrabold tabular-nums text-[#4A3500] bg-[#FFFBEB] px-2.5 py-0.5 rounded-full border border-[#FDE08D]">
-                  Total Akun Terdaftar: {profiles.length} Akun (
-                  {profiles.filter((p) => p.role === "user").length} User,{" "}
-                  {profiles.filter((p) => p.role === "schoolchild").length} Anak SD,{" "}
-                  {supervisorProfiles.length} Supervisor)
-                </span>
-              </div>
-              <h1 className="font-display text-xl font-extrabold text-[#3D352E] truncate">
-                Pusat Kendali RBAC, Anggaran & Ekonomi BukuDompet
-              </h1>
-              <p className="text-xs sm:text-sm font-bold text-[#3D352E]/85">
-                Daftarkan pengguna baru, atur penugasan Supervisor, dan kelola
-                pencairan Tiket Emas seluruh pengguna!
-              </p>
-            </div>
-          </div>
+        <AdminOverview
+          profiles={profiles}
+          pendingCashouts={pendingRedemptions.length}
+          assignments={supervisorAssignments.length}
+        />
 
-        </CozyCard>
+        {/* Kelola Akun (CRUD) */}
+        <div id="admin-akun" className="scroll-mt-20">
+          <AccountManager profiles={profiles} />
+        </div>
 
         {/* ============================================================
             SECTION BARU WAJIB (TUGAS 1.3):
             MANAJEMEN PENGGUNA & PENUGASAN SUPERVISOR
            ============================================================ */}
+        <div id="admin-penugasan" className="scroll-mt-20">
         <CozyCard tone="white" className="p-5 sm:p-6 space-y-5">
           <div className="flex items-center justify-between gap-2 flex-wrap border-b-2 border-[#E6DFD2] pb-4">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -553,8 +522,13 @@ export default function AdminCommandCenterPage() {
                         const next = e.target.value as UserRole;
                         setNewRole(next);
                         // Uang saku Anak SD jauh lebih kecil daripada pengguna dewasa.
-                        if (next === "schoolchild") setNewBudgetTarget("150000");
-                        else if (next === "user") setNewBudgetTarget("1500000");
+                        if (next === "schoolchild") {
+                          setNewBudgetTarget("150000");
+                          setNewSavingTarget("30000");
+                        } else if (next === "user") {
+                          setNewBudgetTarget("1500000");
+                          setNewSavingTarget("300000");
+                        }
                       }}
                       className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs sm:text-sm font-extrabold text-[#3D352E] focus:outline-none"
                     >
@@ -580,6 +554,18 @@ export default function AdminCommandCenterPage() {
                         type="number"
                         value={newBudgetTarget}
                         onChange={(e) => setNewBudgetTarget(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display tabular-nums text-xs sm:text-sm font-extrabold text-[#3D352E]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-display font-extrabold uppercase text-[#7A6E65] mb-1">
+                        Target Tabungan Wajib Awal (Rp)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={newSavingTarget}
+                        onChange={(e) => setNewSavingTarget(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display tabular-nums text-xs sm:text-sm font-extrabold text-[#3D352E]"
                       />
                     </div>
@@ -639,75 +625,13 @@ export default function AdminCommandCenterPage() {
                   variant="matcha"
                   size="md"
                   fullWidth
-                  disabled={registering}
+                  disabled={busy}
                 >
                   <UserPlus className="w-4 h-4" />
-                  {registering ? "Mendaftarkan…" : "Daftarkan Akun Baru Sekarang"}
+                  {busy ? "Memproses…" : "Daftarkan Akun Baru Sekarang"}
                 </TactileButton>
               </form>
 
-              {/* Ubah PIN akun */}
-              <form
-                onSubmit={handleChangePin}
-                className="pt-3.5 border-t-2 border-[#E6DFD2] space-y-2.5"
-                aria-labelledby="ubah-pin-title"
-              >
-                <h4 id="ubah-pin-title" className="font-display text-sm font-extrabold text-[#3D352E]">
-                  Ubah PIN Akun
-                </h4>
-                <p className="text-[11px] font-bold text-[#7A6E65] leading-relaxed">
-                  PIN disimpan terenkripsi di database, jadi PIN lama tidak bisa dilihat. Mengganti PIN langsung
-                  mengeluarkan akun itu dari semua perangkat.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
-                  <select
-                    value={pinTargetId}
-                    onChange={(e) => {
-                      setPinTargetId(e.target.value);
-                      setPinFeedback(null);
-                    }}
-                    required
-                    aria-label="Pilih akun yang PIN-nya diganti"
-                    className="sm:col-span-3 w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs font-extrabold text-[#3D352E] focus:outline-none min-w-0"
-                  >
-                    <option value="">Pilih akun…</option>
-                    {profiles.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.display_name} (@{p.username})
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    required
-                    inputMode="numeric"
-                    autoComplete="off"
-                    maxLength={4}
-                    pattern="[0-9]{4}"
-                    value={pinNew}
-                    onChange={(e) => setPinNew(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    placeholder="PIN baru"
-                    aria-label="PIN baru, 4 angka"
-                    className="sm:col-span-2 w-full px-3 py-2 rounded-xl border-2 border-[#E6DFD2] bg-white font-display text-xs font-extrabold text-[#3D352E] focus:outline-none focus:border-[#38B6FF] min-w-0"
-                  />
-                </div>
-                {pinFeedback && (
-                  <div
-                    role="status"
-                    className={cn(
-                      "p-2.5 rounded-xl border text-xs font-extrabold",
-                      pinFeedback.success
-                        ? "bg-[#EFFBE6] border-[#C3EFA4] text-[#2E6F00]"
-                        : "bg-[#FFF2F0] border-[#FFCDC6] text-[#C83E2B]"
-                    )}
-                  >
-                    {pinFeedback.message}
-                  </div>
-                )}
-                <TactileButton type="submit" variant="sky" size="md" fullWidth disabled={pinBusy || pinNew.length !== 4 || !pinTargetId}>
-                  {pinBusy ? "Menyimpan…" : "Simpan PIN Baru"}
-                </TactileButton>
-              </form>
             </div>
 
             {/* SUB-PANEL 2: MATRIKS PENUGASAN SUPERVISOR (ASSIGN MONITORING) */}
@@ -768,10 +692,7 @@ export default function AdminCommandCenterPage() {
                             type="button"
                             onClick={() => {
                               soundEffects.tactileClick();
-                              toggleSupervisorAssignment(
-                                activeSelectedSupervisor.id,
-                                usr.id
-                              );
+                              askToggleAssignment(activeSelectedSupervisor, usr, isAssigned);
                             }}
                             className={cn(
                               "w-full p-3 rounded-2xl border-2 flex items-center justify-between gap-3 text-left transition-all cursor-pointer",
@@ -827,9 +748,11 @@ export default function AdminCommandCenterPage() {
             </div>
           </div>
         </CozyCard>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start min-w-0">
           {/* 2. Approval Pencairan Poin (Neutral White Card) */}
+          <div id="admin-pencairan" className="scroll-mt-20 min-w-0">
           <CozyCard tone="white" className="space-y-4">
             <div className="flex items-center justify-between gap-2 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -892,13 +815,7 @@ export default function AdminCommandCenterPage() {
                         <TactileButton
                           variant="matcha"
                           size="sm"
-                          onClick={() =>
-                            setPendingAction({
-                              type: "approve_cashout",
-                              redemptionId: req.id,
-                              amount: req.rupiah_value,
-                            })
-                          }
+                          onClick={() => askCashout(req, "approved")}
                         >
                           <CozyIcon name="check_badge" size={18} />
                           Setujui ({formatCompactRupiah(req.rupiah_value)})
@@ -906,13 +823,7 @@ export default function AdminCommandCenterPage() {
                         <TactileButton
                           variant="peach"
                           size="sm"
-                          onClick={() =>
-                            setPendingAction({
-                              type: "reject_cashout",
-                              redemptionId: req.id,
-                              amount: req.rupiah_value,
-                            })
-                          }
+                          onClick={() => askCashout(req, "rejected")}
                         >
                           Tolak & Kembalikan Poin
                         </TactileButton>
@@ -982,6 +893,7 @@ export default function AdminCommandCenterPage() {
               )}
             </div>
           </CozyCard>
+          </div>
 
           {/* 3. Budget & Challenge Configurator (Neutral White Cards) */}
           <div className="space-y-6 min-w-0 max-w-full overflow-hidden">
@@ -1007,15 +919,7 @@ export default function AdminCommandCenterPage() {
                 </label>
                 <select
                   value={targetUserProfile.id}
-                  onChange={(e) => {
-                    const nextId = e.target.value;
-                    setSelectedTargetUserId(nextId);
-                    const found = userProfiles.find((u) => u.id === nextId);
-                    if (found) {
-                      setBudgetInput(String(found.monthly_budget_target));
-                      setSavingInput(String(found.monthly_saving_target));
-                    }
-                  }}
+                  onChange={(e) => setSelectedTargetUserId(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-2xl border-2 border-[#E6DFD2] bg-[#F7F3EB] font-display text-xs sm:text-sm font-extrabold text-[#3D352E]"
                 >
                   {userProfiles.map((u) => (
@@ -1027,59 +931,38 @@ export default function AdminCommandCenterPage() {
                 </select>
               </div>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setPendingAction({ type: "save_budget" });
-                }}
-                className="space-y-3.5 min-w-0"
-              >
-                <div className="min-w-0">
-                  <label className="block text-xs font-display font-extrabold uppercase text-[#7A6E65] mb-1">
-                    Jatah Uang Saku Bulanan (Rp)
-                  </label>
-                  <input
-                    type="number"
-                    value={budgetInput}
-                    onChange={(e) => setBudgetInput(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-2xl border-2 border-[#E6DFD2] bg-[#FFFDF9] font-display font-extrabold tabular-nums text-base"
-                  />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
+                <div className="p-3 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] min-w-0">
+                  <p className="text-[11px] font-display font-extrabold uppercase text-[#7A6E65]">Jatah Bulanan Saat Ini</p>
+                  <p className="font-display text-base font-extrabold tabular-nums text-[#3D352E]">
+                    {formatRupiah(targetUserProfile.monthly_budget_target)}
+                  </p>
                 </div>
-
-                <div className="min-w-0">
-                  <label className="block text-xs font-display font-extrabold uppercase text-[#7A6E65] mb-1">
-                    Target Tabungan Wajib Bulanan (Rp)
-                  </label>
-                  <input
-                    type="number"
-                    value={savingInput}
-                    onChange={(e) => setSavingInput(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-2xl border-2 border-[#E6DFD2] bg-[#FFFDF9] font-display font-extrabold tabular-nums text-base"
-                  />
+                <div className="p-3 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] min-w-0">
+                  <p className="text-[11px] font-display font-extrabold uppercase text-[#7A6E65]">Tabungan Wajib Saat Ini</p>
+                  <p className="font-display text-base font-extrabold tabular-nums text-[#3D352E]">
+                    {formatRupiah(targetUserProfile.monthly_saving_target)}
+                  </p>
                 </div>
+              </div>
 
-                <div className="p-3 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-bold flex items-center justify-between gap-2 min-w-0">
-                  <span className="truncate">
-                    Batas Aman Harian (DSSL) {targetUserProfile.display_name}:
-                  </span>
-                  <span className="font-display font-extrabold tabular-nums text-sm text-[#2E6F00] shrink-0">
-                    {formatRupiah(report.dssl)} / hari
-                  </span>
-                </div>
+              <p className="p-3 rounded-2xl bg-[#FFFBEB] border-2 border-[#FDE08D] text-xs font-bold text-[#8A6A00] leading-relaxed">
+                Admin hanya menetapkan nilai awal saat membuat akun. Perubahan anggaran, tabungan wajib, tanggal mulai
+                siklus, dan kebijakan sisa uang dilakukan oleh Supervisor di halaman pantau anak.
+              </p>
 
-                <TactileButton
-                  type="submit"
-                  variant="matcha"
-                  size="md"
-                  fullWidth
-                >
-                  <CozyIcon name="check_badge" size={20} />
-                  Simpan Konfigurasi Anggaran
-                </TactileButton>
-              </form>
+              <div className="p-3 rounded-2xl bg-[#F7F3EB] border border-[#E6DFD2] text-xs font-bold flex items-center justify-between gap-2 min-w-0">
+                <span className="truncate">
+                  Batas Aman Harian (DSSL) {targetUserProfile.display_name}:
+                </span>
+                <span className="font-display font-extrabold tabular-nums text-sm text-[#2E6F00] shrink-0">
+                  {formatRupiah(report.dssl)} / hari
+                </span>
+              </div>
             </CozyCard>
 
             {/* Inject Bonus Mission for Selected User (Neutral White Card) */}
+            <div id="admin-misi" className="scroll-mt-20">
             <CozyCard tone="white" className="space-y-3.5">
               <div className="flex items-center gap-2.5 min-w-0">
                 <CozyIcon name="missions_scroll" size={26} />
@@ -1130,6 +1013,7 @@ export default function AdminCommandCenterPage() {
                 </TactileButton>
               </form>
             </CozyCard>
+            </div>
           </div>
         </div>
       </main>

@@ -1,4 +1,6 @@
 import { isObj, merge3, unionArrays, type Doc, type MergeOpts } from "./canon";
+import { GRANT_RANK } from "../finance/grants";
+import { VERIFICATION_RANK } from "../finance/income";
 
 /**
  * Aturan penyelesaian konflik per koleksi (dipanggil saat dua perangkat mengubah dokumen yang sama).
@@ -67,6 +69,45 @@ function mergeProgress(local: Doc, remote: Doc): Doc {
   };
 }
 
+/* ───────────── Versi 5.6: keuangan berlapis ───────────── */
+
+const stamp = (d: Doc) => String(d.updatedAt ?? "");
+/** Terakhir-menang berdasarkan `updatedAt`; seri → versi server (deterministik di semua perangkat). */
+const lww = (local: Doc, remote: Doc): Doc => (stamp(local) > stamp(remote) ? local : remote);
+
+function mergeGrant(local: Doc, remote: Doc): Doc {
+  const rl = GRANT_RANK[String(local.status) as keyof typeof GRANT_RANK] ?? 0;
+  const rr = GRANT_RANK[String(remote.status) as keyof typeof GRANT_RANK] ?? 0;
+  const win = rl !== rr ? (rl > rr ? local : remote) : lww(local, remote);
+  const lose = win === local ? remote : local;
+  // Foto yang hanya ada di salah satu sisi tidak boleh hilang.
+  const out: Doc = { ...win };
+  for (const k of ["proofPhoto", "receiptPhoto"]) if (!out[k] && lose[k]) out[k] = lose[k];
+  return out;
+}
+
+function mergeTransaction(local: Doc, remote: Doc): Doc {
+  const rank = (d: Doc) => (typeof d.verificationStatus === "string" ? (VERIFICATION_RANK[d.verificationStatus] ?? -1) : -1);
+  const rl = rank(local);
+  const rr = rank(remote);
+  // Konfirmasi Supervisor (verified) selalu mengalahkan salinan anak yang masih menunggu.
+  const win = rl !== rr ? (rl > rr ? local : remote) : local;
+  const reimbursedAt = (local.reimbursedAt as string | undefined) ?? (remote.reimbursedAt as string | undefined);
+  return reimbursedAt && !win.reimbursedAt ? { ...win, reimbursedAt } : win;
+}
+
+function mergeLoan(local: Doc, remote: Doc): Doc {
+  const rank = (d: Doc) => (d.status === "open" ? 0 : 1);
+  const rl = rank(local);
+  const rr = rank(remote);
+  const win = rl !== rr ? (rl > rr ? local : remote) : lww(local, remote);
+  return {
+    ...win,
+    recovered: Math.max(num(local.recovered), num(remote.recovered)),
+    ...((local.approvedBy ?? remote.approvedBy) ? { approvedBy: local.approvedBy ?? remote.approvedBy } : {}),
+  };
+}
+
 /** Hasil selalu dokumen utuh; jika sama dengan `remote`, tidak ada yang perlu dikirim ulang. */
 export function mergeDoc(collection: string, base: Doc | undefined, local: Doc, remote: Doc): Doc {
   switch (collection) {
@@ -88,6 +129,23 @@ export function mergeDoc(collection: string, base: Doc | undefined, local: Doc, 
     case "redemptions":
       // keputusan Supervisor (disetujui/ditolak) tidak boleh ditimpa salinan "menunggu" yang basi
       return remote.status && remote.status !== "pending" && local.status === "pending" ? remote : local;
+    case "sub_wallets":
+    case "budget_configs":
+    case "reconciliations":
+      return lww(local, remote);
+    case "grant_requests":
+      return mergeGrant(local, remote);
+    case "transactions":
+      return mergeTransaction(local, remote);
+    case "monthly_closings":
+      // Tutup buku bersifat final: yang lebih dulu ditutup yang berlaku (id deterministik per siklus).
+      return String(local.closedAt ?? "") < String(remote.closedAt ?? "") ? local : remote;
+    case "wishlist_items": {
+      const final = (d: Doc) => (d.status === "cooling" ? 0 : 1);
+      return final(local) !== final(remote) ? (final(local) > final(remote) ? local : remote) : lww(local, remote);
+    }
+    case "vault_loans":
+      return mergeLoan(local, remote);
     case "user_state": {
       const weeks = unionArrays(
         Array.isArray(local.openedCheckpointWeeks) ? local.openedCheckpointWeeks : [],
